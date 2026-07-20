@@ -118,6 +118,7 @@ def get_summary() -> dict:
             "Invalid": prospect_status_counts.get("Invalid", 0),
             "Duplicate": prospect_status_counts.get("Duplicate", 0),
             "Existing Customer": prospect_status_counts.get("Existing Customer", 0),
+            "Already Contacted": prospect_status_counts.get("Already Contacted", 0),
             "Pending": prospect_status_counts.get("Pending", 0),
         },
         "recent_batches": [dict(r) for r in recent_batches],

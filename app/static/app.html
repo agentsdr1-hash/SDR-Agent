@@ -120,6 +120,7 @@ tbody tr:hover{background:var(--blue-soft);}
 .p-invalid,.p-lost,.p-rejected{background:var(--invalid-soft);color:var(--invalid);}
 .p-dup{background:var(--dup-soft);color:var(--dup);}
 .p-existing,.p-replied,.p-quote{background:var(--indigo-soft);color:var(--indigo);}
+.p-contacted{background:var(--sky-soft);color:var(--sky);}
 .p-neutral,.p-queued,.p-approved,.p-draft{background:var(--line-soft);color:var(--muted);}
 .p-sent,.p-sky{background:var(--sky-soft);color:#0C7CA6;}
 .p-auto{background:var(--invalid-soft);color:var(--invalid);}
@@ -227,16 +228,17 @@ tbody tr:hover{background:var(--blue-soft);}
       <button class="btn sky" id="urlBtn">Fetch & import</button>
     </div>
     <div class="status" id="importStatus"></div>
-    <div class="seed-note">Existing-customer check seeded with: jsmith@acmecorp.com · dlee@globex.com</div>
+    <div class="seed-note">Existing-customer check seeded with: jsmith@acmecorp.com · dlee@globex.com · re-imported prospects already sent an email in a prior campaign are flagged "Already Contacted", not re-queued</div>
   </div>
 
   <div class="panel hidden" id="pResults">
     <div class="panel-head"><div class="step-dot">2</div><h2>Validation results</h2><span class="obj-tag">OBJ-002</span></div>
-    <div class="grid g4">
+    <div class="grid g5">
       <div class="stat"><div class="n" style="color:var(--valid)" id="rV">–</div><div class="lbl">Valid</div></div>
       <div class="stat"><div class="n" style="color:var(--invalid)" id="rI">–</div><div class="lbl">Invalid</div></div>
       <div class="stat"><div class="n" style="color:var(--dup)" id="rD">–</div><div class="lbl">Duplicate</div></div>
       <div class="stat"><div class="n" style="color:var(--indigo)" id="rE">–</div><div class="lbl">Existing customer</div></div>
+      <div class="stat"><div class="n" style="color:var(--sky)" id="rAC">–</div><div class="lbl">Already contacted</div></div>
     </div>
     <div class="tbl-wrap">
       <table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Company</th><th>Status</th><th>Notes</th></tr></thead>
@@ -329,11 +331,12 @@ tbody tr:hover{background:var(--blue-soft);}
 
   <div class="panel">
     <div class="panel-head"><h2>Prospect funnel</h2><span class="obj-tag">OBJ-001 · OBJ-002</span></div>
-    <div class="grid g5">
+    <div class="grid g6">
       <div class="stat"><div class="n" style="color:var(--valid)" id="dV">–</div><div class="lbl">Valid</div></div>
       <div class="stat"><div class="n" style="color:var(--invalid)" id="dI">–</div><div class="lbl">Invalid</div></div>
       <div class="stat"><div class="n" style="color:var(--dup)" id="dD">–</div><div class="lbl">Duplicate</div></div>
       <div class="stat"><div class="n" style="color:var(--indigo)" id="dE">–</div><div class="lbl">Existing customer</div></div>
+      <div class="stat"><div class="n" style="color:var(--sky)" id="dAC">–</div><div class="lbl">Already contacted</div></div>
       <div class="stat"><div class="n" id="dT">–</div><div class="lbl">Total imported</div></div>
     </div>
     <div class="status mt12" id="dNote"></div>
@@ -431,7 +434,7 @@ tbody tr:hover{background:var(--blue-soft);}
     <div class="panel-head"><h2>Golden path — the usual flow</h2></div>
     <ol style="margin:0;padding-left:20px;font-size:13px;line-height:1.9;">
       <li><b>Import</b> — drag a CSV/XLSX onto the Import tab, or paste a shared-drive URL. Validation runs automatically right after.</li>
-      <li>Check the results table — rows land in <b>Valid</b>, <b>Invalid</b>, <b>Duplicate</b>, or <b>Existing Customer</b>. Nothing is dropped, everything is visible.</li>
+      <li>Check the results table — rows land in <b>Valid</b>, <b>Invalid</b>, <b>Duplicate</b>, <b>Existing Customer</b>, or <b>Already Contacted</b>. Nothing is dropped, everything is visible.</li>
       <li><b>Create or pick a campaign</b> and queue the Valid rows into it — this also auto-generates a draft email per prospect.</li>
       <li>Switch to the <b>Campaigns</b> tab to review queued drafts: edit subject/body, then <b>Approve</b> or <b>Reject</b> each one.</li>
       <li><b>Send</b> the campaign — this delivers every Approved draft via Gmail. Requires email to be configured first (see Admin below).</li>
@@ -462,6 +465,7 @@ tbody tr:hover{background:var(--blue-soft);}
       <li><b>Suppression is checked twice</b> — once when queuing into a campaign, again right before sending — so an opt-out can never slip through even if it happens after a draft was already approved.</li>
       <li><b>Opt-outs are also detected automatically</b> from reply text (e.g. "unsubscribe," "remove me," "do not contact") and added to suppression without any manual step.</li>
       <li><b>Existing customers are matched</b> against a seeded customer list and marked instead of queued for outreach.</li>
+      <li><b>Already-contacted prospects are caught on re-import.</b> Email is the key: if an address was already sent an outreach email in any prior campaign — even from a completely different import file — re-importing it now flags it <b>Already Contacted</b> instead of validating as a fresh lead. Only prospects that have actually received a <em>sent</em> email are caught this way; someone still sitting Queued/Approved (never sent) in another campaign won't be flagged by this check.</li>
       <li><b>Duplicates</b> are flagged within the same import batch (same email seen twice in one file).</li>
       <li><b>Data persists</b> in a SQLite file across restarts as long as the server always runs with the same <code>APEX_DB_PATH</code> — back it up periodically since there's no separate hosted database.</li>
       <li>The top-bar badge shows connection state: <b>WAKING SERVER…</b> means it's retrying while a sleeping backend (e.g. Render free tier after inactivity) spins back up — this can take up to ~90 seconds on the first load. <b>DEMO MODE — SERVER UNREACHABLE</b> means every retry failed — everything you do is kept only in this browser tab and is lost on refresh until the server responds; it keeps retrying quietly in the background and switches over automatically once reachable. <b>CONNECTED TO SERVER</b> means everything you do is saved for real.</li>
@@ -684,22 +688,34 @@ function handleFile(file) {
 }
 
 // VALIDATION — OBJ-002
-function evalRow(row, seenEmails) {
+function getContactedEmailsDemo() {
+  // Demo mode has no real database -- best-effort equivalent using
+  // whatever's been "sent" in this browser session's in-memory campaigns.
+  const emails = new Set();
+  campaigns.forEach(c => c.prospects.forEach(p => {
+    if(p.emailsSent > 0 && p.email) emails.add(p.email.toLowerCase());
+  }));
+  return emails;
+}
+
+function evalRow(row, seenEmails, contactedEmails) {
   const email = (row.email||'').trim();
   const hasName = !!((row.first_name||'').trim()||(row.last_name||'').trim());
   if(!email) return ['Invalid','Missing email address'];
   if(!EMAIL_RE.test(email)) return ['Invalid',`Malformed email: '${email}'`];
   if(!hasName) return ['Invalid','Missing first and last name'];
   if(EXISTING_CUSTOMERS.has(email.toLowerCase())) return ['Existing Customer','Matches an existing customer record'];
+  if(contactedEmails.has(email.toLowerCase())) return ['Already Contacted','An outreach email was already sent to this address in a prior campaign'];
   if(seenEmails.has(email.toLowerCase())) return ['Duplicate','Duplicate email in this batch'];
   return ['Valid',''];
 }
 
 function runValidation(prospects, filename) {
   const seen = new Set();
-  const counts = {Valid:0,Invalid:0,Duplicate:0,'Existing Customer':0};
+  const contacted = getContactedEmailsDemo();
+  const counts = {Valid:0,Invalid:0,Duplicate:0,'Existing Customer':0,'Already Contacted':0};
   const results = prospects.map(row => {
-    const [status,note] = evalRow(row, seen);
+    const [status,note] = evalRow(row, seen, contacted);
     counts[status]++;
     if(status!=='Invalid'&&row.email) seen.add(row.email.toLowerCase());
     return {...row, status, validation_notes:note};
@@ -719,7 +735,7 @@ async function serverValidate(batchId) {
   if(!r.ok) return setS('importStatus', s.detail||'Validation failed', true);
   setS('importStatus','Done — batch '+batchId);
   const rows = await (await fetch('/prospects/'+batchId)).json();
-  const counts = {Valid:s.valid,Invalid:s.invalid,Duplicate:s.duplicate,'Existing Customer':s.existing_customer};
+  const counts = {Valid:s.valid,Invalid:s.invalid,Duplicate:s.duplicate,'Existing Customer':s.existing_customer,'Already Contacted':s.already_contacted};
   renderValidation(counts, rows);
   document.getElementById('pResults').classList.remove('hidden');
   document.getElementById('pCampaign').classList.remove('hidden');
@@ -727,7 +743,7 @@ async function serverValidate(batchId) {
 }
 
 function renderValidation(counts, rows) {
-  set('rV',counts.Valid); set('rI',counts.Invalid); set('rD',counts.Duplicate); set('rE',counts['Existing Customer']);
+  set('rV',counts.Valid); set('rI',counts.Invalid); set('rD',counts.Duplicate); set('rE',counts['Existing Customer']); set('rAC',counts['Already Contacted']||0);
   document.getElementById('rBody').innerHTML = rows.map(r =>
     `<tr><td class="mono">${r.row_number}</td><td>${esc([r.first_name,r.last_name].filter(Boolean).join(' '))||'—'}</td><td class="mono">${esc(r.email||'')}</td><td>${esc(r.company||'—')}</td><td>${pill(r.status)}</td><td class="muted">${esc(r.validation_notes||'—')}</td></tr>`
   ).join('');
@@ -987,7 +1003,7 @@ async function loadDashboard() {
       const [sr,ar] = await Promise.all([fetch('/reports/summary'), fetch('/audit/events?limit=30')]);
       const d=await sr.json(), audit=await ar.json();
       const s=d.prospect_status_counts;
-      set('dV',s.Valid); set('dI',s.Invalid); set('dD',s.Duplicate); set('dE',s['Existing Customer']); set('dT',d.total_prospects);
+      set('dV',s.Valid); set('dI',s.Invalid); set('dD',s.Duplicate); set('dE',s['Existing Customer']); set('dAC',s['Already Contacted']); set('dT',d.total_prospects);
       document.getElementById('dNote').textContent=d.total_import_batches+' batch(es) · '+d.total_customers_on_file+' existing customers on file';
       const v=d.value_captured;
       set('vc_w',v.customers_won); set('vc_t','$'+v.total_turnover.toLocaleString()); set('vc_q',v.quotes_requested); set('vc_l',v.deals_lost); set('vc_wr',v.win_rate_pct+'%');
@@ -1110,6 +1126,7 @@ function fmt(ts){try{return new Date(ts).toLocaleString();}catch(e){return ts;}}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function pill(s){
   const map={Valid:'p-valid',Invalid:'p-invalid',Duplicate:'p-dup','Existing Customer':'p-existing',
+    'Already Contacted':'p-contacted',
     Sent:'p-sent',Replied:'p-replied',Suppressed:'p-suppressed',Queued:'p-queued',Approved:'p-approved',
     Rejected:'p-rejected',Won:'p-won',Lost:'p-lost',QuoteRequested:'p-quote',
     Reminder1Sent:'p-reminder',Reminder2Sent:'p-reminder',Closed:'p-closed'};
