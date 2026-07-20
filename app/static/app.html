@@ -104,6 +104,10 @@ textarea{min-height:90px;resize:vertical;font-size:12.5px;line-height:1.5;}
 
 /* Table */
 .tbl-wrap{border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:12px;}
+.tbl-wrap.scrollx{overflow-x:auto;}
+.tbl-wrap.scrollx table{min-width:920px;}
+details.draft summary{cursor:pointer;color:var(--blue-deep);font-size:11.5px;}
+details.draft pre{white-space:pre-wrap;font-family:var(--sans);font-size:11.5px;background:var(--paper);border:1px solid var(--line-soft);border-radius:6px;padding:8px;margin:6px 0 0;max-width:280px;}
 table{width:100%;border-collapse:collapse;font-size:12.5px;}
 thead th{background:var(--blue-soft);color:var(--blue-deep);font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);}
 tbody td{padding:8px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle;}
@@ -381,6 +385,36 @@ tbody tr:hover{background:var(--blue-soft);}
   </div>
 
   <div class="panel">
+    <div class="panel-head"><h2>Full records — campaign outreach</h2><span class="obj-tag">row-level detail</span></div>
+    <div class="row">
+      <select id="dcSelect"></select>
+    </div>
+    <div class="tbl-wrap scrollx mt12">
+      <table><thead><tr>
+        <th>Name</th><th>Email</th><th>Company</th><th>Status</th><th>Draft</th>
+        <th class="nowrap">Added</th><th class="nowrap">Approved</th><th class="nowrap">Sent</th>
+        <th class="nowrap">Replied</th><th>Reply subject</th><th class="nowrap">Quote req.</th>
+        <th class="nowrap">Won</th><th class="nowrap">Lost</th><th>Deal value</th><th>Lost reason</th>
+      </tr></thead>
+      <tbody id="dcBody"></tbody></table>
+    </div>
+    <div class="empty hidden" id="dcEmpty">No campaign records yet.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Full records — imports</h2><span class="obj-tag">row-level detail</span></div>
+    <p class="hint" style="margin:0 0 4px;">Shows the 10 most recently imported batches.</p>
+    <div class="row">
+      <select id="diSelect"></select>
+    </div>
+    <div class="tbl-wrap scrollx mt12">
+      <table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Company</th><th>Phone</th><th>Status</th><th>Notes</th></tr></thead>
+      <tbody id="diBody"></tbody></table>
+    </div>
+    <div class="empty hidden" id="diEmpty">No import records yet.</div>
+  </div>
+
+  <div class="panel">
     <div class="panel-head"><h2>Audit log</h2><span class="obj-tag">OBJ-014</span></div>
     <div class="tbl-wrap">
       <table><thead><tr><th>When</th><th>Event</th><th>Entity</th><th>Details</th></tr></thead>
@@ -451,7 +485,7 @@ tbody tr:hover{background:var(--blue-soft);}
           <tr><td>Import</td><td>Upload or pull in a prospect file; also the home/landing tab (click the APEX logo anytime to return here).</td></tr>
           <tr><td>Campaigns</td><td>Create campaigns, queue validated prospects, review/edit/approve/reject drafts, send approved emails, log Won/Lost outcomes.</td></tr>
           <tr><td>Knowledge Base</td><td>Reference Q&amp;A entries used to help draft accurate replies to prospect questions.</td></tr>
-          <tr><td>Dashboard</td><td>Live pipeline view — import/validation funnel, outreach funnel, value captured, SDR activity, audit log.</td></tr>
+          <tr><td>Dashboard</td><td>Live pipeline view — import/validation funnel, outreach funnel, value captured, SDR activity, full row-level records (pick a campaign or import batch to see every field, including drafts), audit log.</td></tr>
           <tr><td>Admin</td><td>Check/configure email integration status and manage the suppression (opt-out) list.</td></tr>
         </tbody>
       </table>
@@ -1017,6 +1051,9 @@ async function loadDashboard() {
       document.getElementById('dCamps').innerHTML = d.campaigns.length
         ? d.campaigns.map(c=>`<div class="kb-card"><div style="display:flex;justify-content:space-between;"><b>${esc(c.name)}</b><span class="mono">${c.total} total · $${c.turnover.toLocaleString()} turnover</span></div><div class="bar-track">${barSegs(c)}</div><div class="legend"><span><span class="dot bs-queued"></span>${c.queued} queued</span><span><span class="dot bs-sent"></span>${c.sent} sent</span><span><span class="dot bs-replied"></span>${c.replied} replied</span><span><span class="dot bs-won"></span>${c.won} won</span></div></div>`).join('')
         : '<div class="empty">No campaigns yet.</div>';
+      // full records
+      populateDashboardRecordSelects(d.campaigns, d.recent_batches);
+      await Promise.all([loadCampaignRecords(dcCampaignId), loadImportRecords(diBatchId)]);
       // audit
       const ab=document.getElementById('dAudit'),ae=document.getElementById('dAuditEmpty');
       if(!audit.length){ae.classList.remove('hidden');ab.innerHTML='';}
@@ -1054,10 +1091,142 @@ async function loadDashboard() {
           return `<div class="kb-card"><div style="display:flex;justify-content:space-between;"><b>${esc(c.name)}</b><span class="mono">day ${c.currentDay} · ${c.prospects.length} total</span></div><div class="bar-track"><div class="bs-queued" style="flex:${ct.Queued}"></div><div class="bs-approved" style="flex:${ct.Approved}"></div><div class="bs-sent" style="flex:${ct.Sent}"></div><div class="bs-replied" style="flex:${ct.Replied}"></div><div class="bs-won" style="flex:${ct.Won}"></div></div><div class="legend"><span><span class="dot bs-queued"></span>${ct.Queued} queued</span><span><span class="dot bs-sent"></span>${ct.Sent} sent</span><span><span class="dot bs-replied"></span>${ct.Replied} replied</span><span><span class="dot bs-won"></span>${ct.Won} won</span></div></div>`;
         }).join('')
       : '<div class="empty">No campaigns yet — go to Import tab.</div>';
+    populateDashboardRecordSelectsDemo();
+    renderDemoCampaignRecords();
+    renderDemoImportRecords();
     document.getElementById('dAuditEmpty').classList.remove('hidden');
     document.getElementById('dAudit').innerHTML='';
   }
 }
+
+// ══════════════════════════════════════════════════════
+// FULL RECORDS — row-level detail behind the funnel counts
+// ══════════════════════════════════════════════════════
+let dcCampaignId = null;
+let diBatchId = null;
+
+function dcRowHtml(p) {
+  const name = [p.first_name,p.last_name].filter(Boolean).join(' ')||'—';
+  return `<tr>
+    <td>${esc(name)}</td>
+    <td class="mono">${esc(p.email||'')}</td>
+    <td>${esc(p.company||'—')}</td>
+    <td>${pill(p.status)}</td>
+    <td><details class="draft"><summary>View</summary><b>${esc(p.subject||'(no draft)')}</b><pre>${esc(p.body||'')}</pre></details></td>
+    <td class="muted nowrap">${p.added_at?fmt(p.added_at):'—'}</td>
+    <td class="muted nowrap">${p.approved_at?fmt(p.approved_at):'—'}</td>
+    <td class="muted nowrap">${p.sent_at?fmt(p.sent_at):'—'}</td>
+    <td class="muted nowrap">${p.replied_at?fmt(p.replied_at):'—'}</td>
+    <td>${esc(p.reply_subject||'—')}</td>
+    <td class="muted nowrap">${p.quote_requested_at?fmt(p.quote_requested_at):'—'}</td>
+    <td class="muted nowrap">${p.won_at?fmt(p.won_at):'—'}</td>
+    <td class="muted nowrap">${p.lost_at?fmt(p.lost_at):'—'}</td>
+    <td>${p.deal_value!=null?'$'+Number(p.deal_value).toLocaleString():'—'}</td>
+    <td>${esc(p.lost_reason||'—')}</td>
+  </tr>`;
+}
+
+function diRowHtml(r, rowNum) {
+  return `<tr>
+    <td class="mono">${rowNum}</td>
+    <td>${esc([r.first_name,r.last_name].filter(Boolean).join(' '))||'—'}</td>
+    <td class="mono">${esc(r.email||'')}</td>
+    <td>${esc(r.company||'—')}</td>
+    <td class="mono">${esc(r.phone||'—')}</td>
+    <td>${pill(r.status)}</td>
+    <td class="muted">${esc(r.validation_notes||'—')}</td>
+  </tr>`;
+}
+
+function populateDashboardRecordSelects(campaignsList, batches) {
+  const dc = document.getElementById('dcSelect');
+  const prevDc = dcCampaignId;
+  dc.innerHTML = campaignsList.length
+    ? campaignsList.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')
+    : '<option value="">No campaigns yet</option>';
+  dcCampaignId = campaignsList.length ? (campaignsList.some(c=>c.id===prevDc) ? prevDc : campaignsList[0].id) : null;
+  if(dcCampaignId!=null) dc.value = dcCampaignId;
+
+  const di = document.getElementById('diSelect');
+  const prevDi = diBatchId;
+  di.innerHTML = batches.length
+    ? batches.map(b=>`<option value="${b.batch_id}">${esc(b.filename)} · ${b.batch_id} (${b.row_count} rows)</option>`).join('')
+    : '<option value="">No imports yet</option>';
+  diBatchId = batches.length ? (batches.some(b=>b.batch_id===prevDi) ? prevDi : batches[0].batch_id) : null;
+  if(diBatchId!=null) di.value = diBatchId;
+}
+
+async function loadCampaignRecords(cid) {
+  const body = document.getElementById('dcBody'), empty = document.getElementById('dcEmpty');
+  if(!cid) { body.innerHTML=''; empty.classList.remove('hidden'); return; }
+  try {
+    const rows = await (await fetch('/campaigns/'+cid+'/prospects')).json();
+    if(!rows.length) { body.innerHTML=''; empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    body.innerHTML = rows.map(dcRowHtml).join('');
+  } catch(e) { body.innerHTML=''; empty.classList.remove('hidden'); }
+}
+
+async function loadImportRecords(batchId) {
+  const body = document.getElementById('diBody'), empty = document.getElementById('diEmpty');
+  if(!batchId) { body.innerHTML=''; empty.classList.remove('hidden'); return; }
+  try {
+    const r = await fetch('/prospects/'+batchId);
+    if(!r.ok) { body.innerHTML=''; empty.classList.remove('hidden'); return; }
+    const rows = await r.json();
+    if(!rows.length) { body.innerHTML=''; empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    body.innerHTML = rows.map((r,i)=>diRowHtml(r, r.row_number??i+1)).join('');
+  } catch(e) { body.innerHTML=''; empty.classList.remove('hidden'); }
+}
+
+// Demo mode: same panels, backed by in-memory session state instead of the
+// server. Timestamps aren't tracked client-side, so those columns show '—'.
+function demoToRecordShape(p) {
+  return {
+    first_name:p.first_name, last_name:p.last_name, email:p.email, company:p.company,
+    status:p.cpStatus, subject:p.subject, body:p.body,
+    added_at:null, approved_at:null, sent_at:null, replied_at:null,
+    reply_subject:null, quote_requested_at:null, won_at:null, lost_at:null,
+    deal_value:p.dealValue, lost_reason:null,
+  };
+}
+
+function populateDashboardRecordSelectsDemo() {
+  const dc = document.getElementById('dcSelect');
+  dc.innerHTML = campaigns.length
+    ? campaigns.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')
+    : '<option value="">No campaigns yet</option>';
+  const di = document.getElementById('diSelect');
+  di.innerHTML = currentBatch
+    ? `<option value="current">${esc(currentBatch)} (current session)</option>`
+    : '<option value="">No imports yet</option>';
+}
+
+function renderDemoCampaignRecords() {
+  const cid = document.getElementById('dcSelect').value;
+  const body = document.getElementById('dcBody'), empty = document.getElementById('dcEmpty');
+  const camp = campaigns.find(c=>c.id===Number(cid));
+  if(!camp || !camp.prospects.length) { body.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  body.innerHTML = camp.prospects.map(p=>dcRowHtml(demoToRecordShape(p))).join('');
+}
+
+function renderDemoImportRecords() {
+  const body = document.getElementById('diBody'), empty = document.getElementById('diEmpty');
+  if(!validatedProspects.length) { body.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  body.innerHTML = validatedProspects.map((r,i)=>diRowHtml(r, i+1)).join('');
+}
+
+document.getElementById('dcSelect').addEventListener('change', e => {
+  if(MODE==='server') { dcCampaignId = e.target.value?Number(e.target.value):null; loadCampaignRecords(dcCampaignId); }
+  else renderDemoCampaignRecords();
+});
+document.getElementById('diSelect').addEventListener('change', e => {
+  if(MODE==='server') { diBatchId = e.target.value||null; loadImportRecords(diBatchId); }
+  else renderDemoImportRecords();
+});
 
 function barSegs(c) {
   const t=c.total||1;
