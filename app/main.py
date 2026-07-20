@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.db import init_db
-from app.routers import prospects, campaigns, reports, email as email_router, admin, audit
+from app.routers import prospects, campaigns, reports, email as email_router, admin, audit, dbtables
 from app.integrations import email_provider
 from app.services import inbox_monitor
 
@@ -31,6 +31,7 @@ app.include_router(reports.router)
 app.include_router(email_router.router)
 app.include_router(admin.router)
 app.include_router(audit.router)
+app.include_router(dbtables.router)
 # Future objects plug in the same way, e.g.:
 # from app.routers import outreach
 # app.include_router(outreach.router)
