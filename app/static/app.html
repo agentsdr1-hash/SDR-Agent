@@ -415,6 +415,20 @@ tbody tr:hover{background:var(--blue-soft);}
   </div>
 
   <div class="panel">
+    <div class="panel-head"><h2>All database tables</h2><span class="obj-tag">raw QA view</span></div>
+    <p class="hint" style="margin:0 0 4px;">Every table in the database, unfiltered and unformatted — for verifying data is actually persisting. Server mode only.</p>
+    <div class="row">
+      <select id="dbtSelect"></select>
+      <button class="btn sec" id="dbtRefresh">↻ Refresh</button>
+    </div>
+    <div class="tbl-wrap scrollx mt12">
+      <table><thead><tr id="dbtHead"></tr></thead>
+      <tbody id="dbtBody"></tbody></table>
+    </div>
+    <div class="empty hidden" id="dbtEmpty">No rows in this table yet.</div>
+  </div>
+
+  <div class="panel">
     <div class="panel-head"><h2>Audit log</h2><span class="obj-tag">OBJ-014</span></div>
     <div class="tbl-wrap">
       <table><thead><tr><th>When</th><th>Event</th><th>Entity</th><th>Details</th></tr></thead>
@@ -485,7 +499,7 @@ tbody tr:hover{background:var(--blue-soft);}
           <tr><td>Import</td><td>Upload or pull in a prospect file; also the home/landing tab (click the APEX logo anytime to return here).</td></tr>
           <tr><td>Campaigns</td><td>Create campaigns, queue validated prospects, review/edit/approve/reject drafts, send approved emails, log Won/Lost outcomes.</td></tr>
           <tr><td>Knowledge Base</td><td>Reference Q&amp;A entries used to help draft accurate replies to prospect questions.</td></tr>
-          <tr><td>Dashboard</td><td>Live pipeline view — import/validation funnel, outreach funnel, value captured, SDR activity, full row-level records (pick a campaign or import batch to see every field, including drafts), audit log.</td></tr>
+          <tr><td>Dashboard</td><td>Live pipeline view — import/validation funnel, outreach funnel, value captured, SDR activity, full row-level records (pick a campaign or import batch to see every field, including drafts), a raw browser over every database table, and the audit log.</td></tr>
           <tr><td>Admin</td><td>Check/configure email integration status and manage the suppression (opt-out) list.</td></tr>
         </tbody>
       </table>
@@ -1053,7 +1067,7 @@ async function loadDashboard() {
         : '<div class="empty">No campaigns yet.</div>';
       // full records
       populateDashboardRecordSelects(d.campaigns, d.recent_batches);
-      await Promise.all([loadCampaignRecords(dcCampaignId), loadImportRecords(diBatchId)]);
+      await Promise.all([loadCampaignRecords(dcCampaignId), loadImportRecords(diBatchId), loadDbTables()]);
       // audit
       const ab=document.getElementById('dAudit'),ae=document.getElementById('dAuditEmpty');
       if(!audit.length){ae.classList.remove('hidden');ab.innerHTML='';}
@@ -1094,6 +1108,10 @@ async function loadDashboard() {
     populateDashboardRecordSelectsDemo();
     renderDemoCampaignRecords();
     renderDemoImportRecords();
+    document.getElementById('dbtSelect').innerHTML = '<option value="">Requires server mode</option>';
+    document.getElementById('dbtHead').innerHTML = '';
+    document.getElementById('dbtBody').innerHTML = '';
+    document.getElementById('dbtEmpty').classList.remove('hidden');
     document.getElementById('dAuditEmpty').classList.remove('hidden');
     document.getElementById('dAudit').innerHTML='';
   }
@@ -1227,6 +1245,51 @@ document.getElementById('diSelect').addEventListener('change', e => {
   if(MODE==='server') { diBatchId = e.target.value||null; loadImportRecords(diBatchId); }
   else renderDemoImportRecords();
 });
+
+// ══════════════════════════════════════════════════════
+// ALL DATABASE TABLES — raw, unformatted, every column, server mode only
+// ══════════════════════════════════════════════════════
+let dbtTableName = null;
+
+function renderRawTable(rows) {
+  const head = document.getElementById('dbtHead');
+  const body = document.getElementById('dbtBody');
+  const empty = document.getElementById('dbtEmpty');
+  if(!rows.length) { head.innerHTML=''; body.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  const cols = Object.keys(rows[0]);
+  head.innerHTML = cols.map(c=>`<th>${esc(c)}</th>`).join('');
+  body.innerHTML = rows.map(row => '<tr>' + cols.map(c => {
+    const v = row[c];
+    if(v===null || v===undefined || v==='') return '<td class="muted">—</td>';
+    if(/_at$/.test(c) || c==='timestamp') return `<td class="muted nowrap">${fmt(v)}</td>`;
+    if(typeof v==='number') return `<td class="mono">${v}</td>`;
+    return `<td>${esc(String(v))}</td>`;
+  }).join('') + '</tr>').join('');
+}
+
+async function loadRawTable(name) {
+  if(!name) { renderRawTable([]); return; }
+  try {
+    const rows = await (await fetch('/db/tables/'+name)).json();
+    renderRawTable(rows);
+  } catch(e) { renderRawTable([]); }
+}
+
+async function loadDbTables() {
+  try {
+    const meta = await (await fetch('/db/tables')).json();
+    const sel = document.getElementById('dbtSelect');
+    const prev = dbtTableName;
+    sel.innerHTML = meta.map(t=>`<option value="${t.name}">${t.name} (${t.row_count})</option>`).join('');
+    dbtTableName = meta.some(t=>t.name===prev) ? prev : (meta[0] ? meta[0].name : null);
+    if(dbtTableName) sel.value = dbtTableName;
+    await loadRawTable(dbtTableName);
+  } catch(e) { /* leave whatever was showing */ }
+}
+
+document.getElementById('dbtSelect').addEventListener('change', e => { dbtTableName = e.target.value || null; loadRawTable(dbtTableName); });
+document.getElementById('dbtRefresh').addEventListener('click', () => loadRawTable(dbtTableName));
 
 function barSegs(c) {
   const t=c.total||1;
