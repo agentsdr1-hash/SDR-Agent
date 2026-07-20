@@ -28,6 +28,7 @@ class ValidationSummary(BaseModel):
     invalid: int
     duplicate: int
     existing_customer: int
+    already_contacted: int = 0
 
 
 class CampaignCreate(BaseModel):

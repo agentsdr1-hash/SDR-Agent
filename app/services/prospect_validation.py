@@ -5,9 +5,12 @@ Validate data, duplicates and existing customers.
 Rules applied, in order, first failure wins per row:
   1. Required fields present (email, and at least one of first/last name)
   2. Email format valid
-  3. Duplicate within the same import batch (same email seen twice)
-  4. Already an existing customer (matched against customers table)
-Anything surviving all four is marked 'Valid'.
+  3. Already an existing customer (matched against customers table)
+  4. Already contacted (email was actually sent an outreach email in any
+     prior campaign/batch, not just this one -- email is the key, since a
+     prospect can come back through a re-imported file with a new batch_id)
+  5. Duplicate within the same import batch (same email seen twice here)
+Anything surviving all five is marked 'Valid'.
 """
 import re
 
@@ -17,6 +20,20 @@ from app.models import ValidationSummary
 from app.services.audit import log_event
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _get_contacted_emails(conn) -> set[str]:
+    """Every email that has actually had an outreach email sent to it, in
+    any campaign, ever -- not scoped to the current batch. This is what lets
+    a re-imported file (new batch_id, same prospect) get caught instead of
+    validating as a fresh 'Valid' lead."""
+    rows = conn.execute(
+        """SELECT DISTINCT pr.email
+           FROM campaign_prospects cp
+           JOIN prospects_raw pr ON pr.id = cp.prospect_id
+           WHERE cp.sent_at IS NOT NULL"""
+    ).fetchall()
+    return {r["email"].lower() for r in rows if r["email"]}
 
 
 def validate_batch(batch_id: str) -> ValidationSummary:
@@ -31,12 +48,13 @@ def validate_batch(batch_id: str) -> ValidationSummary:
 
         # OBJ-002 integration point: real customer matching source, not a hardcode.
         customer_emails = ACTIVE_PROVIDER.get_customer_emails()
+        contacted_emails = _get_contacted_emails(conn)
 
         seen_emails: set[str] = set()
-        counts = {"Valid": 0, "Invalid": 0, "Duplicate": 0, "Existing Customer": 0}
+        counts = {"Valid": 0, "Invalid": 0, "Duplicate": 0, "Existing Customer": 0, "Already Contacted": 0}
 
         for row in rows:
-            status, note = _evaluate_row(row, seen_emails, customer_emails)
+            status, note = _evaluate_row(row, seen_emails, customer_emails, contacted_emails)
             counts[status] += 1
             if status not in ("Invalid",) and row["email"]:
                 seen_emails.add(row["email"].lower())
@@ -48,7 +66,8 @@ def validate_batch(batch_id: str) -> ValidationSummary:
 
     log_event(
         "prospect_validation", "batch", batch_id,
-        f"Valid={counts['Valid']} Invalid={counts['Invalid']} Duplicate={counts['Duplicate']} ExistingCustomer={counts['Existing Customer']}"
+        f"Valid={counts['Valid']} Invalid={counts['Invalid']} Duplicate={counts['Duplicate']} "
+        f"ExistingCustomer={counts['Existing Customer']} AlreadyContacted={counts['Already Contacted']}"
     )
 
     return ValidationSummary(
@@ -58,10 +77,11 @@ def validate_batch(batch_id: str) -> ValidationSummary:
         invalid=counts["Invalid"],
         duplicate=counts["Duplicate"],
         existing_customer=counts["Existing Customer"],
+        already_contacted=counts["Already Contacted"],
     )
 
 
-def _evaluate_row(row, seen_emails: set[str], customer_emails: set[str]) -> tuple[str, str]:
+def _evaluate_row(row, seen_emails: set[str], customer_emails: set[str], contacted_emails: set[str]) -> tuple[str, str]:
     email = (row["email"] or "").strip()
     has_name = bool((row["first_name"] or "").strip() or (row["last_name"] or "").strip())
 
@@ -73,6 +93,8 @@ def _evaluate_row(row, seen_emails: set[str], customer_emails: set[str]) -> tupl
         return "Invalid", "Missing first and last name"
     if email.lower() in customer_emails:
         return "Existing Customer", "Email matches an existing customer record"
+    if email.lower() in contacted_emails:
+        return "Already Contacted", "An outreach email was already sent to this address in a prior campaign"
     if email.lower() in seen_emails:
         return "Duplicate", "Duplicate email within this import batch"
 
