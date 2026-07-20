@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: apex-pilot
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: APEX_DB_PATH
+        value: /srv/data/apex_pilot.db
+    disk:
+      name: apex-data
+      mountPath: /srv/data
+      sizeGB: 1

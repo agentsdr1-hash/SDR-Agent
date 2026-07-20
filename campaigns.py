@@ -1,0 +1,125 @@
+"""
+OBJ-003 Campaign Management router.
+Create campaigns, assign validated prospects, approve/edit/send drafts.
+"""
+from fastapi import APIRouter, HTTPException
+
+from app.models import Campaign, CampaignCreate, AssignResult, CampaignProspect, DraftUpdate, SendResult, WonPayload, LostPayload
+from app.services.campaign_management import (
+    create_campaign,
+    get_campaign,
+    list_campaigns,
+    assign_batch_to_campaign,
+    list_campaign_prospects,
+    CampaignError,
+)
+from app.services.approval_and_delivery import (
+    update_draft,
+    approve,
+    reject,
+    send_approved,
+    ApprovalError,
+)
+from app.services.sales_outcomes import request_quote, mark_won, mark_lost, OutcomeError
+from app.integrations.email_provider import EmailNotConfiguredError
+
+router = APIRouter(prefix="/campaigns", tags=["OBJ-003"])
+
+
+@router.post("", response_model=Campaign)
+def create(payload: CampaignCreate):
+    try:
+        return create_campaign(payload.name, payload.send_days, payload.daily_send_limit)
+    except CampaignError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("", response_model=list[Campaign])
+def list_all():
+    return list_campaigns()
+
+
+@router.get("/{campaign_id}", response_model=Campaign)
+def get_one(campaign_id: int):
+    try:
+        return get_campaign(campaign_id)
+    except CampaignError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{campaign_id}/assign/{batch_id}", response_model=AssignResult)
+def assign(campaign_id: int, batch_id: str):
+    try:
+        return assign_batch_to_campaign(campaign_id, batch_id)
+    except CampaignError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/{campaign_id}/prospects", response_model=list[CampaignProspect])
+def prospects(campaign_id: int):
+    return list_campaign_prospects(campaign_id)
+
+
+@router.put("/{campaign_id}/prospects/{prospect_row_id}/draft", tags=["OBJ-005"])
+def edit_draft(campaign_id: int, prospect_row_id: int, payload: DraftUpdate):
+    try:
+        update_draft(campaign_id, prospect_row_id, payload.subject, payload.body)
+        return {"status": "updated"}
+    except ApprovalError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/approve", tags=["OBJ-005"])
+def approve_one(campaign_id: int, prospect_row_id: int):
+    try:
+        approve(campaign_id, prospect_row_id)
+        return {"status": "approved"}
+    except ApprovalError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/reject", tags=["OBJ-005"])
+def reject_one(campaign_id: int, prospect_row_id: int):
+    try:
+        reject(campaign_id, prospect_row_id)
+        return {"status": "rejected"}
+    except ApprovalError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/send", response_model=SendResult, tags=["OBJ-006"])
+def send(campaign_id: int):
+    """Actually sends every Approved prospect via Gmail. Fails clearly with
+    a 503 if GMAIL_ADDRESS/GMAIL_APP_PASSWORD aren't set yet -- nothing
+    pretends to send when it can't."""
+    try:
+        return send_approved(campaign_id)
+    except EmailNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/request-quote", tags=["OBJ-011"])
+def quote(campaign_id: int, prospect_row_id: int):
+    try:
+        request_quote(campaign_id, prospect_row_id)
+        return {"status": "QuoteRequested"}
+    except OutcomeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/won", tags=["OBJ-011"])
+def won(campaign_id: int, prospect_row_id: int, payload: WonPayload):
+    try:
+        mark_won(campaign_id, prospect_row_id, payload.deal_value)
+        return {"status": "Won"}
+    except OutcomeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/lost", tags=["OBJ-011"])
+def lost(campaign_id: int, prospect_row_id: int, payload: LostPayload):
+    try:
+        mark_lost(campaign_id, prospect_row_id, payload.reason)
+        return {"status": "Lost"}
+    except OutcomeError as e:
+        raise HTTPException(status_code=422, detail=str(e))

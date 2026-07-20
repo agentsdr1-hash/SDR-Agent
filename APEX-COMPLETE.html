@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>APEX — AI-Powered SDR Pilot</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --ink:#16233F; --paper:#F4F7FC; --panel:#FFFFFF; --line:#DDE4F0; --line-soft:#EAEFF8;
+  --blue:#2457D9; --blue-deep:#17399E; --blue-soft:#E7EEFC;
+  --sky:#0EA5E9; --sky-soft:#E3F5FC;
+  --indigo:#6D5BD0; --indigo-soft:#ECE9FA;
+  --valid:#1D9A63; --valid-soft:#E1F5EB;
+  --invalid:#DC3B49; --invalid-soft:#FBE6E8;
+  --dup:#D9880E; --dup-soft:#FBF0DC;
+  --muted:#66708C;
+  --display:"Space Grotesk",sans-serif;
+  --sans:"IBM Plex Sans",-apple-system,sans-serif;
+  --mono:"IBM Plex Mono","SF Mono",Consolas,monospace;
+  --shadow:0 1px 3px rgba(22,35,63,.06),0 8px 24px rgba(22,35,63,.08);
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);}
+
+/* Topbar */
+.topbar{background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:100;}
+.topbar-inner{max-width:1060px;margin:0 auto;padding:13px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;}
+.brand{display:flex;align-items:center;gap:9px;flex-shrink:0;}
+.brand-name{font-family:var(--display);font-weight:700;font-size:17px;}
+.brand-sub{font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.05em;}
+.email-badge{font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;flex-shrink:0;}
+.badge-on{background:var(--valid-soft);color:var(--valid);}
+.badge-off{background:var(--dup-soft);color:var(--dup);}
+.demo-notice{font-family:var(--mono);font-size:10px;color:var(--muted);background:var(--blue-soft);padding:3px 9px;border-radius:4px;flex-shrink:0;}
+
+/* Tabs */
+.tabs{display:flex;gap:2px;background:var(--paper);padding:4px;border-radius:10px;border:1px solid var(--line);}
+.tab{font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--muted);padding:6px 14px;border-radius:7px;cursor:pointer;border:none;background:transparent;display:flex;align-items:center;gap:5px;white-space:nowrap;transition:all .15s;}
+.tab:hover{color:var(--ink);background:var(--line-soft);}
+.tab.active{background:var(--blue);color:#fff;}
+.tab svg{width:13px;height:13px;flex-shrink:0;}
+
+/* Page */
+.page{max-width:1060px;margin:0 auto;padding:26px 24px 80px;}
+.view{display:none;}
+.view.active{display:block;animation:rise .2s ease;}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* Panel */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:20px;margin-bottom:16px;box-shadow:var(--shadow);}
+.panel-head{display:flex;align-items:center;gap:9px;margin-bottom:14px;flex-wrap:wrap;}
+.step-dot{width:21px;height:21px;border-radius:50%;background:var(--blue);color:#fff;font-family:var(--mono);font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.panel h2{font-family:var(--display);font-size:14.5px;font-weight:600;margin:0;}
+.obj-tag{font-family:var(--mono);font-size:10px;color:var(--blue-deep);background:var(--blue-soft);padding:2px 7px;border-radius:4px;margin-left:auto;}
+.page-title{font-family:var(--display);font-size:21px;font-weight:700;margin:0 0 18px;}
+
+/* Grid stats */
+.grid{display:grid;gap:9px;margin-top:12px;}
+.g3{grid-template-columns:repeat(3,1fr);}
+.g4{grid-template-columns:repeat(4,1fr);}
+.g5{grid-template-columns:repeat(5,1fr);}
+.g6{grid-template-columns:repeat(6,1fr);}
+.stat{border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--paper);}
+.stat .n{font-family:var(--display);font-size:22px;font-weight:700;}
+.stat .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:1px;}
+
+/* Dropzone */
+.dropzone{border:1.5px dashed var(--line);border-radius:9px;padding:30px 18px;text-align:center;cursor:pointer;transition:all .15s;}
+.dropzone:hover,.dropzone.drag{border-color:var(--blue);background:var(--blue-soft);}
+.dz-title{font-family:var(--display);font-size:13.5px;font-weight:600;}
+.dz-sub{font-size:12px;color:var(--muted);margin-top:4px;}
+input[type="file"]{display:none;}
+
+/* Inputs */
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+input[type="text"],select,textarea{flex:1;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-family:var(--sans);font-size:12.5px;background:var(--paper);color:var(--ink);}
+input[type="text"]:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:1px;}
+textarea{min-height:90px;resize:vertical;font-size:12.5px;line-height:1.5;}
+.edit-subject{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-family:var(--mono);font-size:12px;margin-bottom:6px;background:var(--panel);}
+.edit-subject:focus{outline:2px solid var(--blue);outline-offset:1px;}
+
+/* Buttons */
+.btn{font-family:var(--sans);font-size:12.5px;font-weight:600;border:none;border-radius:7px;padding:9px 16px;cursor:pointer;background:var(--blue);color:#fff;white-space:nowrap;transition:background .15s;}
+.btn:hover{background:var(--blue-deep);}
+.btn.sec{background:var(--panel);color:var(--ink);border:1px solid var(--line);}
+.btn.sec:hover{background:var(--blue-soft);border-color:var(--blue);}
+.btn.ok{background:var(--valid-soft);color:var(--valid);}
+.btn.ok:hover{background:var(--valid);color:#fff;}
+.btn.reject{background:var(--invalid-soft);color:var(--invalid);}
+.btn.reject:hover{background:var(--invalid);color:#fff;}
+.btn.sky{background:var(--sky-soft);color:#0C7CA6;}
+.btn.sky:hover{background:var(--sky);color:#fff;}
+.btn.danger{background:var(--invalid-soft);color:var(--invalid);}
+.btn.danger:hover{background:var(--invalid);color:#fff;}
+.btn:disabled{opacity:.35;cursor:not-allowed;}
+
+/* Status */
+.status{font-family:var(--mono);font-size:11.5px;margin-top:9px;color:var(--muted);min-height:15px;}
+.status.err{color:var(--invalid);}
+.divider{display:flex;align-items:center;gap:12px;margin:14px 0;color:#A6AEC4;font-size:11px;text-transform:uppercase;letter-spacing:.06em;}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line);}
+
+/* Table */
+.tbl-wrap{border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:12px;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+thead th{background:var(--blue-soft);color:var(--blue-deep);font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);}
+tbody td{padding:8px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle;}
+tbody tr:last-child td{border-bottom:none;}
+tbody tr:hover{background:var(--blue-soft);}
+.mono{font-family:var(--mono);font-size:11.5px;}
+.muted{color:var(--muted);font-size:11.5px;}
+.nowrap{white-space:nowrap;}
+
+/* Pills */
+.pill{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:999px;font-weight:500;white-space:nowrap;}
+.pill::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0;}
+.p-valid,.p-won{background:var(--valid-soft);color:var(--valid);}
+.p-invalid,.p-lost,.p-rejected{background:var(--invalid-soft);color:var(--invalid);}
+.p-dup{background:var(--dup-soft);color:var(--dup);}
+.p-existing,.p-replied,.p-quote{background:var(--indigo-soft);color:var(--indigo);}
+.p-neutral,.p-queued,.p-approved,.p-draft{background:var(--line-soft);color:var(--muted);}
+.p-sent,.p-sky{background:var(--sky-soft);color:#0C7CA6;}
+.p-auto{background:var(--invalid-soft);color:var(--invalid);}
+.p-manual{background:var(--line-soft);color:var(--muted);}
+.p-reminder{background:var(--dup-soft);color:var(--dup);}
+.p-closed{background:var(--line-soft);color:var(--muted);}
+.p-suppressed{background:var(--invalid-soft);color:var(--invalid);}
+
+/* Email cards */
+.email-card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px;background:var(--paper);}
+.email-card .ehead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
+.email-card .who{font-family:var(--display);font-weight:600;font-size:13px;}
+.email-card .who span{display:block;font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400;}
+.email-card .ebody{font-size:12.5px;white-space:pre-wrap;line-height:1.5;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:10px 12px;margin-bottom:8px;}
+.email-card .eactions{display:flex;gap:7px;align-items:center;flex-wrap:wrap;}
+.edited-badge{font-family:var(--mono);font-size:9.5px;color:var(--blue);background:var(--blue-soft);padding:2px 6px;border-radius:3px;}
+.day-note{font-size:10.5px;color:var(--muted);font-family:var(--mono);}
+
+/* KB */
+.kb-card{border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin-bottom:9px;background:var(--paper);}
+.kb-card .kq{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:5px;}
+.kb-card .ka{font-size:12.5px;line-height:1.5;}
+.kb-card .ks{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:6px;}
+.qual-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;}
+.qtag{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:999px;background:var(--indigo-soft);color:var(--indigo);font-weight:600;}
+.qtag.High{background:var(--invalid-soft);color:var(--invalid);}
+.qtag.Medium{background:var(--dup-soft);color:var(--dup);}
+.qtag.Low{background:var(--valid-soft);color:var(--valid);}
+
+/* Bar track */
+.bar-track{height:7px;border-radius:999px;background:var(--line-soft);overflow:hidden;display:flex;margin-top:8px;}
+.bs-queued{background:#C7CEDD;} .bs-approved{background:var(--valid);} .bs-rejected{background:var(--invalid);}
+.bs-sent{background:var(--sky);} .bs-replied{background:var(--indigo);} .bs-won{background:var(--valid);}
+.bs-lost{background:var(--invalid);} .bs-closed{background:#4B5468;} .bs-awaiting{background:var(--sky);}
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;font-family:var(--mono);font-size:10.5px;color:var(--muted);}
+.legend span{display:flex;align-items:center;gap:3px;}
+.dot{width:6px;height:6px;border-radius:50%;}
+
+/* misc */
+.empty{color:var(--muted);font-size:12.5px;padding:16px 0;text-align:center;}
+.hidden{display:none;}
+.hint{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:6px;}
+.mt12{margin-top:12px;} .mt16{margin-top:16px;}
+.seed-note{font-size:11px;color:var(--muted);margin-top:8px;font-family:var(--mono);}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path d="M12 3L21 20H3L12 3Z" stroke="#2457D9" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M12 3L16.5 20" stroke="#0EA5E9" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand-name">APEX</span>
+      <span class="brand-sub">AI-POWERED SDR PILOT</span>
+    </div>
+    <div class="tabs" id="mainTabs">
+      <button class="tab" onclick="go('import')">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Import
+      </button>
+      <button class="tab" onclick="go('campaigns')">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>Campaigns
+      </button>
+      <button class="tab" onclick="go('kb')">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 5a2 2 0 012-2h9a2 2 0 012 2v14l-6.5-3L4 19V5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>Knowledge Base
+      </button>
+      <button class="tab" onclick="go('dashboard')">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="12" width="4" height="8" rx="1" stroke="currentColor" stroke-width="2"/><rect x="10" y="7" width="4" height="13" rx="1" stroke="currentColor" stroke-width="2"/><rect x="16" y="3" width="4" height="17" rx="1" stroke="currentColor" stroke-width="2"/></svg>Dashboard
+      </button>
+      <button class="tab" onclick="go('admin')">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Admin
+      </button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+      <span class="demo-notice" id="modeNotice">DEMO MODE</span>
+      <span class="email-badge badge-off" id="emailBadge">Email: not set</span>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+
+<!-- ══════════════ IMPORT ══════════════ -->
+<div class="view" id="vImport">
+  <div class="page-title">Prospect Import</div>
+
+  <div class="panel">
+    <div class="panel-head"><div class="step-dot">1</div><h2>Bring in a file</h2><span class="obj-tag">OBJ-001</span></div>
+    <div class="dropzone" id="dropzone">
+      <div class="dz-title">Drop a CSV or XLSX here, or click to browse</div>
+      <div class="dz-sub">Headers like "First Name", "Email", "Company" are auto-matched</div>
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls"/>
+    </div>
+    <div class="mt12 row">
+      <button class="btn sec" id="sampleBtn">Load sample data</button>
+    </div>
+    <div class="divider">or pull from a URL (server mode only)</div>
+    <div class="row">
+      <input type="text" id="urlInput" placeholder="https://drive.example.com/prospects.csv"/>
+      <button class="btn sky" id="urlBtn">Fetch & import</button>
+    </div>
+    <div class="status" id="importStatus"></div>
+    <div class="seed-note">Existing-customer check seeded with: jsmith@acmecorp.com · dlee@globex.com</div>
+  </div>
+
+  <div class="panel hidden" id="pResults">
+    <div class="panel-head"><div class="step-dot">2</div><h2>Validation results</h2><span class="obj-tag">OBJ-002</span></div>
+    <div class="grid g4">
+      <div class="stat"><div class="n" style="color:var(--valid)" id="rV">–</div><div class="lbl">Valid</div></div>
+      <div class="stat"><div class="n" style="color:var(--invalid)" id="rI">–</div><div class="lbl">Invalid</div></div>
+      <div class="stat"><div class="n" style="color:var(--dup)" id="rD">–</div><div class="lbl">Duplicate</div></div>
+      <div class="stat"><div class="n" style="color:var(--indigo)" id="rE">–</div><div class="lbl">Existing customer</div></div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Company</th><th>Status</th><th>Notes</th></tr></thead>
+      <tbody id="rBody"></tbody></table>
+    </div>
+  </div>
+
+  <div class="panel hidden" id="pCampaign">
+    <div class="panel-head"><div class="step-dot">3</div><h2>Assign to a campaign</h2><span class="obj-tag">OBJ-003</span></div>
+    <div class="row">
+      <select id="campSelect"></select>
+      <button class="btn" id="assignBtn">Assign valid prospects</button>
+    </div>
+    <div class="divider">or create one</div>
+    <div class="row">
+      <input type="text" id="campName" placeholder="Campaign name e.g. Q3 Outbound — New Prospects"/>
+      <button class="btn sec" id="campCreate">Create campaign</button>
+    </div>
+    <div class="status" id="campStatus"></div>
+  </div>
+</div>
+
+<!-- ══════════════ CAMPAIGNS ══════════════ -->
+<div class="view" id="vCampaigns">
+  <div class="page-title">Campaign Review</div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Select campaign</h2><span class="obj-tag">OBJ-005 · OBJ-006 · OBJ-007</span></div>
+    <div class="row">
+      <select id="reviewSelect"></select>
+      <button class="btn sec" id="reviewRefresh">↻ Refresh</button>
+      <button class="btn sky" id="sendAllBtn">Send all approved</button>
+      <button class="btn sec" id="advDayBtn">Simulate next day →</button>
+    </div>
+    <div class="status" id="reviewStatus"></div>
+    <div class="hint" id="dayLabel"></div>
+  </div>
+
+  <div class="panel hidden" id="pProspects">
+    <div class="panel-head">
+      <h2 id="campHeading">Prospects</h2>
+      <div style="margin-left:auto;display:flex;gap:6px;">
+        <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;" id="cs_q">–</div><div class="lbl">Queued</div></div>
+        <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--sky)" id="cs_s">–</div><div class="lbl">Sent</div></div>
+        <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--indigo)" id="cs_r">–</div><div class="lbl">Replied</div></div>
+        <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--valid)" id="cs_w">–</div><div class="lbl">Won</div></div>
+      </div>
+    </div>
+    <div id="emailCards"></div>
+  </div>
+</div>
+
+<!-- ══════════════ KNOWLEDGE BASE ══════════════ -->
+<div class="view" id="vKB">
+  <div class="page-title">Knowledge Base</div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Ask a question</h2><span class="obj-tag">OBJ-009 · rule-based MVP</span></div>
+    <div class="hint" style="margin:0 0 10px;">Keyword matching — finds entries that share words with your question. Upgrade to semantic search once an LLM API key is available.</div>
+    <div class="row">
+      <input type="text" id="kbQ" placeholder="e.g. do you offer volume discounts"/>
+      <button class="btn" id="kbAsk">Ask</button>
+    </div>
+    <div class="row mt12">
+      <button class="btn sec" id="kbLoad">Load my own KB (.json)</button>
+      <button class="btn sec" id="kbReset">Reset to sample KB</button>
+      <input type="file" id="kbFile" accept=".json" style="display:none;"/>
+      <span class="hint" style="margin:0;align-self:center;" id="kbNote"></span>
+    </div>
+    <div class="status" id="kbStatus"></div>
+  </div>
+
+  <div class="panel" id="kbResultsPanel">
+    <div class="panel-head"><h2>Results</h2></div>
+    <div id="kbResults"><div class="empty">Ask a question above to search the knowledge base.</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>All entries (<span id="kbCount">0</span>)</h2></div>
+    <div id="kbAll"></div>
+  </div>
+</div>
+
+<!-- ══════════════ DASHBOARD ══════════════ -->
+<div class="view" id="vDashboard">
+  <div class="page-title" style="display:flex;align-items:center;justify-content:space-between;">
+    Pipeline Dashboard
+    <button class="btn sec" style="font-size:12px;padding:6px 12px;" onclick="loadDashboard()">↻ Refresh</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Prospect funnel</h2><span class="obj-tag">OBJ-001 · OBJ-002</span></div>
+    <div class="grid g5">
+      <div class="stat"><div class="n" style="color:var(--valid)" id="dV">–</div><div class="lbl">Valid</div></div>
+      <div class="stat"><div class="n" style="color:var(--invalid)" id="dI">–</div><div class="lbl">Invalid</div></div>
+      <div class="stat"><div class="n" style="color:var(--dup)" id="dD">–</div><div class="lbl">Duplicate</div></div>
+      <div class="stat"><div class="n" style="color:var(--indigo)" id="dE">–</div><div class="lbl">Existing customer</div></div>
+      <div class="stat"><div class="n" id="dT">–</div><div class="lbl">Total imported</div></div>
+    </div>
+    <div class="status mt12" id="dNote"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Outreach funnel</h2><span class="obj-tag">OBJ-005 · OBJ-006 · OBJ-007</span></div>
+    <div class="grid g6">
+      <div class="stat"><div class="n" id="of_q">–</div><div class="lbl">Queued</div></div>
+      <div class="stat"><div class="n" style="color:var(--valid)" id="of_ap">–</div><div class="lbl">Approved</div></div>
+      <div class="stat"><div class="n" style="color:var(--sky)" id="of_s">–</div><div class="lbl">Awaiting reply</div></div>
+      <div class="stat"><div class="n" style="color:var(--indigo)" id="of_r">–</div><div class="lbl">Replied</div></div>
+      <div class="stat"><div class="n" style="color:#4B5468" id="of_c">–</div><div class="lbl">Closed, no reply</div></div>
+      <div class="stat"><div class="n" style="color:var(--invalid)" id="of_rj">–</div><div class="lbl">Rejected</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Value captured</h2><span class="obj-tag">OBJ-011-lite</span></div>
+    <div class="grid g5">
+      <div class="stat"><div class="n" style="color:var(--valid)" id="vc_w">–</div><div class="lbl">Customers won</div></div>
+      <div class="stat"><div class="n" style="color:#1B365D" id="vc_t">–</div><div class="lbl">Total turnover</div></div>
+      <div class="stat"><div class="n" style="color:var(--indigo)" id="vc_q">–</div><div class="lbl">Quotes requested</div></div>
+      <div class="stat"><div class="n" style="color:var(--invalid)" id="vc_l">–</div><div class="lbl">Deals lost</div></div>
+      <div class="stat"><div class="n" id="vc_wr">–</div><div class="lbl">Win rate</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>SDR performance</h2><span class="obj-tag">activity metrics</span></div>
+    <div class="grid g4">
+      <div class="stat"><div class="n" style="color:var(--sky)" id="sp_s">–</div><div class="lbl">Emails sent</div></div>
+      <div class="stat"><div class="n" style="color:var(--indigo)" id="sp_r">–</div><div class="lbl">Replies received</div></div>
+      <div class="stat"><div class="n" id="sp_rr">–</div><div class="lbl">Response rate</div></div>
+      <div class="stat"><div class="n" id="sp_ar">–</div><div class="lbl">Avg. reply time</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Campaigns</h2></div>
+    <div id="dCamps"><div class="empty">No campaign data yet.</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Audit log</h2><span class="obj-tag">OBJ-014</span></div>
+    <div class="tbl-wrap">
+      <table><thead><tr><th>When</th><th>Event</th><th>Entity</th><th>Details</th></tr></thead>
+      <tbody id="dAudit"></tbody></table>
+    </div>
+    <div class="empty hidden" id="dAuditEmpty">No audit events yet.</div>
+  </div>
+</div>
+
+<!-- ══════════════ ADMIN ══════════════ -->
+<div class="view" id="vAdmin">
+  <div class="page-title">Administration Console</div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Email integration</h2><span class="obj-tag">OBJ-016</span></div>
+    <div class="grid g4">
+      <div class="stat"><div class="n" id="es_c">–</div><div class="lbl">Gmail configured</div></div>
+      <div class="stat"><div class="n" id="es_i">–</div><div class="lbl">Poll interval</div></div>
+      <div class="stat"><div class="n" id="es_lp">–</div><div class="lbl">Last poll</div></div>
+      <div class="stat"><div class="n" id="es_rf">–</div><div class="lbl">Replies found</div></div>
+    </div>
+    <div class="status" id="es_err"></div>
+    <div class="row mt12">
+      <button class="btn sec" id="pollNow">Trigger poll now</button>
+      <span class="hint" style="margin:0 0 0 8px;">To connect: add GMAIL_ADDRESS + GMAIL_APP_PASSWORD to .env and restart.</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Suppression list</h2><span class="obj-tag">OBJ-015</span></div>
+    <p class="hint" style="margin:0 0 10px;">Auto-populated when an opt-out is detected in a reply. Manually add here anytime. Checked at both campaign assignment and send time — nothing gets through.</p>
+    <div class="row">
+      <input type="text" id="supEmail" placeholder="email@company.com"/>
+      <input type="text" id="supReason" placeholder="Reason (optional)" style="max-width:240px;"/>
+      <button class="btn" id="supAdd">Suppress</button>
+    </div>
+    <div class="status" id="supStatus"></div>
+    <div class="tbl-wrap mt12">
+      <table><thead><tr><th>Email</th><th>Reason</th><th>Source</th><th>Added</th><th></th></tr></thead>
+      <tbody id="supBody"></tbody></table>
+    </div>
+    <div class="empty hidden" id="supEmpty">No suppressed emails yet.</div>
+  </div>
+</div>
+
+</div><!-- /page -->
+
+<script>
+// ══════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════
+const EXISTING_CUSTOMERS = new Set(['jsmith@acmecorp.com','dlee@globex.com']);
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const CANONICAL = {
+  first_name:['first_name','first','firstname','given name'],
+  last_name:['last_name','last','lastname','surname'],
+  email:['email','email_address','e-mail'],
+  company:['company','company_name','organization','employer'],
+  phone:['phone','phone_number','telephone','mobile'],
+};
+const MATERIAL_KW = ['steel','aluminum','aluminium','plastic','wood','copper','concrete','glass','fabric','rubber','brass','titanium','carbon fiber','stainless'];
+const URGENCY = [
+  {level:'High',words:['asap','urgent','immediately','today','rush','right away','critical']},
+  {level:'Medium',words:['this week','soon','next few days','shortly']},
+  {level:'Low',words:['no rush','whenever','eventually','next month','no hurry']},
+];
+const SAMPLE_KB = [
+  {question:'Do you offer volume discounts?',answer:'Yes — pricing tiers apply at 100, 500, and 1000+ units. Contact sales for custom quotes at higher volumes.',tags:['pricing','discount','volume']},
+  {question:'What materials do you work with?',answer:'Steel, aluminum, and stainless steel. Other materials available on request.',tags:['materials','steel','aluminum']},
+  {question:'What is your typical lead time?',answer:'2–3 weeks from order confirmation. Rush production available for an additional fee.',tags:['lead time','shipping','rush']},
+  {question:'Do you ship internationally?',answer:'Yes — 40+ countries. International orders may have extended lead times for customs.',tags:['shipping','international']},
+  {question:'What is your minimum order quantity?',answer:'50 units for standard products. Custom orders may vary.',tags:['minimum','order','quantity']},
+  {question:'Is there a warranty on products?',answer:'12-month manufacturer warranty covering defects in materials and workmanship.',tags:['warranty','guarantee']},
+];
+let kbEntries = SAMPLE_KB.slice();
+
+// In-memory session data (for demo/standalone mode)
+let validatedProspects = [];
+let campaigns = [];  // {id, name, currentDay, prospects:[]}
+let nextCampId = 1;
+let selectedCampId = null;
+let currentBatch = null;
+
+// Mode: 'demo' = no server, 'server' = connected to backend
+let MODE = 'demo';
+
+// ══════════════════════════════════════════════════════
+// NAVIGATION
+// ══════════════════════════════════════════════════════
+const TABS = ['import','campaigns','kb','dashboard','admin'];
+function go(name) {
+  TABS.forEach((t,i) => {
+    document.getElementById('v'+cap(t)).classList.toggle('active', t===name);
+    document.querySelectorAll('.tab')[i].classList.toggle('active', t===name);
+  });
+  if(name==='dashboard') loadDashboard();
+  if(name==='campaigns') syncReviewSelect();
+  if(name==='admin') { loadEmailStatus(); loadSuppression(); }
+  if(name==='import') syncCampSelect();
+  if(name==='kb') renderKBAll();
+}
+function cap(s) { return s.charAt(0).toUpperCase()+s.slice(1); }
+
+// ══════════════════════════════════════════════════════
+// MODE DETECTION — try to reach the server
+// ══════════════════════════════════════════════════════
+async function detectMode() {
+  try {
+    const r = await fetch('/health', {signal:AbortSignal.timeout(1500)});
+    if(r.ok) {
+      MODE = 'server';
+      document.getElementById('modeNotice').textContent = 'CONNECTED TO SERVER';
+      document.getElementById('modeNotice').style.background = 'var(--valid-soft)';
+      document.getElementById('modeNotice').style.color = 'var(--valid)';
+      checkEmailBadge();
+    }
+  } catch(e) { /* stays demo */ }
+}
+detectMode();
+
+async function checkEmailBadge() {
+  if(MODE !== 'server') return;
+  try {
+    const r = await fetch('/email/status');
+    const d = await r.json();
+    const b = document.getElementById('emailBadge');
+    if(d.configured) { b.textContent='Gmail: connected'; b.className='email-badge badge-on'; }
+    else { b.textContent='Email: not configured'; b.className='email-badge badge-off'; }
+  } catch(e) {}
+}
+
+// ══════════════════════════════════════════════════════
+// IMPORT — OBJ-001
+// ══════════════════════════════════════════════════════
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('drag'); if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => { if(fileInput.files.length) handleFile(fileInput.files[0]); });
+
+document.getElementById('sampleBtn').addEventListener('click', () => {
+  const sample = [
+    {row_number:1,first_name:'Jane',last_name:'Doe',email:'jane.doe@newco.com',company:'NewCo',phone:'555-1111'},
+    {row_number:2,first_name:'John',last_name:'Roberts',email:'john.roberts@examplecorp.com',company:'Example Corp',phone:'555-2222'},
+    {row_number:3,first_name:'Bad',last_name:'Row',email:'not-an-email',company:'BadCo',phone:'555-3333'},
+    {row_number:4,first_name:'',last_name:'',email:'missing@nobody.com',company:'NoNameCo',phone:'555-4444'},
+    {row_number:5,first_name:'Dup',last_name:'Licate',email:'jane.doe@newco.com',company:'NewCo',phone:'555-1111'},
+    {row_number:6,first_name:'Jim',last_name:'Smith',email:'jsmith@acmecorp.com',company:'Acme Corp',phone:'555-5555'},
+  ];
+  setS('importStatus','Loaded 6 sample rows. Validating…');
+  runValidation(sample, 'sample_prospects.csv');
+});
+
+document.getElementById('urlBtn').addEventListener('click', async () => {
+  const url = document.getElementById('urlInput').value.trim();
+  if(!url) return;
+  if(MODE==='server') {
+    setS('importStatus','Fetching…');
+    const r = await fetch('/prospects/import-from-url?url='+encodeURIComponent(url), {method:'POST'});
+    const d = await r.json();
+    if(!r.ok) return setS('importStatus', d.detail||'Failed', true);
+    setS('importStatus','Imported '+d.row_count+' rows. Validating…');
+    serverValidate(d.batch_id);
+  } else {
+    setS('importStatus','URL import requires server mode. Use file upload instead.', true);
+  }
+});
+
+function mapColumns(cols) {
+  const norm = cols.map(c => [c, c.trim().toLowerCase().replace(/\s+/g,'_')]);
+  const map = {};
+  for(const [can,aliases] of Object.entries(CANONICAL)) {
+    for(const [orig,n] of norm) { if(aliases.includes(n)) { map[can]=orig; break; } }
+  }
+  return map;
+}
+
+function handleFile(file) {
+  setS('importStatus','Reading '+file.name+'…');
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      if(MODE==='server') {
+        const form = new FormData(); form.append('file', file);
+        const r = await fetch('/prospects/import', {method:'POST', body:form});
+        const d = await r.json();
+        if(!r.ok) return setS('importStatus', d.detail||'Import failed', true);
+        setS('importStatus','Imported '+d.row_count+' rows. Validating…');
+        serverValidate(d.batch_id);
+      } else {
+        const wb = XLSX.read(e.target.result, {type:'binary'});
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
+        if(!rows.length) return setS('importStatus','No data rows found', true);
+        const map = mapColumns(Object.keys(rows[0]));
+        if(!map.email) return setS('importStatus','No recognizable email column found', true);
+        const prospects = rows.map((r,i) => ({
+          row_number:i+1,
+          first_name:map.first_name?(r[map.first_name]||'').toString().trim():'',
+          last_name:map.last_name?(r[map.last_name]||'').toString().trim():'',
+          email:map.email?(r[map.email]||'').toString().trim():'',
+          company:map.company?(r[map.company]||'').toString().trim():'',
+          phone:map.phone?(r[map.phone]||'').toString().trim():'',
+        }));
+        setS('importStatus','Imported '+prospects.length+' rows. Validating…');
+        runValidation(prospects, file.name);
+      }
+    } catch(err) { setS('importStatus', err.message, true); }
+  };
+  reader.onerror = () => setS('importStatus','Could not read file', true);
+  reader.readAsBinaryString(file);
+}
+
+// VALIDATION — OBJ-002
+function evalRow(row, seenEmails) {
+  const email = (row.email||'').trim();
+  const hasName = !!((row.first_name||'').trim()||(row.last_name||'').trim());
+  if(!email) return ['Invalid','Missing email address'];
+  if(!EMAIL_RE.test(email)) return ['Invalid',`Malformed email: '${email}'`];
+  if(!hasName) return ['Invalid','Missing first and last name'];
+  if(EXISTING_CUSTOMERS.has(email.toLowerCase())) return ['Existing Customer','Matches an existing customer record'];
+  if(seenEmails.has(email.toLowerCase())) return ['Duplicate','Duplicate email in this batch'];
+  return ['Valid',''];
+}
+
+function runValidation(prospects, filename) {
+  const seen = new Set();
+  const counts = {Valid:0,Invalid:0,Duplicate:0,'Existing Customer':0};
+  const results = prospects.map(row => {
+    const [status,note] = evalRow(row, seen);
+    counts[status]++;
+    if(status!=='Invalid'&&row.email) seen.add(row.email.toLowerCase());
+    return {...row, status, validation_notes:note};
+  });
+  validatedProspects = results;
+  currentBatch = filename;
+  renderValidation(counts, results);
+  document.getElementById('pResults').classList.remove('hidden');
+  document.getElementById('pCampaign').classList.remove('hidden');
+  syncCampSelect();
+}
+
+async function serverValidate(batchId) {
+  currentBatch = batchId;
+  const r = await fetch('/prospects/validate/'+batchId, {method:'POST'});
+  const s = await r.json();
+  if(!r.ok) return setS('importStatus', s.detail||'Validation failed', true);
+  setS('importStatus','Done — batch '+batchId);
+  const rows = await (await fetch('/prospects/'+batchId)).json();
+  const counts = {Valid:s.valid,Invalid:s.invalid,Duplicate:s.duplicate,'Existing Customer':s.existing_customer};
+  renderValidation(counts, rows);
+  document.getElementById('pResults').classList.remove('hidden');
+  document.getElementById('pCampaign').classList.remove('hidden');
+  syncCampSelect();
+}
+
+function renderValidation(counts, rows) {
+  set('rV',counts.Valid); set('rI',counts.Invalid); set('rD',counts.Duplicate); set('rE',counts['Existing Customer']);
+  document.getElementById('rBody').innerHTML = rows.map(r =>
+    `<tr><td class="mono">${r.row_number}</td><td>${esc([r.first_name,r.last_name].filter(Boolean).join(' '))||'—'}</td><td class="mono">${esc(r.email||'')}</td><td>${esc(r.company||'—')}</td><td>${pill(r.status)}</td><td class="muted">${esc(r.validation_notes||'—')}</td></tr>`
+  ).join('');
+}
+
+// CAMPAIGN ASSIGNMENT — OBJ-003
+function syncCampSelect() {
+  const sel = document.getElementById('campSelect');
+  if(MODE==='server') {
+    fetch('/campaigns').then(r=>r.json()).then(camps => {
+      sel.innerHTML = camps.length
+        ? camps.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')
+        : '<option value="">No campaigns yet — create one</option>';
+    });
+  } else {
+    sel.innerHTML = campaigns.length
+      ? campaigns.map(c=>`<option value="${c.id}">${c.name} (${c.prospects.length} queued)</option>`).join('')
+      : '<option value="">No campaigns yet — create one below</option>';
+  }
+}
+
+document.getElementById('campCreate').addEventListener('click', async () => {
+  const name = document.getElementById('campName').value.trim();
+  if(!name) return setS('campStatus','Enter a campaign name.', true);
+  if(MODE==='server') {
+    const r = await fetch('/campaigns', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    const d = await r.json();
+    if(!r.ok) return setS('campStatus', d.detail||'Failed', true);
+    setS('campStatus','Created "'+d.name+'".');
+  } else {
+    campaigns.push({id:nextCampId++,name,currentDay:1,prospects:[]});
+    setS('campStatus','Created "'+name+'".');
+  }
+  document.getElementById('campName').value = '';
+  syncCampSelect();
+});
+
+document.getElementById('assignBtn').addEventListener('click', async () => {
+  const cid = document.getElementById('campSelect').value;
+  if(!cid) return setS('campStatus','Choose or create a campaign.', true);
+  if(!currentBatch && !validatedProspects.length) return setS('campStatus','Import a file first.', true);
+  if(MODE==='server') {
+    const r = await fetch('/campaigns/'+cid+'/assign/'+currentBatch, {method:'POST'});
+    const d = await r.json();
+    if(!r.ok) return setS('campStatus', d.detail||'Failed', true);
+    setS('campStatus',`Assigned ${d.assigned}. Skipped: ${d.skipped_not_valid} not valid, ${d.skipped_suppressed||0} suppressed, ${d.skipped_already_in_campaign} already in campaign.`);
+  } else {
+    const camp = campaigns.find(c=>c.id===Number(cid));
+    if(!camp) return;
+    let assigned=0, skipped=0;
+    validatedProspects.filter(p=>p.status==='Valid').forEach(p => {
+      if(camp.prospects.some(cp=>cp.email.toLowerCase()===p.email.toLowerCase())) { skipped++; return; }
+      const d = draftFor(p);
+      camp.prospects.push({...p, cpStatus:'Queued', subject:d.subject, body:d.body, templateSubject:d.subject, templateBody:d.body, sentDay:null, emailsSent:0, replied:false, quoteRequested:false, qualification:null, dealValue:null});
+      assigned++;
+    });
+    setS('campStatus',`Assigned ${assigned}. Skipped ${skipped} already in campaign.`);
+    syncCampSelect();
+    syncReviewSelect();
+  }
+});
+
+// ══════════════════════════════════════════════════════
+// CAMPAIGNS — Review / Approve / Send / OBJ-007
+// ══════════════════════════════════════════════════════
+function syncReviewSelect() {
+  const sel = document.getElementById('reviewSelect');
+  if(MODE==='server') {
+    fetch('/campaigns').then(r=>r.json()).then(camps => {
+      sel.innerHTML = camps.length
+        ? camps.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')
+        : '<option value="">No campaigns yet</option>';
+      if(camps.length) loadServerProspects(camps[0].id);
+    });
+  } else {
+    sel.innerHTML = campaigns.length
+      ? campaigns.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')
+      : '<option value="">No campaigns yet</option>';
+    if(campaigns.length) { selectedCampId=campaigns[0].id; renderEmailCards(); }
+  }
+}
+document.getElementById('reviewSelect').addEventListener('change', e => {
+  if(MODE==='server') loadServerProspects(e.target.value);
+  else { selectedCampId=Number(e.target.value); renderEmailCards(); }
+});
+document.getElementById('reviewRefresh').addEventListener('click', syncReviewSelect);
+
+document.getElementById('sendAllBtn').addEventListener('click', async () => {
+  if(MODE==='server') {
+    const cid = document.getElementById('reviewSelect').value;
+    setS('reviewStatus','Sending all approved…');
+    const r = await fetch('/campaigns/'+cid+'/send', {method:'POST'});
+    const d = await r.json();
+    if(!r.ok) return setS('reviewStatus', d.detail||'Failed', true);
+    setS('reviewStatus',`Sent ${d.sent}. Suppressed ${d.suppressed||0}. Failed ${d.failed}.`);
+    loadServerProspects(cid);
+  } else {
+    const camp = campaigns.find(c=>c.id===selectedCampId);
+    if(!camp) return;
+    let sent=0;
+    camp.prospects.forEach(p => { if(p.cpStatus==='Approved') { p.cpStatus='Sent'; p.sentDay=camp.currentDay; p.emailsSent=(p.emailsSent||0)+1; sent++; } });
+    setS('reviewStatus','Sent '+sent+' approved email(s) on day '+camp.currentDay+'.');
+    renderEmailCards();
+  }
+});
+
+document.getElementById('advDayBtn').addEventListener('click', () => {
+  const camp = campaigns.find(c=>c.id===selectedCampId);
+  if(!camp) return;
+  camp.currentDay++;
+  let touched=0;
+  camp.prospects.forEach(p => {
+    if(!['Sent','Reminder1Sent','Reminder2Sent'].includes(p.cpStatus)) return;
+    const el = camp.currentDay - p.sentDay;
+    if(p.cpStatus==='Reminder2Sent'&&el>=9) { p.cpStatus='Closed'; touched++; }
+    else if(el>=8&&p.cpStatus!=='Reminder2Sent') { p.cpStatus='Reminder2Sent'; p.emailsSent=(p.emailsSent||0)+1; touched++; }
+    else if(el>=4&&p.cpStatus==='Sent') { p.cpStatus='Reminder1Sent'; p.emailsSent=(p.emailsSent||0)+1; touched++; }
+  });
+  setS('reviewStatus','Day '+camp.currentDay+'. '+(touched?touched+' prospect(s) moved to next follow-up stage.':'No follow-up actions today.'));
+  document.getElementById('dayLabel').textContent = 'Campaign day '+camp.currentDay+' · Day 4→Reminder #1 · Day 8→Reminder #2 · Day 9→Closed';
+  renderEmailCards();
+});
+
+async function loadServerProspects(cid) {
+  const r = await fetch('/campaigns/'+cid+'/prospects');
+  const rows = await r.json();
+  if(!r.ok) return;
+  const counts = {Queued:0,Sent:0,Replied:0,Won:0};
+  rows.forEach(r => { if(counts[r.status]!==undefined) counts[r.status]++; });
+  set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
+  document.getElementById('pProspects').classList.remove('hidden');
+  document.getElementById('emailCards').innerHTML = rows.map(r => serverProspectCard(r, cid)).join('');
+}
+
+function serverProspectCard(r, cid) {
+  const name = [r.first_name,r.last_name].filter(Boolean).join(' ')||'—';
+  let actions = '';
+  if(r.status==='Queued') actions = `<button class="btn ok" onclick="serverApprove('${cid}',${r.id})">Approve</button><button class="btn reject" onclick="serverReject('${cid}',${r.id})">Reject</button>`;
+  else if(r.status==='Replied') actions = `<button class="btn sec" onclick="serverQuote('${cid}',${r.id})">Log quote</button>`;
+  else if(r.status==='QuoteRequested') actions = `<button class="btn ok" onclick="serverWon('${cid}',${r.id})">Mark Won</button><button class="btn reject" onclick="serverLost('${cid}',${r.id})">Mark Lost</button>`;
+  return `<div class="email-card"><div class="ehead"><div class="who">${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')}</span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span></div></div>`;
+}
+
+async function serverApprove(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/approve',{method:'POST'}); loadServerProspects(cid); }
+async function serverReject(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/reject',{method:'POST'}); loadServerProspects(cid); }
+async function serverQuote(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/request-quote',{method:'POST'}); loadServerProspects(cid); }
+async function serverWon(cid,rid) { const v=prompt('Deal value (optional):'); const dv=v&&!isNaN(parseFloat(v))?parseFloat(v):null; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/won',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deal_value:dv})}); loadServerProspects(cid); }
+async function serverLost(cid,rid) { const r=prompt('Reason (optional):')||null; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/lost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:r})}); loadServerProspects(cid); }
+
+function renderEmailCards() {
+  const camp = campaigns.find(c=>c.id===selectedCampId);
+  if(!camp) return;
+  const counts = {Queued:0,Sent:0,Replied:0,Won:0};
+  camp.prospects.forEach(p => { if(counts[p.cpStatus]!==undefined) counts[p.cpStatus]++; });
+  set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
+  document.getElementById('pProspects').classList.remove('hidden');
+  document.getElementById('emailCards').innerHTML = camp.prospects.map((p,i) => demoCard(p,i,camp)).join('');
+}
+
+function demoCard(p,idx,camp) {
+  const name = [p.first_name,p.last_name].filter(Boolean).join(' ')||p.email;
+  const isQ = p.cpStatus==='Queued';
+  const isSent = ['Sent','Reminder1Sent','Reminder2Sent'].includes(p.cpStatus);
+  const edited = isQ&&(p.subject!==p.templateSubject||p.body!==p.templateBody);
+  let subj = isQ
+    ? `<input class="edit-subject" value="${esc(p.subject||'')}" oninput="updateSubj(${camp.id},${idx},this.value)"/>`
+    : `<div class="day-note" style="margin-bottom:6px;">Subject: ${esc(p.subject||'')}</div>`;
+  let bodyEl = isQ
+    ? `<textarea class="ebody" style="border:none;background:var(--blue-soft);" oninput="updateBody(${camp.id},${idx},this.value)">${esc(p.body||'')}</textarea>`
+    : `<div class="ebody">${esc(p.body||'')}</div>`;
+  let note = '';
+  if(isSent) {
+    const el = camp.currentDay-(p.sentDay||camp.currentDay);
+    if(p.cpStatus==='Sent') note = `<div class="day-note">Sent day ${p.sentDay} · day ${el} of cadence · reminder at day 4</div>`;
+    else if(p.cpStatus==='Reminder1Sent') note = `<div class="day-note">Reminder #1 sent (day 4) · still awaiting reply</div>`;
+    else if(p.cpStatus==='Reminder2Sent') note = `<div class="day-note">Reminder #2 sent (day 8) · closes at day 9 if no reply</div>`;
+  }
+  let actions = '';
+  if(isQ) actions = `<button class="btn ok" onclick="decide(${camp.id},${idx},'Approved')">Approve</button><button class="btn reject" onclick="decide(${camp.id},${idx},'Rejected')">Reject</button><button class="btn sec" onclick="resetDraft(${camp.id},${idx})">Reset</button>${edited?'<span class="edited-badge">edited</span>':''}`;
+  else if(p.cpStatus==='Approved') actions = `<button class="btn sky" onclick="sendOne(${camp.id},${idx})">Send email</button>`;
+  else if(isSent) actions = `<button class="btn sec" onclick="decide(${camp.id},${idx},'Replied')">Mark reply received</button>`;
+  else if(p.cpStatus==='Replied') actions = `<button class="btn sec" onclick="reqQuote(${camp.id},${idx})">Log quote requested</button>`;
+  else if(p.cpStatus==='QuoteRequested') actions = `<button class="btn ok" onclick="markOutcome(${camp.id},${idx},'Won')">Mark Won</button><button class="btn reject" onclick="markOutcome(${camp.id},${idx},'Lost')">Mark Lost</button>`;
+  else if(p.cpStatus==='Closed'||p.cpStatus==='Won'||p.cpStatus==='Lost'||p.cpStatus==='Rejected') actions = `<span class="day-note">Final: ${p.cpStatus}</span>`;
+  // Qual box
+  let qual = '';
+  if(p.replied) {
+    const q = p.qualification;
+    qual = `<div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:10px;"><div class="day-note" style="margin-bottom:6px;">OBJ-010 · paste reply text to extract material/qty/urgency</div><textarea style="font-size:12px;" id="qi-${camp.id}-${idx}" placeholder="Paste reply here e.g. We need 500 steel brackets ASAP">${q?esc(q.rawReply):''}</textarea><button class="btn sec" style="margin-top:6px;" onclick="runQual(${camp.id},${idx})">Run qualification</button>${q?`<div class="qual-tags">${(q.materials.length?q.materials.map(m=>`<span class="qtag">material: ${m}</span>`).join(''):'<span class="qtag">material: none detected</span>')}${(q.quantities.length?q.quantities.map(qt=>`<span class="qtag">qty: ${qt}</span>`).join(''):'<span class="qtag">qty: none</span>')}<span class="qtag ${q.urgency}">urgency: ${q.urgency}</span></div>`:''}</div>`;
+  }
+  return `<div class="email-card"><div class="ehead"><div class="who">${esc(name)}<span>${esc(p.email||'')} · ${esc(p.company||'—')}</span></div>${pill(p.cpStatus)}</div>${subj}${bodyEl}${note}<div class="eactions">${actions}<span class="day-note" style="margin-left:auto;">template placeholder</span></div>${qual}</div>`;
+}
+
+function draftFor(p) {
+  const first=p.first_name||'there', co=p.company||'your team';
+  return {
+    subject:`Quick question for ${co}`,
+    body:`Hi ${first},\n\nI'll keep this short — I noticed ${co} might be a fit for what we're building at APEX, and wanted to see if it's worth a quick conversation.\n\nWould you be open to 15 minutes this week?\n\nBest,\nAPEX SDR`
+  };
+}
+
+function updateSubj(cid,idx,val) { campaigns.find(c=>c.id===cid).prospects[idx].subject=val; }
+function updateBody(cid,idx,val) { campaigns.find(c=>c.id===cid).prospects[idx].body=val; }
+function resetDraft(cid,idx) { const p=campaigns.find(c=>c.id===cid).prospects[idx]; p.subject=p.templateSubject; p.body=p.templateBody; renderEmailCards(); }
+function decide(cid,idx,st) { const p=campaigns.find(c=>c.id===cid).prospects[idx]; p.cpStatus=st; if(st==='Replied') p.replied=true; renderEmailCards(); }
+function sendOne(cid,idx) { const camp=campaigns.find(c=>c.id===cid),p=camp.prospects[idx]; p.cpStatus='Sent'; p.sentDay=camp.currentDay; p.emailsSent=(p.emailsSent||0)+1; renderEmailCards(); }
+function reqQuote(cid,idx) { campaigns.find(c=>c.id===cid).prospects[idx].cpStatus='QuoteRequested'; renderEmailCards(); }
+function markOutcome(cid,idx,st) { const p=campaigns.find(c=>c.id===cid).prospects[idx]; if(st==='Won'){const v=prompt('Deal value (optional):');p.dealValue=v&&!isNaN(parseFloat(v))?parseFloat(v):null;} p.cpStatus=st; renderEmailCards(); }
+function runQual(cid,idx) {
+  const camp=campaigns.find(c=>c.id===cid),p=camp.prospects[idx];
+  const text=(document.getElementById('qi-'+cid+'-'+idx)||{value:''}).value;
+  const lower=text.toLowerCase();
+  const materials=MATERIAL_KW.filter(m=>lower.includes(m));
+  const quantities=text.match(/\b\d[\d,]*\s?(units?|pcs?|pieces?|tons?|boxes?|pallets?|kg|lbs?|rolls?)\b/gi)||[];
+  let urgency='Unspecified';
+  for(const rule of URGENCY) { if(rule.words.some(w=>lower.includes(w))){ urgency=rule.level; break; } }
+  p.qualification={materials,quantities,urgency,rawReply:text};
+  renderEmailCards();
+}
+
+// ══════════════════════════════════════════════════════
+// KNOWLEDGE BASE — OBJ-009
+// ══════════════════════════════════════════════════════
+function scoreEntry(e, words) {
+  const hay=(e.question+' '+e.answer+' '+(e.tags||[]).join(' ')).toLowerCase();
+  return words.reduce((s,w)=>s+(hay.includes(w)?1:0),0);
+}
+document.getElementById('kbAsk').addEventListener('click', () => {
+  const q = document.getElementById('kbQ').value.trim();
+  if(!q) return;
+  const words = q.toLowerCase().split(/\s+/).filter(w=>w.length>2);
+  const results = kbEntries.map(e=>({e,s:scoreEntry(e,words)})).filter(r=>r.s>0).sort((a,b)=>b.s-a.s).slice(0,3);
+  document.getElementById('kbResults').innerHTML = results.length
+    ? results.map(r=>`<div class="kb-card"><div class="kq">${esc(r.e.question)}</div><div class="ka">${esc(r.e.answer)}</div><div class="ks">${r.s} keyword match(es)</div></div>`).join('')
+    : '<div class="empty">No keyword matches. Try different terms, or load a more detailed KB file.</div>';
+  setS('kbStatus',results.length?`Found ${results.length} match(es).`:'No matches found.');
+});
+document.getElementById('kbLoad').addEventListener('click', () => document.getElementById('kbFile').click());
+document.getElementById('kbFile').addEventListener('change', e => {
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{ try { const p=JSON.parse(ev.target.result); if(!Array.isArray(p)) throw new Error('Must be a JSON array of {question,answer,tags}'); kbEntries=p; setS('kbStatus','Loaded '+p.length+' entries from '+f.name); document.getElementById('kbNote').textContent=p.length+' entries loaded'; renderKBAll(); } catch(err){ setS('kbStatus',err.message,true); } };
+  r.readAsText(f);
+});
+document.getElementById('kbReset').addEventListener('click', () => { kbEntries=SAMPLE_KB.slice(); setS('kbStatus','Reset to '+kbEntries.length+' sample entries.'); renderKBAll(); });
+function renderKBAll() {
+  document.getElementById('kbCount').textContent=kbEntries.length;
+  document.getElementById('kbAll').innerHTML=kbEntries.map(e=>`<div class="kb-card"><div class="kq">${esc(e.question)}</div><div class="ka">${esc(e.answer)}</div></div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════
+// DASHBOARD — OBJ-013
+// ══════════════════════════════════════════════════════
+async function loadDashboard() {
+  if(MODE==='server') {
+    try {
+      const [sr,ar] = await Promise.all([fetch('/reports/summary'), fetch('/audit/events?limit=30')]);
+      const d=await sr.json(), audit=await ar.json();
+      const s=d.prospect_status_counts;
+      set('dV',s.Valid); set('dI',s.Invalid); set('dD',s.Duplicate); set('dE',s['Existing Customer']); set('dT',d.total_prospects);
+      document.getElementById('dNote').textContent=d.total_import_batches+' batch(es) · '+d.total_customers_on_file+' existing customers on file';
+      const v=d.value_captured;
+      set('vc_w',v.customers_won); set('vc_t','$'+v.total_turnover.toLocaleString()); set('vc_q',v.quotes_requested); set('vc_l',v.deals_lost); set('vc_wr',v.win_rate_pct+'%');
+      const p=d.sdr_performance;
+      set('sp_s',p.total_emails_sent); set('sp_r',p.total_replies_received); set('sp_rr',p.response_rate_pct+'%'); set('sp_ar',p.avg_response_time_hours==null?'—':p.avg_response_time_hours+'h');
+      // outreach funnel from campaigns
+      const of={q:0,ap:0,s:0,r:0,c:0,rj:0};
+      d.campaigns.forEach(c=>{of.q+=c.queued;of.ap+=c.approved||0;of.s+=c.sent;of.r+=c.replied;of.c+=c.lost||0;of.rj+=c.rejected||0;});
+      set('of_q',of.q);set('of_ap',of.ap);set('of_s',of.s);set('of_r',of.r);set('of_c',of.c);set('of_rj',of.rj);
+      // campaigns
+      document.getElementById('dCamps').innerHTML = d.campaigns.length
+        ? d.campaigns.map(c=>`<div class="kb-card"><div style="display:flex;justify-content:space-between;"><b>${esc(c.name)}</b><span class="mono">${c.total} total · $${c.turnover.toLocaleString()} turnover</span></div><div class="bar-track">${barSegs(c)}</div><div class="legend"><span><span class="dot bs-queued"></span>${c.queued} queued</span><span><span class="dot bs-sent"></span>${c.sent} sent</span><span><span class="dot bs-replied"></span>${c.replied} replied</span><span><span class="dot bs-won"></span>${c.won} won</span></div></div>`).join('')
+        : '<div class="empty">No campaigns yet.</div>';
+      // audit
+      const ab=document.getElementById('dAudit'),ae=document.getElementById('dAuditEmpty');
+      if(!audit.length){ae.classList.remove('hidden');ab.innerHTML='';}
+      else{ae.classList.add('hidden');ab.innerHTML=audit.map(e=>`<tr><td class="mono nowrap">${fmt(e.timestamp)}</td><td><span class="pill p-neutral">${e.event_type}</span></td><td class="mono">${e.entity_type||''}${e.entity_id?' #'+e.entity_id:''}</td><td class="muted">${esc(e.details||'')}</td></tr>`).join('');}
+    } catch(e) { document.getElementById('dNote').textContent='Could not load: '+e.message; }
+  } else {
+    // Session totals from in-memory state
+    const counts={Valid:0,Invalid:0,Duplicate:0,'Existing Customer':0};
+    validatedProspects.forEach(p=>{counts[p.status]=(counts[p.status]||0)+1;});
+    set('dV',counts.Valid);set('dI',counts.Invalid);set('dD',counts.Duplicate);set('dE',counts['Existing Customer']);set('dT',validatedProspects.length);
+    document.getElementById('dNote').textContent=validatedProspects.length?'Session data (resets on reload)':'No data yet — go to Import tab';
+    // outreach funnel + value
+    const of={q:0,ap:0,s:0,r:0,c:0,rj:0};
+    let won=0,lost=0,quotes=0,turnover=0,replied=0;
+    campaigns.forEach(camp=>camp.prospects.forEach(p=>{
+      const st=p.cpStatus;
+      if(st==='Queued')of.q++;else if(st==='Approved')of.ap++;
+      else if(['Sent','Reminder1Sent','Reminder2Sent'].includes(st))of.s++;
+      else if(st==='Replied'){of.r++;replied++;}
+      else if(st==='Closed')of.c++;else if(st==='Rejected')of.rj++;
+      else if(st==='QuoteRequested')quotes++;
+      else if(st==='Won'){won++;quotes++;if(p.dealValue)turnover+=p.dealValue;}
+      else if(st==='Lost'){lost++;quotes++;}
+    }));
+    set('of_q',of.q);set('of_ap',of.ap);set('of_s',of.s);set('of_r',of.r);set('of_c',of.c);set('of_rj',of.rj);
+    set('vc_w',won);set('vc_t','$'+turnover.toLocaleString());set('vc_q',quotes);set('vc_l',lost);
+    const allSent=campaigns.reduce((n,c)=>n+c.prospects.filter(p=>p.emailsSent>0).reduce((s,p)=>s+(p.emailsSent||0),0),0);
+    const rRate=allSent?Math.round((replied/allSent)*100):0;
+    set('sp_s',allSent);set('sp_r',replied);set('sp_rr',rRate+'%');set('sp_ar','—');
+    set('vc_wr',quotes?Math.round((won/quotes)*100)+'%':'0%');
+    document.getElementById('dCamps').innerHTML = campaigns.length
+      ? campaigns.map(c=>{
+          const ct={Queued:0,Approved:0,Sent:0,Replied:0,Won:0,Lost:0,Closed:0,Rejected:0};
+          c.prospects.forEach(p=>{ if(['Reminder1Sent','Reminder2Sent'].includes(p.cpStatus)) ct['Sent']++; else ct[p.cpStatus]=(ct[p.cpStatus]||0)+1; });
+          return `<div class="kb-card"><div style="display:flex;justify-content:space-between;"><b>${esc(c.name)}</b><span class="mono">day ${c.currentDay} · ${c.prospects.length} total</span></div><div class="bar-track"><div class="bs-queued" style="flex:${ct.Queued}"></div><div class="bs-approved" style="flex:${ct.Approved}"></div><div class="bs-sent" style="flex:${ct.Sent}"></div><div class="bs-replied" style="flex:${ct.Replied}"></div><div class="bs-won" style="flex:${ct.Won}"></div></div><div class="legend"><span><span class="dot bs-queued"></span>${ct.Queued} queued</span><span><span class="dot bs-sent"></span>${ct.Sent} sent</span><span><span class="dot bs-replied"></span>${ct.Replied} replied</span><span><span class="dot bs-won"></span>${ct.Won} won</span></div></div>`;
+        }).join('')
+      : '<div class="empty">No campaigns yet — go to Import tab.</div>';
+    document.getElementById('dAuditEmpty').classList.remove('hidden');
+    document.getElementById('dAudit').innerHTML='';
+  }
+}
+
+function barSegs(c) {
+  const t=c.total||1;
+  return `<div class="bs-queued" style="flex:${c.queued/t}"></div><div class="bs-approved" style="flex:${(c.approved||0)/t}"></div><div class="bs-sent" style="flex:${c.sent/t}"></div><div class="bs-replied" style="flex:${c.replied/t}"></div><div class="bs-won" style="flex:${c.won/t}"></div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// ADMIN — OBJ-015, OBJ-016
+// ══════════════════════════════════════════════════════
+async function loadEmailStatus() {
+  if(MODE!=='server') { set('es_c','N/A (demo)'); set('es_i','—'); set('es_lp','—'); set('es_rf','—'); return; }
+  try {
+    const r=await fetch('/email/status'); const d=await r.json();
+    set('es_c',d.configured?'✓ Yes':'✗ No');
+    set('es_i',d.poll_interval_minutes+' min');
+    set('es_lp',d.last_poll_at?fmt(d.last_poll_at):'—');
+    set('es_rf',d.last_poll_replies_found??'—');
+    const el=document.getElementById('es_err');
+    el.textContent=d.last_poll_error?'Last error: '+d.last_poll_error:'';
+    el.classList.toggle('err',!!d.last_poll_error);
+  } catch(e){}
+}
+
+document.getElementById('pollNow').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('supStatus','Poll requires server mode.',true);
+  const r=await fetch('/email/poll-now',{method:'POST'}); const d=await r.json();
+  document.getElementById('es_err').textContent='Poll complete — '+d.replies_found+' reply(ies) found.';
+  loadEmailStatus();
+});
+
+async function loadSuppression() {
+  if(MODE!=='server') { document.getElementById('supEmpty').classList.remove('hidden'); document.getElementById('supBody').innerHTML=''; return; }
+  const r=await fetch('/admin/suppressed'); const rows=await r.json();
+  const b=document.getElementById('supBody'), e=document.getElementById('supEmpty');
+  if(!rows.length){e.classList.remove('hidden');b.innerHTML='';return;}
+  e.classList.add('hidden');
+  b.innerHTML=rows.map(r=>`<tr><td class="mono">${r.email}</td><td class="muted">${r.reason||'—'}</td><td><span class="pill ${r.source==='manual'?'p-manual':'p-auto'}">${r.source}</span></td><td class="muted">${fmt(r.added_at)}</td><td><button class="btn danger" style="padding:3px 9px;font-size:11px;" onclick="removeSup('${r.email}')">Remove</button></td></tr>`).join('');
+}
+
+document.getElementById('supAdd').addEventListener('click', async () => {
+  const email=document.getElementById('supEmail').value.trim();
+  const reason=document.getElementById('supReason').value.trim()||null;
+  if(!email) return setS('supStatus','Enter an email.',true);
+  if(MODE!=='server') return setS('supStatus','Suppression management requires server mode.',true);
+  const r=await fetch('/admin/suppressed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,reason})});
+  const d=await r.json();
+  if(!r.ok) return setS('supStatus',d.detail||'Failed',true);
+  setS('supStatus','Suppressed '+d.email+'.');
+  document.getElementById('supEmail').value=''; document.getElementById('supReason').value='';
+  loadSuppression();
+});
+
+async function removeSup(email) {
+  const r=await fetch('/admin/suppressed/'+encodeURIComponent(email),{method:'DELETE'});
+  const d=await r.json();
+  if(!r.ok) return setS('supStatus',d.detail||'Failed',true);
+  setS('supStatus','Removed '+email+'.'); loadSuppression();
+}
+
+// ══════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════
+function set(id,v){const el=document.getElementById(id);if(el)el.textContent=v;}
+function setS(id,m,e){const el=document.getElementById(id);if(!el)return;el.textContent=m;el.classList.toggle('err',!!e);}
+function fmt(ts){try{return new Date(ts).toLocaleString();}catch(e){return ts;}}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function pill(s){
+  const map={Valid:'p-valid',Invalid:'p-invalid',Duplicate:'p-dup','Existing Customer':'p-existing',
+    Sent:'p-sent',Replied:'p-replied',Suppressed:'p-suppressed',Queued:'p-queued',Approved:'p-approved',
+    Rejected:'p-rejected',Won:'p-won',Lost:'p-lost',QuoteRequested:'p-quote',
+    Reminder1Sent:'p-reminder',Reminder2Sent:'p-reminder',Closed:'p-closed'};
+  return `<span class="pill ${map[s]||'p-neutral'}">${s}</span>`;
+}
+
+// Boot — start on Import tab
+go('import');
+renderKBAll();
+</script>
+</body>
+</html>
