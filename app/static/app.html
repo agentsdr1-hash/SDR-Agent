@@ -170,7 +170,7 @@ tbody tr:hover{background:var(--blue-soft);}
 
 <div class="topbar">
   <div class="topbar-inner">
-    <div class="brand">
+    <div class="brand" onclick="go('import')" style="cursor:pointer;" title="Back to home">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
         <path d="M12 3L21 20H3L12 3Z" stroke="#2457D9" stroke-width="2" stroke-linejoin="round"/>
         <path d="M12 3L16.5 20" stroke="#0EA5E9" stroke-width="1.5" stroke-linejoin="round"/>
@@ -193,6 +193,9 @@ tbody tr:hover{background:var(--blue-soft);}
       </button>
       <button class="tab" onclick="go('admin')">
         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Admin
+      </button>
+      <button class="tab" onclick="go('instructions')">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.5" r="1" fill="currentColor"/></svg>Instructions
       </button>
     </div>
     <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
@@ -420,6 +423,52 @@ tbody tr:hover{background:var(--blue-soft);}
   </div>
 </div>
 
+<!-- ══════════════ INSTRUCTIONS ══════════════ -->
+<div class="view" id="vInstructions">
+  <div class="page-title">Instructions</div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Golden path — the usual flow</h2></div>
+    <ol style="margin:0;padding-left:20px;font-size:13px;line-height:1.9;">
+      <li><b>Import</b> — drag a CSV/XLSX onto the Import tab, or paste a shared-drive URL. Validation runs automatically right after.</li>
+      <li>Check the results table — rows land in <b>Valid</b>, <b>Invalid</b>, <b>Duplicate</b>, or <b>Existing Customer</b>. Nothing is dropped, everything is visible.</li>
+      <li><b>Create or pick a campaign</b> and queue the Valid rows into it — this also auto-generates a draft email per prospect.</li>
+      <li>Switch to the <b>Campaigns</b> tab to review queued drafts: edit subject/body, then <b>Approve</b> or <b>Reject</b> each one.</li>
+      <li><b>Send</b> the campaign — this delivers every Approved draft via Gmail. Requires email to be configured first (see Admin below).</li>
+      <li>Watch progress on the <b>Dashboard</b> — the outreach funnel, replies, and audit log update live.</li>
+      <li>When a prospect replies with interest, mark them <b>Quote Requested</b>, then <b>Won</b> or <b>Lost</b> from the Campaigns tab to track real business value.</li>
+    </ol>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Tabs at a glance</h2></div>
+    <div class="tbl-wrap">
+      <table><thead><tr><th>Tab</th><th>What it's for</th></tr></thead>
+        <tbody>
+          <tr><td>Import</td><td>Upload or pull in a prospect file; also the home/landing tab (click the APEX logo anytime to return here).</td></tr>
+          <tr><td>Campaigns</td><td>Create campaigns, queue validated prospects, review/edit/approve/reject drafts, send approved emails, log Won/Lost outcomes.</td></tr>
+          <tr><td>Knowledge Base</td><td>Reference Q&amp;A entries used to help draft accurate replies to prospect questions.</td></tr>
+          <tr><td>Dashboard</td><td>Live pipeline view — import/validation funnel, outreach funnel, value captured, SDR activity, audit log.</td></tr>
+          <tr><td>Admin</td><td>Check/configure email integration status and manage the suppression (opt-out) list.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Important details</h2></div>
+    <ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.9;">
+      <li><b>Sending email requires setup.</b> Add <code>GMAIL_ADDRESS</code> and <code>GMAIL_APP_PASSWORD</code> (a Gmail App Password, not your real password) as environment variables, then restart the server. Until then, everything except the actual send/reply-poll works normally.</li>
+      <li><b>Suppression is checked twice</b> — once when queuing into a campaign, again right before sending — so an opt-out can never slip through even if it happens after a draft was already approved.</li>
+      <li><b>Opt-outs are also detected automatically</b> from reply text (e.g. "unsubscribe," "remove me," "do not contact") and added to suppression without any manual step.</li>
+      <li><b>Existing customers are matched</b> against a seeded customer list and marked instead of queued for outreach.</li>
+      <li><b>Duplicates</b> are flagged within the same import batch (same email seen twice in one file).</li>
+      <li><b>Data persists</b> in a SQLite file across restarts as long as the server always runs with the same <code>APEX_DB_PATH</code> — back it up periodically since there's no separate hosted database.</li>
+      <li>The <span class="demo-notice" style="display:inline;">DEMO MODE</span> badge in the top bar means the page couldn't reach the backend (<code>/health</code> failed) — it falls back to an in-browser demo with sample data instead of real server calls.</li>
+    </ul>
+  </div>
+</div>
+
 </div><!-- /page -->
 
 <script>
@@ -464,8 +513,8 @@ let MODE = 'demo';
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const TABS = ['import','campaigns','kb','dashboard','admin'];
-const VIEW_IDS = {import:'vImport', campaigns:'vCampaigns', kb:'vKB', dashboard:'vDashboard', admin:'vAdmin'};
+const TABS = ['import','campaigns','kb','dashboard','admin','instructions'];
+const VIEW_IDS = {import:'vImport', campaigns:'vCampaigns', kb:'vKB', dashboard:'vDashboard', admin:'vAdmin', instructions:'vInstructions'};
 function go(name) {
   TABS.forEach((t,i) => {
     document.getElementById(VIEW_IDS[t]).classList.toggle('active', t===name);
