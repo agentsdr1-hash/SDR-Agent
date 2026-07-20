@@ -465,9 +465,10 @@ let MODE = 'demo';
 // NAVIGATION
 // ══════════════════════════════════════════════════════
 const TABS = ['import','campaigns','kb','dashboard','admin'];
+const VIEW_IDS = {import:'vImport', campaigns:'vCampaigns', kb:'vKB', dashboard:'vDashboard', admin:'vAdmin'};
 function go(name) {
   TABS.forEach((t,i) => {
-    document.getElementById('v'+cap(t)).classList.toggle('active', t===name);
+    document.getElementById(VIEW_IDS[t]).classList.toggle('active', t===name);
     document.querySelectorAll('.tab')[i].classList.toggle('active', t===name);
   });
   if(name==='dashboard') loadDashboard();
@@ -476,7 +477,6 @@ function go(name) {
   if(name==='import') syncCampSelect();
   if(name==='kb') renderKBAll();
 }
-function cap(s) { return s.charAt(0).toUpperCase()+s.slice(1); }
 
 // ══════════════════════════════════════════════════════
 // MODE DETECTION — try to reach the server
