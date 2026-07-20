@@ -464,7 +464,7 @@ tbody tr:hover{background:var(--blue-soft);}
       <li><b>Existing customers are matched</b> against a seeded customer list and marked instead of queued for outreach.</li>
       <li><b>Duplicates</b> are flagged within the same import batch (same email seen twice in one file).</li>
       <li><b>Data persists</b> in a SQLite file across restarts as long as the server always runs with the same <code>APEX_DB_PATH</code> — back it up periodically since there's no separate hosted database.</li>
-      <li>The <span class="demo-notice" style="display:inline;">DEMO MODE</span> badge in the top bar means the page couldn't reach the backend (<code>/health</code> failed) — it falls back to an in-browser demo with sample data instead of real server calls.</li>
+      <li>The top-bar badge shows connection state: <b>WAKING SERVER…</b> means it's retrying while a sleeping backend (e.g. Render free tier after inactivity) spins back up — this can take up to ~90 seconds on the first load. <b>DEMO MODE — SERVER UNREACHABLE</b> means every retry failed — everything you do is kept only in this browser tab and is lost on refresh until the server responds; it keeps retrying quietly in the background and switches over automatically once reachable. <b>CONNECTED TO SERVER</b> means everything you do is saved for real.</li>
     </ul>
   </div>
 </div>
@@ -515,7 +515,9 @@ let MODE = 'demo';
 // ══════════════════════════════════════════════════════
 const TABS = ['import','campaigns','kb','dashboard','admin','instructions'];
 const VIEW_IDS = {import:'vImport', campaigns:'vCampaigns', kb:'vKB', dashboard:'vDashboard', admin:'vAdmin', instructions:'vInstructions'};
+let currentTab = 'import';
 function go(name) {
+  currentTab = name;
   TABS.forEach((t,i) => {
     document.getElementById(VIEW_IDS[t]).classList.toggle('active', t===name);
     document.querySelectorAll('.tab')[i].classList.toggle('active', t===name);
@@ -530,17 +532,60 @@ function go(name) {
 // ══════════════════════════════════════════════════════
 // MODE DETECTION — try to reach the server
 // ══════════════════════════════════════════════════════
-async function detectMode() {
+// Hosted free-tier backends (e.g. Render's free plan) spin down after
+// inactivity and can take 30-60s to wake back up on the first request.
+// A single quick health check would misdiagnose that as "no server" and
+// strand the session in browser-only demo mode (nothing persists). So:
+// retry with backoff long enough to ride out a cold start, keep the user
+// informed while waiting, and keep quietly retrying in the background
+// forever so a server that comes online later is picked up without
+// requiring a page refresh.
+function setModeNotice(text, bg, color) {
+  const el = document.getElementById('modeNotice');
+  el.textContent = text;
+  el.style.background = bg;
+  el.style.color = color;
+}
+
+function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
+
+async function pingServer(timeoutMs) {
   try {
-    const r = await fetch('/health', {signal:AbortSignal.timeout(1500)});
-    if(r.ok) {
-      MODE = 'server';
-      document.getElementById('modeNotice').textContent = 'CONNECTED TO SERVER';
-      document.getElementById('modeNotice').style.background = 'var(--valid-soft)';
-      document.getElementById('modeNotice').style.color = 'var(--valid)';
-      checkEmailBadge();
-    }
-  } catch(e) { /* stays demo */ }
+    const r = await fetch('/health', {signal: AbortSignal.timeout(timeoutMs)});
+    return r.ok;
+  } catch(e) { return false; }
+}
+
+async function onServerConnected() {
+  const wasDemo = MODE !== 'server';
+  MODE = 'server';
+  setModeNotice('CONNECTED TO SERVER', 'var(--valid-soft)', 'var(--valid)');
+  checkEmailBadge();
+  if(wasDemo) {
+    // Re-pull whatever tab is on screen from the real backend now that
+    // it's reachable, instead of leaving stale/sample data displayed.
+    go(currentTab);
+  }
+}
+
+async function detectMode() {
+  // Fast path: server already awake.
+  if(await pingServer(1500)) { await onServerConnected(); return; }
+
+  setModeNotice('WAKING SERVER…', 'var(--blue-soft)', 'var(--blue-deep)');
+  const backoffSchedule = [2000, 3000, 5000, 5000, 8000, 8000, 10000, 10000, 15000, 15000]; // ~81s total
+  for(const delay of backoffSchedule) {
+    await sleep(delay);
+    if(await pingServer(5000)) { await onServerConnected(); return; }
+  }
+
+  // Genuinely unreachable after ~90s of retrying — fall back to demo mode,
+  // but keep checking in case the server comes up later.
+  setModeNotice('DEMO MODE — SERVER UNREACHABLE', 'var(--invalid-soft)', 'var(--invalid)');
+  while(MODE !== 'server') {
+    await sleep(20000);
+    if(await pingServer(5000)) { await onServerConnected(); }
+  }
 }
 detectMode();
 
