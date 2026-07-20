@@ -41,6 +41,18 @@ def create_campaign(name: str, send_days: str = "Mon,Tue,Wed,Thu,Fri", daily_sen
 
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
+        # Names must be unique (case-insensitive) so campaigns created on
+        # different days stay distinguishable in lists/dropdowns instead of
+        # silently colliding -- e.g. two runs both named "Outbound".
+        existing = conn.execute("SELECT id FROM campaigns WHERE LOWER(name) = LOWER(?)", (name,)).fetchone()
+        if existing:
+            today = datetime.now(timezone.utc).date().isoformat()
+            suggestion = f"{today} — {name}" if not name.startswith(today) else f"{name} (2)"
+            raise CampaignError(
+                f"A campaign named '{name}' already exists (id {existing['id']}). "
+                f"Campaign names must be unique -- try something like '{suggestion}'."
+            )
+
         cur = conn.execute(
             "INSERT INTO campaigns (name, status, send_days, daily_send_limit, created_at) VALUES (?, 'Draft', ?, ?, ?)",
             (name, send_days, daily_send_limit, now),

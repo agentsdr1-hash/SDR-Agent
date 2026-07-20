@@ -258,7 +258,7 @@ tbody tr:hover{background:var(--blue-soft);}
     </div>
     <div class="divider">or create one</div>
     <div class="row">
-      <input type="text" id="campName" placeholder="Campaign name e.g. Q3 Outbound — New Prospects"/>
+      <input type="text" id="campName" placeholder="e.g. 2026-07-20 — New Prospects"/>
       <button class="btn sec" id="campCreate">Create campaign</button>
     </div>
     <div class="status" id="campStatus"></div>
@@ -483,7 +483,7 @@ tbody tr:hover{background:var(--blue-soft);}
     <ol style="margin:0;padding-left:20px;font-size:13px;line-height:1.9;">
       <li><b>Import</b> — drag a CSV/XLSX onto the Import tab, or paste a shared-drive URL. Validation runs automatically right after.</li>
       <li>Check the results table — rows land in <b>Valid</b>, <b>Invalid</b>, <b>Duplicate</b>, <b>Existing Customer</b>, or <b>Already Contacted</b>. Nothing is dropped, everything is visible.</li>
-      <li><b>Create or pick a campaign</b> and queue the Valid rows into it — this also auto-generates a draft email per prospect.</li>
+      <li><b>Create or pick a campaign</b> and queue the Valid rows into it — this also auto-generates a draft email per prospect. Campaign names are auto-suggested with today's date (e.g. "2026-07-20 — New Prospects") and must be unique — creating one with a name that already exists is rejected, so campaigns from different days never get confused with each other.</li>
       <li>Switch to the <b>Campaigns</b> tab to review queued drafts: edit subject/body, then <b>Approve</b> or <b>Reject</b> each one.</li>
       <li><b>Send</b> the campaign — this delivers every Approved draft via Gmail. Requires email to be configured first (see Admin below).</li>
       <li>Watch progress on the <b>Dashboard</b> — the outreach funnel, replies, and audit log update live.</li>
@@ -773,6 +773,7 @@ function runValidation(prospects, filename) {
   renderValidation(counts, results);
   document.getElementById('pResults').classList.remove('hidden');
   document.getElementById('pCampaign').classList.remove('hidden');
+  prefillCampName();
   syncCampSelect();
 }
 
@@ -787,7 +788,13 @@ async function serverValidate(batchId) {
   renderValidation(counts, rows);
   document.getElementById('pResults').classList.remove('hidden');
   document.getElementById('pCampaign').classList.remove('hidden');
+  prefillCampName();
   syncCampSelect();
+}
+
+function prefillCampName() {
+  const el = document.getElementById('campName');
+  if(!el.value.trim()) el.value = new Date().toISOString().slice(0,10) + ' — ';
 }
 
 function renderValidation(counts, rows) {
@@ -822,6 +829,10 @@ document.getElementById('campCreate').addEventListener('click', async () => {
     if(!r.ok) return setS('campStatus', d.detail||'Failed', true);
     setS('campStatus','Created "'+d.name+'".');
   } else {
+    if(campaigns.some(c=>c.name.toLowerCase()===name.toLowerCase())) {
+      const today = new Date().toISOString().slice(0,10);
+      return setS('campStatus', `A campaign named "${name}" already exists. Campaign names must be unique -- try including today's date, e.g. "${today} — ${name}".`, true);
+    }
     campaigns.push({id:nextCampId++,name,currentDay:1,prospects:[]});
     setS('campStatus','Created "'+name+'".');
   }
