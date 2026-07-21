@@ -1036,19 +1036,21 @@ function demoCard(p,idx,camp) {
 }
 
 // Demo mode has no persisted stock catalog to pull from (nothing survives
-// a refresh anyway), so this mirrors the real top categories as a static
-// fallback -- keeps demo-mode copy realistic without needing full
+// a refresh anyway), so this mirrors the real top product families as a
+// static fallback -- keeps demo-mode copy realistic without needing full
 // client-side catalog storage. Real range: see the Knowledge Base tab
 // once a stock list is imported in server mode.
 const COMPANY_NAME = 'AKEIS';
-const DEMO_STOCK_CATEGORIES = ['SQUARE TUBES X 6000 MM','M.S.RECTANGULER TUBE X 6000 MM','M.S. FLAT BAR X 6000','M.S. ANGLE X 6000 MM','PLATES'];
+const COMPANY_FULL_NAME = 'Al Khaleej Equipment and Industrial Suppliers LLC';
+const DEMO_STOCK_FAMILIES = ['Square Tubes','Flat Bars','Rectangular Tubes','Angles','Plates'];
+const ABOUT_LINE = `I'm reaching out from ${COMPANY_NAME} — ${COMPANY_FULL_NAME}. With over 40 years in the UAE market, we're a leading supplier of structural steel products in Abu Dhabi, ISO 9001:2015 certified, with strong partnerships with global manufacturers for consistent quality and reliable supply.`;
 
 function draftFor(p) {
   const first=p.first_name||'there', co=p.company||'your team';
-  const range = DEMO_STOCK_CATEGORIES.join(', ');
+  const range = DEMO_STOCK_FAMILIES.join(', ');
   return {
     subject:`${COMPANY_NAME} Steel Supply — quote for ${co}`,
-    body:`Hi ${first},\n\nI'm reaching out from ${COMPANY_NAME} — we're a steel stockist and distributor carrying an extensive in-stock range including ${range}, and more.\n\nI wanted to check whether ${co} has any upcoming steel requirements we could quote on.\n\nHappy to send over pricing or a full stock list — would you have a few minutes this week?\n\nBest,\n${COMPANY_NAME} Sales Team`
+    body:`Hi ${first},\n\n${ABOUT_LINE}\n\nWe carry ${range} in various sizes, grades and thicknesses, with technical consultation available if you need help specifying, and an extensive inventory for fast delivery.\n\nI wanted to check whether ${co} has any upcoming steel requirements we could quote on — happy to send over pricing or a full stock list.\n\nWould you have a few minutes this week?\n\nBest,\n${COMPANY_NAME} Sales Team`
   };
 }
 
