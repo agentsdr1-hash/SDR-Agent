@@ -126,21 +126,69 @@ def list_items(category: str | None = None, search: str | None = None, limit: in
     return [dict(r) for r in rows]
 
 
-def top_categories(n: int = 6) -> list[str]:
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT category, COUNT(*) c FROM stock_catalog WHERE category IS NOT NULL GROUP BY category ORDER BY c DESC LIMIT ?",
-            (n,),
-        ).fetchall()
-    return [r["category"] for r in rows]
+# Raw categories from the source file are dimension-specific ("SQUARE TUBES
+# X 6000 MM", "M.S.RECTANGULER TUBE X 6000 MM") -- too granular to read
+# naturally in a cold email. This buckets them into the plain product-family
+# terms the industry actually uses in conversation (checked in order, first
+# match wins), so outreach can say "pipes, flat bars, seamless pipes" rather
+# than quoting exact stock-keeping-unit names.
+_FAMILY_RULES = [
+    ("SEAMLES", "Seamless Pipes"),
+    ("E.R.W", "ERW Pipes"),
+    ("ERW", "ERW Pipes"),
+    ("FLAT BAR", "Flat Bars"),
+    ("SHAFT", "Shafting Bars"),
+    ("SHFT", "Shafting Bars"),
+    ("ROUND BAR", "Round Bars"),
+    ("SQUARE BAR", "Square Bars"),
+    ("SQUARE TUBE", "Square Tubes"),
+    ("SHS", "Square Tubes"),
+    ("RECTANGUL", "Rectangular Tubes"),
+    ("RHS", "Rectangular Tubes"),
+    ("CHEQ", "Chequered Plates"),
+    ("PLATE", "Plates"),
+    ("ANGLE", "Angles"),
+    ("PFC", "PFC Channels"),
+    ("UPN", "UPN Channels"),
+    ("CHANNEL", "Channels"),
+    ("BEAM", "Beams"),
+    ("COLUMN", "Beams"),
+    ("IPE", "Beams"),
+    ("HEB", "Beams"),
+    ("HEA", "Beams"),
+    ("SHEET", "GI Sheets"),
+    ("GRATING", "Grating"),
+    ("PIPE", "Pipes"),  # after the more specific SEAMLES/ERW pipe checks above
+    ("TUBE", "Tubes"),
+]
 
 
-def sample_items(n: int = 2) -> list[dict]:
+def _family_of(category: str | None) -> str:
+    if not category:
+        return "Other Steel Products"
+    c = category.upper()
+    for keyword, family in _FAMILY_RULES:
+        if keyword in c:
+            if family == "Pipes":
+                return "GI Pipes" if "G.I" in c or c.startswith("GI ") else "MS Pipes"
+            return family
+    return "Other Steel Products"
+
+
+def top_families(n: int = 6) -> list[str]:
+    """Product families ordered by how much stock backs them, for use in
+    outreach copy -- e.g. ['Square Tubes', 'Flat Bars', 'Rectangular Tubes',
+    'Angles', 'Plates']. Never returns raw dimension-specific category names."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT product_code, product_name, category FROM stock_catalog ORDER BY RANDOM() LIMIT ?", (n,)
+            "SELECT category, COUNT(*) c FROM stock_catalog GROUP BY category"
         ).fetchall()
-    return [dict(r) for r in rows]
+    counts: dict[str, int] = {}
+    for r in rows:
+        fam = _family_of(r["category"])
+        counts[fam] = counts.get(fam, 0) + r["c"]
+    ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    return [fam for fam, _ in ranked[:n] if fam != "Other Steel Products"] or [fam for fam, _ in ranked[:n]]
 
 
 def total_count() -> int:

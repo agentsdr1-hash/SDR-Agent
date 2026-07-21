@@ -20,6 +20,7 @@ VALID_DAYS = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 # Single place to fix if the spelling/capitalization needs correcting --
 # every draft pulls from here rather than being hardcoded per-template.
 COMPANY_NAME = "AKEIS"
+COMPANY_FULL_NAME = "Al Khaleej Equipment and Industrial Suppliers LLC"
 
 
 class CampaignError(Exception):
@@ -91,43 +92,47 @@ def list_campaigns() -> list[Campaign]:
     return result
 
 
+ABOUT_LINE = (
+    f"I'm reaching out from {COMPANY_NAME} -- {COMPANY_FULL_NAME}. With over 40 years in the UAE market, "
+    f"we're a leading supplier of structural steel products in Abu Dhabi, ISO 9001:2015 certified, with "
+    f"strong partnerships with global manufacturers for consistent quality and reliable supply."
+)
+
+
 def _draft_for(first_name: str | None, company: str | None) -> tuple[str, str]:
     """Mail-merge draft, personalized with the prospect's company and backed
     by the real stock catalog (app/services/stock_catalog.py) so it reads as
-    specific to what we actually sell rather than generic outreach copy.
-    This is what OBJ-004 replaces with real AI-generated copy once an LLM
-    API key is available -- everything downstream (approval, send,
-    tracking) works identically either way."""
+    specific to what we actually sell -- at the product-family level
+    (pipes, flat bars, angles...) an industry buyer actually talks in, never
+    a specific stock-keeping-unit name/dimension. This is what OBJ-004
+    replaces with real AI-generated copy once an LLM API key is available --
+    everything downstream (approval, send, tracking) works identically
+    either way."""
     first = first_name or "there"
     co = company or "your team"
-    categories = stock_catalog.top_categories(5)
+    families = stock_catalog.top_families(5)
     subject = f"{COMPANY_NAME} Steel Supply — quote for {co}" if company else f"{COMPANY_NAME} Steel Supply — quick question"
 
-    if categories:
-        range_line = ", ".join(categories)
-        total = stock_catalog.total_count()
-        examples = stock_catalog.sample_items(2)
-        example_line = ""
-        if examples:
-            ex_text = " and ".join(e["product_name"] for e in examples)
-            example_line = f" For example, we currently hold {ex_text} in stock, ready to ship."
+    if families:
+        range_line = ", ".join(families)
         body = (
             f"Hi {first},\n\n"
-            f"I'm reaching out from {COMPANY_NAME} -- we're a steel stockist and distributor carrying "
-            f"an extensive in-stock range including {range_line}, out of {total}+ steel products total.\n\n"
-            f"I wanted to check whether {co} has any upcoming steel requirements we could quote on.{example_line}\n\n"
-            f"Happy to send over pricing or a full stock list -- would you have a few minutes this week?\n\n"
-            f"Best,\n{COMPANY_NAME} Sales Team"
+            f"{ABOUT_LINE}\n\n"
+            f"We carry {range_line} in various sizes, grades and thicknesses, with technical consultation "
+            f"available if you need help specifying, and an extensive inventory for fast delivery.\n\n"
+            f"I wanted to check whether {co} has any upcoming steel requirements we could quote on -- "
+            f"happy to send over pricing or a full stock list.\n\n"
+            f"Would you have a few minutes this week?\n\nBest,\n{COMPANY_NAME} Sales Team"
         )
     else:
-        # No stock catalog imported yet -- fall back to a generic version
-        # rather than referencing a range we can't actually back up.
+        # No stock catalog imported yet -- fall back to a version that
+        # still uses the real company positioning, just without naming a
+        # product range we can't currently back up with stock data.
         body = (
             f"Hi {first},\n\n"
-            f"I'm reaching out from {COMPANY_NAME} -- we're a steel stockist and distributor, and I noticed "
-            f"{co} might have steel supply needs we could help with.\n\n"
-            f"Would you be open to a quick conversation about your upcoming requirements?\n\n"
-            f"Best,\n{COMPANY_NAME} Sales Team"
+            f"{ABOUT_LINE}\n\n"
+            f"I wanted to check whether {co} has any upcoming steel requirements we could quote on.\n\n"
+            f"Would you be open to a quick conversation this week?\n\nBest,\n{COMPANY_NAME} Sales Team"
         )
     return subject, body
 
