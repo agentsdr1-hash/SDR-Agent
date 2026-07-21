@@ -13,8 +13,13 @@ from app.db import get_conn
 from app.models import Campaign, AssignResult, CampaignProspect
 from app.services.administration import is_suppressed
 from app.services.audit import log_event
+from app.services import stock_catalog
 
 VALID_DAYS = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+
+# Single place to fix if the spelling/capitalization needs correcting --
+# every draft pulls from here rather than being hardcoded per-template.
+COMPANY_NAME = "AKEIS"
 
 
 class CampaignError(Exception):
@@ -87,18 +92,43 @@ def list_campaigns() -> list[Campaign]:
 
 
 def _draft_for(first_name: str | None, company: str | None) -> tuple[str, str]:
-    """Mail-merge placeholder draft. This is what OBJ-004 replaces with real
-    AI-generated copy once an LLM API key is available -- everything
-    downstream (approval, send, tracking) works identically either way."""
+    """Mail-merge draft, personalized with the prospect's company and backed
+    by the real stock catalog (app/services/stock_catalog.py) so it reads as
+    specific to what we actually sell rather than generic outreach copy.
+    This is what OBJ-004 replaces with real AI-generated copy once an LLM
+    API key is available -- everything downstream (approval, send,
+    tracking) works identically either way."""
     first = first_name or "there"
     co = company or "your team"
-    subject = f"Quick question for {co}"
-    body = (
-        f"Hi {first},\n\n"
-        f"I'll keep this short -- I noticed {co} might be a fit for what we're building "
-        f"at APEX, and wanted to see if it's worth a quick conversation.\n\n"
-        f"Would you be open to 15 minutes this week?\n\nBest,\nAPEX SDR"
-    )
+    categories = stock_catalog.top_categories(5)
+    subject = f"{COMPANY_NAME} Steel Supply — quote for {co}" if company else f"{COMPANY_NAME} Steel Supply — quick question"
+
+    if categories:
+        range_line = ", ".join(categories)
+        total = stock_catalog.total_count()
+        examples = stock_catalog.sample_items(2)
+        example_line = ""
+        if examples:
+            ex_text = " and ".join(e["product_name"] for e in examples)
+            example_line = f" For example, we currently hold {ex_text} in stock, ready to ship."
+        body = (
+            f"Hi {first},\n\n"
+            f"I'm reaching out from {COMPANY_NAME} -- we're a steel stockist and distributor carrying "
+            f"an extensive in-stock range including {range_line}, out of {total}+ steel products total.\n\n"
+            f"I wanted to check whether {co} has any upcoming steel requirements we could quote on.{example_line}\n\n"
+            f"Happy to send over pricing or a full stock list -- would you have a few minutes this week?\n\n"
+            f"Best,\n{COMPANY_NAME} Sales Team"
+        )
+    else:
+        # No stock catalog imported yet -- fall back to a generic version
+        # rather than referencing a range we can't actually back up.
+        body = (
+            f"Hi {first},\n\n"
+            f"I'm reaching out from {COMPANY_NAME} -- we're a steel stockist and distributor, and I noticed "
+            f"{co} might have steel supply needs we could help with.\n\n"
+            f"Would you be open to a quick conversation about your upcoming requirements?\n\n"
+            f"Best,\n{COMPANY_NAME} Sales Team"
+        )
     return subject, body
 
 

@@ -132,6 +132,25 @@ class SimulateReplyPayload(BaseModel):
     is_opt_out: bool = False
 
 
+class StockImportSummary(BaseModel):
+    filename: str
+    item_count: int
+    category_count: int
+    imported_at: str
+
+
+class StockCategory(BaseModel):
+    category: str
+    count: int
+
+
+class StockItem(BaseModel):
+    id: int
+    product_code: str
+    product_name: str
+    category: Optional[str] = None
+
+
 class AuditEvent(BaseModel):
     id: int
     timestamp: str
