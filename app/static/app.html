@@ -290,6 +290,13 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
     <div class="hint" id="dayLabel"></div>
   </div>
 
+  <div class="panel" id="replyDraftsPanel">
+    <div class="panel-head"><h2>Reply drafts awaiting review (<span id="rdCount">0</span>)</h2><button class="btn sec" style="font-size:12px;padding:5px 12px;margin-left:auto;" onclick="loadReplyDrafts()">↻ Refresh</button><span class="obj-tag">smart-reply, rule-based</span></div>
+    <p class="hint" style="margin:0 0 10px;">Generated automatically whenever a prospect replies (real Gmail poll, or the Simulate reply buttons below) — matched against the Q&amp;A knowledge base and stock catalog. Review before sending; nothing here goes out on its own.</p>
+    <div id="rdList"></div>
+    <div class="empty hidden" id="rdEmpty">No reply drafts waiting on you right now.</div>
+  </div>
+
   <div class="panel hidden" id="pProspects">
     <div class="panel-head">
       <h2 id="campHeading">Prospects</h2>
@@ -337,7 +344,27 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
   </div>
 
   <div class="panel">
-    <div class="panel-head"><h2>Ask a question</h2><span class="obj-tag">OBJ-009 · rule-based MVP</span></div>
+    <div class="panel-head"><h2>Q&amp;A knowledge base</h2><span class="obj-tag">powers smart replies</span></div>
+    <p class="hint" style="margin:0 0 10px;">These entries (plus the stock catalog above) are what the smart-reply drafter matches an inbound question against — see the "Reply drafts awaiting review" panel on the Campaigns tab. Server mode only; persists across restarts.</p>
+    <div class="row">
+      <input type="text" id="qaQuestion" placeholder="Question, e.g. Do you ship internationally?"/>
+    </div>
+    <div class="row mt12">
+      <input type="text" id="qaAnswer" placeholder="Answer"/>
+    </div>
+    <div class="row mt12">
+      <input type="text" id="qaTags" placeholder="Tags, comma-separated (used for matching), e.g. shipping,international"/>
+      <button class="btn" id="qaAdd">Add entry</button>
+      <button class="btn sec" id="qaUploadBtn">Upload more (.json)</button>
+      <input type="file" id="qaFile" accept=".json" style="display:none;"/>
+    </div>
+    <div class="status" id="qaStatus"></div>
+    <div class="mt16" id="qaList"></div>
+    <div class="empty hidden" id="qaEmpty">No Q&amp;A entries yet.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Ask a question (demo)</h2><span class="obj-tag">OBJ-009 · rule-based MVP</span></div>
     <div class="hint" style="margin:0 0 10px;">Keyword matching — finds entries that share words with your question. Upgrade to semantic search once an LLM API key is available.</div>
     <div class="row">
       <input type="text" id="kbQ" placeholder="e.g. do you offer volume discounts"/>
@@ -551,6 +578,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
       <li><b>Opt-outs are also detected automatically</b> from reply text (e.g. "unsubscribe," "remove me," "do not contact") and added to suppression without any manual step.</li>
       <li><b>How a reply gets matched back to a sent email:</b> by sender address only, not by message threading. Every poll cycle, the inbox is checked for unread mail from anyone currently in <code>Sent</code> status for some campaign; a match flips every <code>Sent</code> row for that address to <code>Replied</code>. It does not verify the message is actually a reply to that specific outreach email (no Message-ID/In-Reply-To check) — any new unread mail from that address while awaiting a reply counts.</li>
       <li><b>Testing the funnel without Gmail connected:</b> real sending and real reply-detection both hard-require Gmail credentials, by design — nothing ever pretends to send. To test the downstream funnel (Replied → Quote Requested → Won/Lost) and the dashboard math anyway, the Campaigns tab has "Simulate send (test)" on Approved drafts and "Simulate reply (test)" / "Simulate opt-out (test)" on Sent ones — same state transitions and audit trail as the real thing, clearly labeled and logged as simulated so they're never confused with a real send/reply. For a full-fidelity test of the actual Gmail send + IMAP matching code (not just the funnel math), the highest-confidence option is two real Gmail accounts: configure one as the sender, import the other as a test prospect, send for real, reply for real, then check <code>/email/poll-now</code>.</li>
+      <li><b>Smart replies to prospect questions:</b> whenever a prospect replies (a real detected Gmail reply, or "Simulate reply (test)" with a reply body typed in), the tool automatically drafts a response — matched against the Q&amp;A entries and stock categories in the Knowledge Base tab — and queues it on the Campaigns tab under "Reply drafts awaiting review." It's rule-based keyword matching, not an AI model, so every draft needs a quick human review before it sends; a draft with no strong match is clearly flagged "fallback" rather than guessing confidently. Approving sends it via Gmail immediately (fails clearly if Gmail isn't configured, same as any other send). Add more Q&amp;A entries on the Knowledge Base tab to improve match quality over time.</li>
       <li><b>Existing customers are matched</b> against a seeded customer list and marked instead of queued for outreach.</li>
       <li><b>Already-contacted prospects are caught on re-import.</b> Email is the key: if an address was already sent an outreach email in any prior campaign — even from a completely different import file — re-importing it now flags it <b>Already Contacted</b> instead of validating as a fresh lead. Only prospects that have actually received a <em>sent</em> email are caught this way; someone still sitting Queued/Approved (never sent) in another campaign won't be flagged by this check.</li>
       <li><b>Duplicates</b> are flagged within the same import batch (same email seen twice in one file).</li>
@@ -614,10 +642,10 @@ function go(name) {
     document.querySelectorAll('.tab')[i].classList.toggle('active', t===name);
   });
   if(name==='dashboard') loadDashboard();
-  if(name==='campaigns') syncReviewSelect();
+  if(name==='campaigns') { syncReviewSelect(); loadReplyDrafts(); }
   if(name==='admin') { loadEmailStatus(); loadSuppression(); }
   if(name==='import') syncCampSelect();
-  if(name==='kb') { renderKBAll(); loadStockCatalog(); }
+  if(name==='kb') { renderKBAll(); loadStockCatalog(); loadQAEntries(); }
 }
 
 // ══════════════════════════════════════════════════════
@@ -995,8 +1023,67 @@ async function serverLost(cid,rid) { const r=prompt('Reason (optional):')||null;
 async function serverSimulateSent(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/simulate-sent',{method:'POST'}); loadServerProspects(cid); }
 async function serverSimulateReply(cid,rid,isOptOut) {
   const subject = isOptOut ? null : (prompt('Reply subject (optional):')||null);
-  await fetch('/campaigns/'+cid+'/prospects/'+rid+'/simulate-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reply_subject:subject,is_opt_out:isOptOut})});
+  const body = isOptOut ? null : (prompt('Reply body (this is what the smart-reply drafter matches against, e.g. "Do you have flat bars in stock? What sizes?"):')||'');
+  await fetch('/campaigns/'+cid+'/prospects/'+rid+'/simulate-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reply_subject:subject,reply_body:body,is_opt_out:isOptOut})});
   loadServerProspects(cid);
+  loadReplyDrafts();
+}
+
+// ══════════════════════════════════════════════════════
+// REPLY DRAFTS — review queue for smart-reply drafting. Server mode only.
+// ══════════════════════════════════════════════════════
+async function loadReplyDrafts() {
+  const list = document.getElementById('rdList'), empty = document.getElementById('rdEmpty');
+  if(MODE!=='server') { list.innerHTML=''; set('rdCount','0'); empty.textContent='Requires server mode.'; empty.classList.remove('hidden'); return; }
+  try {
+    const drafts = await (await fetch('/reply-drafts?status=Draft')).json();
+    set('rdCount', drafts.length);
+    if(!drafts.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now.'; empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    list.innerHTML = drafts.map(replyDraftCard).join('');
+    document.querySelectorAll('#rdList textarea.ebody').forEach(autoGrow);
+  } catch(e) { /* leave whatever was showing */ }
+}
+
+function replyDraftCard(d) {
+  const name = [d.first_name,d.last_name].filter(Boolean).join(' ')||'—';
+  const confBadge = d.confidence==='matched'
+    ? `<span class="pill p-valid">matched</span>`
+    : `<span class="pill p-dup">fallback — no strong match</span>`;
+  return `<div class="email-card">
+    <div class="ehead"><div class="who">${esc(name)}<span>${esc(d.email||'')} · ${esc(d.company||'—')}</span></div>${confBadge}</div>
+    <div class="day-note" style="margin-bottom:6px;">In reply to: ${esc(d.source_reply_subject||'(no subject)')} — "${esc((d.source_reply_snippet||'').slice(0,140))}${(d.source_reply_snippet||'').length>140?'…':''}"</div>
+    <div class="day-note" style="margin-bottom:8px;">Matched: ${esc(d.matched_summary||'—')}</div>
+    <input class="edit-subject" id="rd-subj-${d.id}" value="${esc(d.subject)}"/>
+    <textarea class="ebody" id="rd-body-${d.id}" oninput="autoGrow(this)">${esc(d.body)}</textarea>
+    <div class="eactions">
+      <button class="btn ok" onclick="approveReplyDraft(${d.id})">Approve &amp; send</button>
+      <button class="btn sec" onclick="saveReplyDraft(${d.id})">Save edits</button>
+      <button class="btn reject" onclick="rejectReplyDraft(${d.id})">Reject</button>
+    </div>
+  </div>`;
+}
+
+async function saveReplyDraft(id) {
+  const subject = document.getElementById('rd-subj-'+id).value;
+  const body = document.getElementById('rd-body-'+id).value;
+  const r = await fetch('/reply-drafts/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({subject, body})});
+  const d = await r.json();
+  if(!r.ok) return setS('reviewStatus', d.detail||'Failed to save', true);
+  setS('reviewStatus', 'Reply draft updated.');
+}
+
+async function approveReplyDraft(id) {
+  const r = await fetch('/reply-drafts/'+id+'/approve', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS('reviewStatus', d.detail||'Failed to send', true);
+  setS('reviewStatus', 'Reply sent.');
+  loadReplyDrafts();
+}
+
+async function rejectReplyDraft(id) {
+  await fetch('/reply-drafts/'+id+'/reject', {method:'POST'});
+  loadReplyDrafts();
 }
 
 function renderEmailCards() {
@@ -1188,6 +1275,67 @@ async function searchStockCatalog() {
 document.getElementById('stockCatSelect').addEventListener('change', searchStockCatalog);
 document.getElementById('stockSearchBtn').addEventListener('click', searchStockCatalog);
 document.getElementById('stockSearch').addEventListener('keydown', e => { if(e.key==='Enter') searchStockCatalog(); });
+
+// ══════════════════════════════════════════════════════
+// Q&A KNOWLEDGE BASE — persisted, backs smart-reply drafting. Server mode only.
+// ══════════════════════════════════════════════════════
+async function loadQAEntries() {
+  const list = document.getElementById('qaList'), empty = document.getElementById('qaEmpty');
+  if(MODE!=='server') { list.innerHTML=''; empty.textContent='Requires server mode.'; empty.classList.remove('hidden'); return; }
+  try {
+    const entries = await (await fetch('/knowledge-base/qa')).json();
+    if(!entries.length) { list.innerHTML=''; empty.textContent='No Q&A entries yet.'; empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    list.innerHTML = entries.map(e => `<div class="kb-card">
+      <div class="kq">${esc(e.question)}</div>
+      <div class="ka">${esc(e.answer)}</div>
+      ${e.tags?`<div class="ks">tags: ${esc(e.tags)}</div>`:''}
+      <button class="btn danger" style="margin-top:8px;padding:4px 10px;font-size:11px;" onclick="deleteQAEntry(${e.id})">Delete</button>
+    </div>`).join('');
+  } catch(e) { /* leave whatever was showing */ }
+}
+
+document.getElementById('qaAdd').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('qaStatus','Requires server mode.', true);
+  const question = document.getElementById('qaQuestion').value.trim();
+  const answer = document.getElementById('qaAnswer').value.trim();
+  const tags = document.getElementById('qaTags').value.trim();
+  if(!question || !answer) return setS('qaStatus','Question and answer are both required.', true);
+  const r = await fetch('/knowledge-base/qa', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({question, answer, tags})});
+  const d = await r.json();
+  if(!r.ok) return setS('qaStatus', d.detail||'Failed', true);
+  setS('qaStatus', 'Added.');
+  document.getElementById('qaQuestion').value=''; document.getElementById('qaAnswer').value=''; document.getElementById('qaTags').value='';
+  loadQAEntries();
+});
+
+async function deleteQAEntry(id) {
+  await fetch('/knowledge-base/qa/'+id, {method:'DELETE'});
+  loadQAEntries();
+}
+
+document.getElementById('qaUploadBtn').addEventListener('click', () => {
+  if(MODE!=='server') return setS('qaStatus','Requires server mode.', true);
+  document.getElementById('qaFile').click();
+});
+document.getElementById('qaFile').addEventListener('change', () => {
+  const f = document.getElementById('qaFile').files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      if(!Array.isArray(parsed)) throw new Error('Must be a JSON array of {question,answer,tags}');
+      const r = await fetch('/knowledge-base/qa/import', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(parsed)});
+      const d = await r.json();
+      if(!r.ok) return setS('qaStatus', d.detail||'Import failed', true);
+      setS('qaStatus', `Imported ${parsed.length} entries (${d.entry_count} total).`);
+      loadQAEntries();
+    } catch(err) { setS('qaStatus', err.message, true); }
+  };
+  reader.readAsText(f);
+  document.getElementById('qaFile').value = '';
+});
 
 // ══════════════════════════════════════════════════════
 // DASHBOARD — OBJ-013

@@ -13,6 +13,7 @@ from app.integrations import email_provider
 from app.models import SendResult
 from app.services.administration import is_suppressed, add_to_suppression_list
 from app.services.audit import log_event
+from app.services import kb_qa
 
 VALID_TRANSITIONS_TO_APPROVE = {"Queued"}
 VALID_TRANSITIONS_TO_REJECT = {"Queued"}
@@ -153,11 +154,14 @@ def simulate_sent(campaign_id: int, prospect_row_id: int):
                f"Campaign {campaign_id} -- TEST MODE, no real email was sent")
 
 
-def simulate_reply(campaign_id: int, prospect_row_id: int, reply_subject: str | None, is_opt_out: bool):
+def simulate_reply(campaign_id: int, prospect_row_id: int, reply_subject: str | None, is_opt_out: bool, reply_body: str | None = None):
     """QA/testing only -- mimics what the real inbox poller (inbox_monitor.py)
     would do on a matching reply, without an actual inbox: flips a Sent
     prospect to Replied (or Suppressed, if simulating an opt-out), stamping
-    the same fields a real detected reply would."""
+    the same fields a real detected reply would, and -- for a non-opt-out
+    reply -- generates a smart-reply draft from reply_body exactly like a
+    real detected reply would, so the KB/stock matching can be tested
+    without Gmail."""
     with get_conn() as conn:
         status = _get_status(conn, campaign_id, prospect_row_id)
         if status != "Sent":
@@ -166,7 +170,7 @@ def simulate_reply(campaign_id: int, prospect_row_id: int, reply_subject: str | 
         subject = reply_subject or ("Please unsubscribe" if is_opt_out else "Re: Quick question")
         new_status = "Suppressed" if is_opt_out else "Replied"
         row = conn.execute(
-            """SELECT pr.email FROM campaign_prospects cp
+            """SELECT pr.email, pr.first_name, pr.company FROM campaign_prospects cp
                JOIN prospects_raw pr ON pr.id = cp.prospect_id WHERE cp.id = ?""",
             (prospect_row_id,),
         ).fetchone()
@@ -182,3 +186,4 @@ def simulate_reply(campaign_id: int, prospect_row_id: int, reply_subject: str | 
     else:
         log_event("reply_received", "campaign_prospect", str(prospect_row_id),
                    f"{row['email']} -- TEST MODE, no real email was received")
+        kb_qa.create_reply_draft(prospect_row_id, row["first_name"], row["company"], subject, reply_body or "")
