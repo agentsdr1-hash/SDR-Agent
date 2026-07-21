@@ -106,14 +106,19 @@ textarea{min-height:90px;resize:vertical;font-size:13px;line-height:1.55;}
 .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line);}
 
 /* Table */
-.tbl-wrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:14px;}
-.tbl-wrap.scrollx{overflow-x:auto;}
+/* Tables scroll horizontally on overflow rather than squeezing/wrapping
+   cell text -- on a narrow (mobile) viewport, short identifier columns
+   (name/email/status) wrapping mid-word looked broken and produced
+   inconsistent row heights. Cells default to nowrap; the few genuinely
+   long free-text columns (notes, reasons, details) opt back in via .wrap. */
+.tbl-wrap{border:1px solid var(--line);border-radius:10px;overflow-x:auto;margin-top:14px;}
 .tbl-wrap.scrollx table{min-width:920px;}
 details.draft summary{cursor:pointer;color:var(--blue-deep);font-size:11.5px;}
 details.draft pre{white-space:pre-wrap;font-family:var(--sans);font-size:11.5px;background:var(--paper);border:1px solid var(--line-soft);border-radius:6px;padding:8px;margin:6px 0 0;max-width:280px;}
 table{width:100%;border-collapse:collapse;font-size:12.5px;}
-thead th{background:var(--blue-soft);color:var(--blue-deep);font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);}
-tbody td{padding:10px 14px;border-bottom:1px solid var(--line-soft);vertical-align:middle;}
+thead th{background:var(--blue-soft);color:var(--blue-deep);font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap;}
+tbody td{padding:10px 14px;border-bottom:1px solid var(--line-soft);vertical-align:middle;white-space:nowrap;}
+tbody td.wrap{white-space:normal;min-width:180px;}
 tbody tr:last-child td{border-bottom:none;}
 tbody tr:hover{background:var(--blue-soft);}
 .mono{font-family:var(--mono);font-size:11.5px;}
@@ -834,7 +839,7 @@ function prefillCampName() {
 function renderValidation(counts, rows) {
   set('rV',counts.Valid); set('rI',counts.Invalid); set('rD',counts.Duplicate); set('rE',counts['Existing Customer']); set('rAC',counts['Already Contacted']||0);
   document.getElementById('rBody').innerHTML = rows.map(r =>
-    `<tr><td class="mono">${r.row_number}</td><td>${esc([r.first_name,r.last_name].filter(Boolean).join(' '))||'—'}</td><td class="mono">${esc(r.email||'')}</td><td>${esc(r.company||'—')}</td><td>${pill(r.status)}</td><td class="muted">${esc(r.validation_notes||'—')}</td></tr>`
+    `<tr><td class="mono">${r.row_number}</td><td>${esc([r.first_name,r.last_name].filter(Boolean).join(' '))||'—'}</td><td class="mono">${esc(r.email||'')}</td><td>${esc(r.company||'—')}</td><td>${pill(r.status)}</td><td class="muted wrap">${esc(r.validation_notes||'—')}</td></tr>`
   ).join('');
 }
 
@@ -1213,7 +1218,7 @@ async function loadDashboard() {
       // audit
       const ab=document.getElementById('dAudit'),ae=document.getElementById('dAuditEmpty');
       if(!audit.length){ae.classList.remove('hidden');ab.innerHTML='';}
-      else{ae.classList.add('hidden');ab.innerHTML=audit.map(e=>`<tr><td class="mono nowrap">${fmt(e.timestamp)}</td><td><span class="pill p-neutral">${e.event_type}</span></td><td class="mono">${e.entity_type||''}${e.entity_id?' #'+e.entity_id:''}</td><td class="muted">${esc(e.details||'')}</td></tr>`).join('');}
+      else{ae.classList.add('hidden');ab.innerHTML=audit.map(e=>`<tr><td class="mono nowrap">${fmt(e.timestamp)}</td><td><span class="pill p-neutral">${esc(e.event_type)}</span></td><td class="mono">${esc(e.entity_type||'')}${e.entity_id?' #'+esc(e.entity_id):''}</td><td class="muted wrap">${esc(e.details||'')}</td></tr>`).join('');}
     } catch(e) { document.getElementById('dNote').textContent='Could not load: '+e.message; }
   } else {
     // Session totals from in-memory state
@@ -1277,12 +1282,12 @@ function dcRowHtml(p) {
     <td class="muted nowrap">${p.approved_at?fmt(p.approved_at):'—'}</td>
     <td class="muted nowrap">${p.sent_at?fmt(p.sent_at):'—'}</td>
     <td class="muted nowrap">${p.replied_at?fmt(p.replied_at):'—'}</td>
-    <td>${esc(p.reply_subject||'—')}</td>
+    <td class="wrap">${esc(p.reply_subject||'—')}</td>
     <td class="muted nowrap">${p.quote_requested_at?fmt(p.quote_requested_at):'—'}</td>
     <td class="muted nowrap">${p.won_at?fmt(p.won_at):'—'}</td>
     <td class="muted nowrap">${p.lost_at?fmt(p.lost_at):'—'}</td>
     <td>${p.deal_value!=null?'$'+Number(p.deal_value).toLocaleString():'—'}</td>
-    <td>${esc(p.lost_reason||'—')}</td>
+    <td class="wrap">${esc(p.lost_reason||'—')}</td>
   </tr>`;
 }
 
@@ -1294,7 +1299,7 @@ function diRowHtml(r, rowNum) {
     <td>${esc(r.company||'—')}</td>
     <td class="mono">${esc(r.phone||'—')}</td>
     <td>${pill(r.status)}</td>
-    <td class="muted">${esc(r.validation_notes||'—')}</td>
+    <td class="muted wrap">${esc(r.validation_notes||'—')}</td>
   </tr>`;
 }
 
@@ -1406,7 +1411,8 @@ function renderRawTable(rows) {
     if(v===null || v===undefined || v==='') return '<td class="muted">—</td>';
     if(/_at$/.test(c) || c==='timestamp') return `<td class="muted nowrap">${fmt(v)}</td>`;
     if(typeof v==='number') return `<td class="mono">${v}</td>`;
-    return `<td>${esc(String(v))}</td>`;
+    const s = String(v);
+    return `<td${s.length>30?' class="wrap"':''}>${esc(s)}</td>`;
   }).join('') + '</tr>').join('');
 }
 
@@ -1468,7 +1474,7 @@ async function loadSuppression() {
   const b=document.getElementById('supBody'), e=document.getElementById('supEmpty');
   if(!rows.length){e.classList.remove('hidden');b.innerHTML='';return;}
   e.classList.add('hidden');
-  b.innerHTML=rows.map(r=>`<tr><td class="mono">${r.email}</td><td class="muted">${r.reason||'—'}</td><td><span class="pill ${r.source==='manual'?'p-manual':'p-auto'}">${r.source}</span></td><td class="muted">${fmt(r.added_at)}</td><td><button class="btn danger" style="padding:3px 9px;font-size:11px;" onclick="removeSup('${r.email}')">Remove</button></td></tr>`).join('');
+  b.innerHTML=rows.map(r=>`<tr><td class="mono">${esc(r.email)}</td><td class="muted wrap">${esc(r.reason||'—')}</td><td><span class="pill ${r.source==='manual'?'p-manual':'p-auto'}">${esc(r.source)}</span></td><td class="muted nowrap">${fmt(r.added_at)}</td><td><button class="btn danger" style="padding:3px 9px;font-size:11px;" onclick="removeSup('${esc(r.email)}')">Remove</button></td></tr>`).join('');
 }
 
 document.getElementById('supAdd').addEventListener('click', async () => {
