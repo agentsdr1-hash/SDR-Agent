@@ -129,6 +129,7 @@ class LostPayload(BaseModel):
 
 class SimulateReplyPayload(BaseModel):
     reply_subject: Optional[str] = None
+    reply_body: Optional[str] = None
     is_opt_out: bool = False
 
 
@@ -159,3 +160,45 @@ class AuditEvent(BaseModel):
     entity_id: Optional[str] = None
     details: Optional[str] = None
     actor: str
+
+
+class KBEntry(BaseModel):
+    id: int
+    question: str
+    answer: str
+    tags: Optional[str] = None
+
+
+class KBEntryCreate(BaseModel):
+    question: str
+    answer: str
+    tags: Optional[str] = None
+
+
+class KBImportSummary(BaseModel):
+    entry_count: int
+
+
+class ReplyDraft(BaseModel):
+    id: int
+    campaign_prospect_id: int
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    company: Optional[str] = None
+    subject: str
+    body: str
+    status: str
+    confidence: Optional[str] = None
+    matched_summary: Optional[str] = None
+    source_reply_subject: Optional[str] = None
+    source_reply_snippet: Optional[str] = None
+    created_at: str
+    approved_at: Optional[str] = None
+    rejected_at: Optional[str] = None
+    sent_at: Optional[str] = None
+
+
+class ReplyDraftUpdate(BaseModel):
+    subject: str
+    body: str

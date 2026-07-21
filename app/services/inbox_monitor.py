@@ -16,6 +16,7 @@ from app.integrations import email_provider
 from app.models import PollResult
 from app.services.administration import detect_opt_out, add_to_suppression_list
 from app.services.audit import log_event
+from app.services import kb_qa
 
 # in-memory status, reset on restart -- fine for a pilot; move to a DB table
 # if you need poll history to survive restarts
@@ -46,15 +47,17 @@ def poll_once() -> PollResult:
 
     with get_conn() as conn:
         awaiting = conn.execute(
-            """SELECT cp.id, pr.email
+            """SELECT cp.id, pr.email, pr.first_name, pr.company
                FROM campaign_prospects cp
                JOIN prospects_raw pr ON pr.id = cp.prospect_id
                WHERE cp.status = 'Sent'"""
         ).fetchall()
 
     email_to_row_ids = {}
+    row_context = {}  # row_id -> (first_name, company), for drafting a reply
     for row in awaiting:
         email_to_row_ids.setdefault(row["email"].lower(), []).append(row["id"])
+        row_context[row["id"]] = (row["first_name"], row["company"])
 
     if not email_to_row_ids:
         _last_poll_at = now
@@ -97,6 +100,12 @@ def poll_once() -> PollResult:
                 else:
                     log_event("reply_received", "campaign_prospect", str(row_ids[0]) if row_ids else None,
                                f"{reply['from_email']}")
+                    for row_id in row_ids:
+                        first_name, company = row_context.get(row_id, (None, None))
+                        kb_qa.create_reply_draft(
+                            row_id, first_name, company,
+                            reply.get("subject"), reply.get("body_snippet", ""),
+                        )
                 updated.append(reply["from_email"])
 
     _last_poll_at = now

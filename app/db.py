@@ -6,6 +6,7 @@ changing service code (raw SQL kept portable).
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = Path(os.environ.get("APEX_DB_PATH", Path(__file__).parent / "apex_pilot.db"))
@@ -95,7 +96,53 @@ CREATE TABLE IF NOT EXISTS stock_catalog (
     imported_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_stock_catalog_category ON stock_catalog(category);
+
+CREATE TABLE IF NOT EXISTS kb_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    tags TEXT,                       -- comma-separated, used for matching
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reply_drafts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_prospect_id INTEGER NOT NULL,
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Draft',   -- Draft/Approved/Rejected/Sent
+    confidence TEXT,                        -- 'matched' or 'fallback' -- did the KB actually have something relevant
+    matched_summary TEXT,                   -- human-readable note of what matched, for the reviewer
+    source_reply_subject TEXT,
+    source_reply_snippet TEXT,
+    created_at TEXT NOT NULL,
+    approved_at TEXT,
+    rejected_at TEXT,
+    sent_at TEXT,
+    FOREIGN KEY (campaign_prospect_id) REFERENCES campaign_prospects(id)
+);
 """
+
+SEED_KB_ENTRIES = [
+    ("What certifications do you have?",
+     "We're ISO 9001:2015 certified, ensuring consistent quality standards across our full product range.",
+     "certification,quality,iso,standards"),
+    ("What is your stock and supply capacity?",
+     "We maintain an extensive in-stock inventory across our structural steel range, backed by strong manufacturer partnerships for reliable, fast-turnaround supply.",
+     "capacity,stock,supply,inventory"),
+    ("Do you offer technical consultation on specifications?",
+     "Yes -- our team is available for technical consultation on product specifications and standards, to help you get the right size, grade and thickness for your application.",
+     "technical,specs,specifications,standards,consultation,grade,thickness"),
+    ("Are you open to supply partnerships or bulk cooperation?",
+     "Absolutely -- we're open to discussing business cooperation, supply agreements, and partnership opportunities. Share your requirements and we'll follow up with options.",
+     "partnership,cooperation,bulk,supply,business"),
+    ("What is your typical lead time?",
+     "Lead time depends on the product and quantity, but our extensive stock position means most orders ship quickly -- happy to confirm exact timing once we know what you need.",
+     "lead time,delivery,shipping,turnaround"),
+    ("Do you provide pricing / quotes?",
+     "Yes -- share the sizes, grades and quantities you need and we'll put together a formal quote.",
+     "pricing,price,quote,cost,budget"),
+]
 
 @contextmanager
 def get_conn():
@@ -120,4 +167,11 @@ def init_db(seed_customers: bool = True):
                         ("jsmith@acmecorp.com", "Acme Corp"),
                         ("dlee@globex.com", "Globex Inc"),
                     ],
+                )
+            existing_kb = conn.execute("SELECT COUNT(*) c FROM kb_entries").fetchone()["c"]
+            if existing_kb == 0:
+                now = datetime.now(timezone.utc).isoformat()
+                conn.executemany(
+                    "INSERT INTO kb_entries (question, answer, tags, created_at) VALUES (?, ?, ?, ?)",
+                    [(q, a, t, now) for q, a, t in SEED_KB_ENTRIES],
                 )

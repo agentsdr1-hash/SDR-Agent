@@ -116,7 +116,7 @@ def simulate_reply_one(campaign_id: int, prospect_row_id: int, payload: Simulate
     """QA-only: mimics what the real inbox poller would do on a matching
     reply (or opt-out), without an actual inbox."""
     try:
-        simulate_reply(campaign_id, prospect_row_id, payload.reply_subject, payload.is_opt_out)
+        simulate_reply(campaign_id, prospect_row_id, payload.reply_subject, payload.is_opt_out, payload.reply_body)
         status = "Suppressed" if payload.is_opt_out else "Replied"
         return {"status": f"{status} (simulated -- no real email received)"}
     except ApprovalError as e:
