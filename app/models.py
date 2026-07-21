@@ -127,6 +127,11 @@ class LostPayload(BaseModel):
     reason: Optional[str] = None
 
 
+class SimulateReplyPayload(BaseModel):
+    reply_subject: Optional[str] = None
+    is_opt_out: bool = False
+
+
 class AuditEvent(BaseModel):
     id: int
     timestamp: str

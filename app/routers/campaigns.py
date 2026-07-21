@@ -4,7 +4,7 @@ Create campaigns, assign validated prospects, approve/edit/send drafts.
 """
 from fastapi import APIRouter, HTTPException
 
-from app.models import Campaign, CampaignCreate, AssignResult, CampaignProspect, DraftUpdate, SendResult, WonPayload, LostPayload
+from app.models import Campaign, CampaignCreate, AssignResult, CampaignProspect, DraftUpdate, SendResult, WonPayload, LostPayload, SimulateReplyPayload
 from app.services.campaign_management import (
     create_campaign,
     get_campaign,
@@ -18,6 +18,8 @@ from app.services.approval_and_delivery import (
     approve,
     reject,
     send_approved,
+    simulate_sent,
+    simulate_reply,
     ApprovalError,
 )
 from app.services.sales_outcomes import request_quote, mark_won, mark_lost, OutcomeError
@@ -96,6 +98,29 @@ def send(campaign_id: int):
         return send_approved(campaign_id)
     except EmailNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/simulate-sent", tags=["testing"])
+def simulate_sent_one(campaign_id: int, prospect_row_id: int):
+    """QA-only: flips an Approved draft to Sent without touching Gmail, so
+    the funnel/dashboard can be tested before real credentials exist."""
+    try:
+        simulate_sent(campaign_id, prospect_row_id)
+        return {"status": "Sent (simulated -- no real email sent)"}
+    except ApprovalError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/simulate-reply", tags=["testing"])
+def simulate_reply_one(campaign_id: int, prospect_row_id: int, payload: SimulateReplyPayload):
+    """QA-only: mimics what the real inbox poller would do on a matching
+    reply (or opt-out), without an actual inbox."""
+    try:
+        simulate_reply(campaign_id, prospect_row_id, payload.reply_subject, payload.is_opt_out)
+        status = "Suppressed" if payload.is_opt_out else "Replied"
+        return {"status": f"{status} (simulated -- no real email received)"}
+    except ApprovalError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/{campaign_id}/prospects/{prospect_row_id}/request-quote", tags=["OBJ-011"])
