@@ -21,6 +21,7 @@ TABLE_QUERIES = {
     "campaign_prospects": "SELECT * FROM campaign_prospects ORDER BY id DESC LIMIT 500",
     "suppressed_emails": "SELECT * FROM suppressed_emails ORDER BY added_at DESC",
     "audit_log": "SELECT * FROM audit_log ORDER BY id DESC LIMIT 500",
+    "stock_catalog": "SELECT * FROM stock_catalog ORDER BY category, product_name LIMIT 900",
 }
 
 

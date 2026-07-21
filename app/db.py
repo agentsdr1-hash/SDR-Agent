@@ -86,6 +86,15 @@ CREATE TABLE IF NOT EXISTS audit_log (
     details TEXT,
     actor TEXT NOT NULL DEFAULT 'system'   -- 'system' for automated actions, or a person's identifier once auth exists
 );
+
+CREATE TABLE IF NOT EXISTS stock_catalog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_code TEXT NOT NULL,
+    product_name TEXT NOT NULL,
+    category TEXT,                   -- nearest ancestor category label from the source file's hierarchy
+    imported_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_stock_catalog_category ON stock_catalog(category);
 """
 
 @contextmanager
