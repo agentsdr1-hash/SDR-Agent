@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from app.db import get_conn
 from app.integrations import email_provider
 from app.models import SendResult
-from app.services.administration import is_suppressed
+from app.services.administration import is_suppressed, add_to_suppression_list
 from app.services.audit import log_event
 
 VALID_TRANSITIONS_TO_APPROVE = {"Queued"}
@@ -122,3 +122,63 @@ def send_approved(campaign_id: int) -> SendResult:
             log_event("email_send_failed", "campaign_prospect", str(row["id"]), f"{row['email']}: {e}")
 
     return SendResult(campaign_id=campaign_id, attempted=attempted, sent=sent, failed=failed, suppressed=suppressed, errors=errors)
+
+
+def _get_status(conn, campaign_id: int, prospect_row_id: int) -> str:
+    row = conn.execute(
+        "SELECT status FROM campaign_prospects WHERE campaign_id = ? AND id = ?",
+        (campaign_id, prospect_row_id),
+    ).fetchone()
+    if not row:
+        raise ApprovalError("Campaign prospect not found")
+    return row["status"]
+
+
+def simulate_sent(campaign_id: int, prospect_row_id: int):
+    """QA/testing only -- flips an Approved draft straight to Sent without
+    touching Gmail at all, so the downstream funnel (Replied/QuoteRequested/
+    Won/Lost) and the dashboard math behind it can be exercised end to end
+    before real GMAIL_ADDRESS/GMAIL_APP_PASSWORD credentials exist. No email
+    leaves this server -- audit-logged distinctly from a real send so the
+    two are never confused later."""
+    with get_conn() as conn:
+        status = _get_status(conn, campaign_id, prospect_row_id)
+        if status != "Approved":
+            raise ApprovalError(f"Can only simulate-send from status 'Approved' (current: '{status}')")
+        conn.execute(
+            "UPDATE campaign_prospects SET status = 'Sent', sent_at = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), prospect_row_id),
+        )
+    log_event("email_sent_simulated", "campaign_prospect", str(prospect_row_id),
+               f"Campaign {campaign_id} -- TEST MODE, no real email was sent")
+
+
+def simulate_reply(campaign_id: int, prospect_row_id: int, reply_subject: str | None, is_opt_out: bool):
+    """QA/testing only -- mimics what the real inbox poller (inbox_monitor.py)
+    would do on a matching reply, without an actual inbox: flips a Sent
+    prospect to Replied (or Suppressed, if simulating an opt-out), stamping
+    the same fields a real detected reply would."""
+    with get_conn() as conn:
+        status = _get_status(conn, campaign_id, prospect_row_id)
+        if status != "Sent":
+            raise ApprovalError(f"Can only simulate a reply from status 'Sent' (current: '{status}')")
+        now = datetime.now(timezone.utc).isoformat()
+        subject = reply_subject or ("Please unsubscribe" if is_opt_out else "Re: Quick question")
+        new_status = "Suppressed" if is_opt_out else "Replied"
+        row = conn.execute(
+            """SELECT pr.email FROM campaign_prospects cp
+               JOIN prospects_raw pr ON pr.id = cp.prospect_id WHERE cp.id = ?""",
+            (prospect_row_id,),
+        ).fetchone()
+        conn.execute(
+            "UPDATE campaign_prospects SET status = ?, replied_at = ?, reply_subject = ? WHERE id = ?",
+            (new_status, now, subject, prospect_row_id),
+        )
+
+    if is_opt_out:
+        add_to_suppression_list(row["email"], reason="Opt-out detected in simulated reply", source="auto-detected")
+        log_event("opt_out_detected", "campaign_prospect", str(prospect_row_id),
+                   f"{row['email']}: opt-out language detected -- TEST MODE, no real email was received")
+    else:
+        log_event("reply_received", "campaign_prospect", str(prospect_row_id),
+                   f"{row['email']} -- TEST MODE, no real email was received")

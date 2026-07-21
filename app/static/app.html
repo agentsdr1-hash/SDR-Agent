@@ -512,6 +512,8 @@ tbody tr:hover{background:var(--blue-soft);}
       <li><b>Sending email requires setup.</b> Add <code>GMAIL_ADDRESS</code> and <code>GMAIL_APP_PASSWORD</code> (a Gmail App Password, not your real password) as environment variables, then restart the server. Until then, everything except the actual send/reply-poll works normally.</li>
       <li><b>Suppression is checked twice</b> — once when queuing into a campaign, again right before sending — so an opt-out can never slip through even if it happens after a draft was already approved.</li>
       <li><b>Opt-outs are also detected automatically</b> from reply text (e.g. "unsubscribe," "remove me," "do not contact") and added to suppression without any manual step.</li>
+      <li><b>How a reply gets matched back to a sent email:</b> by sender address only, not by message threading. Every poll cycle, the inbox is checked for unread mail from anyone currently in <code>Sent</code> status for some campaign; a match flips every <code>Sent</code> row for that address to <code>Replied</code>. It does not verify the message is actually a reply to that specific outreach email (no Message-ID/In-Reply-To check) — any new unread mail from that address while awaiting a reply counts.</li>
+      <li><b>Testing the funnel without Gmail connected:</b> real sending and real reply-detection both hard-require Gmail credentials, by design — nothing ever pretends to send. To test the downstream funnel (Replied → Quote Requested → Won/Lost) and the dashboard math anyway, the Campaigns tab has "Simulate send (test)" on Approved drafts and "Simulate reply (test)" / "Simulate opt-out (test)" on Sent ones — same state transitions and audit trail as the real thing, clearly labeled and logged as simulated so they're never confused with a real send/reply. For a full-fidelity test of the actual Gmail send + IMAP matching code (not just the funnel math), the highest-confidence option is two real Gmail accounts: configure one as the sender, import the other as a test prospect, send for real, reply for real, then check <code>/email/poll-now</code>.</li>
       <li><b>Existing customers are matched</b> against a seeded customer list and marked instead of queued for outreach.</li>
       <li><b>Already-contacted prospects are caught on re-import.</b> Email is the key: if an address was already sent an outreach email in any prior campaign — even from a completely different import file — re-importing it now flags it <b>Already Contacted</b> instead of validating as a fresh lead. Only prospects that have actually received a <em>sent</em> email are caught this way; someone still sitting Queued/Approved (never sent) in another campaign won't be flagged by this check.</li>
       <li><b>Duplicates</b> are flagged within the same import batch (same email seen twice in one file).</li>
@@ -941,6 +943,8 @@ function serverProspectCard(r, cid) {
   const name = [r.first_name,r.last_name].filter(Boolean).join(' ')||'—';
   let actions = '';
   if(r.status==='Queued') actions = `<button class="btn ok" onclick="serverApprove('${cid}',${r.id})">Approve</button><button class="btn reject" onclick="serverReject('${cid}',${r.id})">Reject</button>`;
+  else if(r.status==='Approved') actions = `<button class="btn sec" onclick="serverSimulateSent('${cid}',${r.id})" title="Flips to Sent without touching Gmail -- for testing the funnel before real credentials exist">Simulate send (test)</button>`;
+  else if(r.status==='Sent') actions = `<button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},false)" title="Mimics a real detected reply, without an actual inbox">Simulate reply (test)</button><button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},true)" title="Mimics a reply containing opt-out language">Simulate opt-out (test)</button>`;
   else if(r.status==='Replied') actions = `<button class="btn sec" onclick="serverQuote('${cid}',${r.id})">Log quote</button>`;
   else if(r.status==='QuoteRequested') actions = `<button class="btn ok" onclick="serverWon('${cid}',${r.id})">Mark Won</button><button class="btn reject" onclick="serverLost('${cid}',${r.id})">Mark Lost</button>`;
   return `<div class="email-card"><div class="ehead"><div class="who">${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')}</span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span></div></div>`;
@@ -951,6 +955,12 @@ async function serverReject(cid,rid) { await fetch('/campaigns/'+cid+'/prospects
 async function serverQuote(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/request-quote',{method:'POST'}); loadServerProspects(cid); }
 async function serverWon(cid,rid) { const v=prompt('Deal value (optional):'); const dv=v&&!isNaN(parseFloat(v))?parseFloat(v):null; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/won',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deal_value:dv})}); loadServerProspects(cid); }
 async function serverLost(cid,rid) { const r=prompt('Reason (optional):')||null; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/lost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:r})}); loadServerProspects(cid); }
+async function serverSimulateSent(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/simulate-sent',{method:'POST'}); loadServerProspects(cid); }
+async function serverSimulateReply(cid,rid,isOptOut) {
+  const subject = isOptOut ? null : (prompt('Reply subject (optional):')||null);
+  await fetch('/campaigns/'+cid+'/prospects/'+rid+'/simulate-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reply_subject:subject,is_opt_out:isOptOut})});
+  loadServerProspects(cid);
+}
 
 function renderEmailCards() {
   const camp = campaigns.find(c=>c.id===selectedCampId);
