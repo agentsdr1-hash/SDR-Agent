@@ -127,6 +127,7 @@ tbody td{padding:10px 14px;border-bottom:1px solid var(--line-soft);vertical-ali
 tbody td.wrap{white-space:normal;min-width:180px;}
 tbody tr:last-child td{border-bottom:none;}
 tbody tr:hover{background:var(--blue-soft);}
+tbody tr.row-click{cursor:pointer;}
 .mono{font-family:var(--mono);font-size:11.5px;}
 .muted{color:var(--muted);font-size:11.5px;}
 .nowrap{white-space:nowrap;}
@@ -254,6 +255,9 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
       <button class="tab" onclick="go('campaigns')">
         <svg viewBox="0 0 24 24" fill="none"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>Campaigns
       </button>
+      <button class="tab" onclick="go('leads')">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Leads
+      </button>
       <button class="tab" onclick="go('kb')">
         <svg viewBox="0 0 24 24" fill="none"><path d="M4 5a2 2 0 012-2h9a2 2 0 012 2v14l-6.5-3L4 19V5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>Knowledge Base
       </button>
@@ -366,6 +370,47 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
   </div>
 </div>
 
+<!-- ══════════════ LEADS ══════════════ -->
+<div class="view" id="vLeads">
+  <div class="page-title" style="display:flex;align-items:center;justify-content:space-between;">
+    Leads
+    <button class="btn sec" style="font-size:12px;padding:6px 12px;" onclick="loadLeadsList()">↻ Refresh</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>All leads</h2><span class="obj-tag">consolidated · every campaign</span></div>
+    <p class="hint" style="margin:0 0 10px;">Every prospect gets an immutable Lead # the moment it's imported — this is every one of them, across every campaign, in one place (not scoped to a single campaign or import batch like the tables on the Campaigns and Dashboard tabs). Search by name, email, company, or Lead #, then click a row to open its full lifecycle and manage its status — including reopening or editing a Won/Lost outcome.</p>
+    <div class="row">
+      <input type="text" id="leadsSearch" placeholder="Search name, email, company, or Lead # (e.g. L-000001)"/>
+      <select id="leadsStatusFilter" style="max-width:220px;">
+        <option value="">All statuses</option>
+        <option value="Imported -- not yet in a campaign">Imported, no campaign yet</option>
+        <option value="Queued">Queued</option>
+        <option value="Approved">Approved</option>
+        <option value="Rejected">Rejected</option>
+        <option value="Sent">Sent</option>
+        <option value="Replied">Replied</option>
+        <option value="Suppressed">Suppressed</option>
+        <option value="QuoteRequested">Quote Requested</option>
+        <option value="Won">Won</option>
+        <option value="Lost">Lost</option>
+      </select>
+    </div>
+    <div class="tbl-wrap scrollx mt12">
+      <table><thead><tr>
+        <th>Lead #</th><th>Name</th><th>Company</th><th>Email</th><th>Status</th><th>Campaign</th><th>Deal value</th><th class="nowrap">Last activity</th><th></th>
+      </tr></thead><tbody id="leadsListBody"></tbody></table>
+    </div>
+    <div class="empty hidden" id="leadsListEmpty">No leads match.</div>
+  </div>
+
+  <div class="panel hidden" id="leadDetailPanel">
+    <div class="panel-head"><h2>Lead detail</h2><button class="btn sec" style="font-size:12px;padding:6px 12px;margin-left:auto;" onclick="closeLeadDetail()">✕ Close</button></div>
+    <div class="status" id="leadDetailStatus"></div>
+    <div id="leadDetailBody"></div>
+  </div>
+</div>
+
 <!-- ══════════════ KNOWLEDGE BASE ══════════════ -->
 <div class="view" id="vKB">
   <div class="page-title">Knowledge Base</div>
@@ -450,17 +495,6 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
   <div class="page-title" style="display:flex;align-items:center;justify-content:space-between;">
     Pipeline Dashboard
     <button class="btn sec" style="font-size:12px;padding:6px 12px;" onclick="loadDashboard()">↻ Refresh</button>
-  </div>
-
-  <div class="panel">
-    <div class="panel-head"><h2>Lead lookup</h2><span class="obj-tag">full lifecycle by Lead #</span></div>
-    <p class="hint" style="margin:0 0 10px;">Every prospect gets an immutable Lead # the moment it's imported (e.g. L-000123) — look one up to see its full history: import, every campaign it's been part of, every stage timestamp, win/loss and value. Find a Lead # in any table below or on the Campaigns tab.</p>
-    <div class="row">
-      <input type="text" id="leadLookupInput" placeholder="e.g. L-000001"/>
-      <button class="btn" id="leadLookupBtn">Look up</button>
-    </div>
-    <div class="status" id="leadLookupStatus"></div>
-    <div id="leadLookupResult" class="mt16"></div>
   </div>
 
   <div class="panel">
@@ -671,6 +705,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
         <tbody>
           <tr><td>Import</td><td>Upload or pull in a prospect file; also the home/landing tab (click the APEX logo anytime to return here).</td></tr>
           <tr><td>Campaigns</td><td>Create campaigns, queue validated prospects, review/edit/approve/reject drafts, send approved emails, log Won/Lost outcomes.</td></tr>
+          <tr><td>Leads</td><td>Every prospect across every campaign, one row each — search/filter, drill into a Lead #'s full lifecycle, and manage its status (request a quote, mark Won/Lost, or reopen and edit a closed deal).</td></tr>
           <tr><td>Knowledge Base</td><td>Reference Q&amp;A entries used to help draft accurate replies to prospect questions.</td></tr>
           <tr><td>Dashboard</td><td>Live pipeline view — import/validation funnel, outreach funnel, value captured, SDR activity, full row-level records (pick a campaign or import batch to see every field, including drafts), a raw browser over every database table, and the audit log.</td></tr>
           <tr><td>Admin</td><td>Check/configure email integration status and manage the suppression (opt-out) list.</td></tr>
@@ -741,8 +776,8 @@ let MODE = 'demo';
 // ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
-const TABS = ['import','campaigns','kb','dashboard','admin','instructions'];
-const VIEW_IDS = {import:'vImport', campaigns:'vCampaigns', kb:'vKB', dashboard:'vDashboard', admin:'vAdmin', instructions:'vInstructions'};
+const TABS = ['import','campaigns','leads','kb','dashboard','admin','instructions'];
+const VIEW_IDS = {import:'vImport', campaigns:'vCampaigns', leads:'vLeads', kb:'vKB', dashboard:'vDashboard', admin:'vAdmin', instructions:'vInstructions'};
 let currentTab = 'import';
 function go(name) {
   currentTab = name;
@@ -753,6 +788,7 @@ function go(name) {
   document.getElementById('mainTabs').classList.remove('open');
   if(name==='dashboard') loadDashboard();
   if(name==='campaigns') { syncReviewSelect(); loadReplyDrafts(); }
+  if(name==='leads') loadLeadsList();
   if(name==='admin') { loadEmailStatus(); loadSuppression(); }
   if(name==='import') syncCampSelect();
   if(name==='kb') { renderKBAll(); loadStockCatalog(); loadQAEntries(); }
@@ -1130,14 +1166,17 @@ function serverProspectCard(r, cid) {
   else if(r.status==='Sent') actions = `<button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},false)" title="Mimics a real detected reply, without an actual inbox">Simulate reply (test)</button><button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},true)" title="Mimics a reply containing opt-out language">Simulate opt-out (test)</button>`;
   else if(r.status==='Replied') actions = `<button class="btn sec" onclick="serverQuote('${cid}',${r.id})">Log quote</button>`;
   else if(r.status==='QuoteRequested') actions = `<button class="btn ok" onclick="serverWon('${cid}',${r.id})">Mark Won</button><button class="btn reject" onclick="serverLost('${cid}',${r.id})">Mark Lost</button>`;
+  else if(r.status==='Won') actions = `<button class="btn sec" onclick="serverWon('${cid}',${r.id})">Edit amount</button><button class="btn sec" onclick="serverReopen('${cid}',${r.id})">Reopen</button>`;
+  else if(r.status==='Lost') actions = `<button class="btn sec" onclick="serverLost('${cid}',${r.id})">Edit reason</button><button class="btn sec" onclick="serverReopen('${cid}',${r.id})">Reopen</button>`;
   return `<div class="email-card"><div class="ehead"><div class="who">${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span></div></div>`;
 }
 
 async function serverApprove(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/approve',{method:'POST'}); loadServerProspects(cid); }
 async function serverReject(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/reject',{method:'POST'}); loadServerProspects(cid); }
 async function serverQuote(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/request-quote',{method:'POST'}); loadServerProspects(cid); }
-async function serverWon(cid,rid) { const v=prompt('Deal value (optional):'); const dv=v&&!isNaN(parseFloat(v))?parseFloat(v):null; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/won',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deal_value:dv})}); loadServerProspects(cid); }
-async function serverLost(cid,rid) { const r=prompt('Reason (optional):')||null; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/lost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:r})}); loadServerProspects(cid); }
+async function serverWon(cid,rid) { const v=prompt('Deal value (optional):'); if(v===null) return; const dv=v&&!isNaN(parseFloat(v))?parseFloat(v):null; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/won',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deal_value:dv})}); loadServerProspects(cid); }
+async function serverReopen(cid,rid) { if(!confirm('Reopen this deal back to Quote Requested? The current Won/Lost details will be cleared.')) return; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/reopen',{method:'POST'}); loadServerProspects(cid); }
+async function serverLost(cid,rid) { const reason=prompt('Reason (optional):'); if(reason===null) return; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/lost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:reason||null})}); loadServerProspects(cid); }
 async function serverSimulateSent(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/simulate-sent',{method:'POST'}); loadServerProspects(cid); }
 async function serverSimulateReply(cid,rid,isOptOut) {
   const subject = isOptOut ? null : (prompt('Reply subject (optional):')||null);
@@ -1456,21 +1495,102 @@ document.getElementById('qaFile').addEventListener('change', () => {
 });
 
 // ══════════════════════════════════════════════════════
-// LEAD LOOKUP — full lifecycle by immutable Lead #
+// LEADS — consolidated cross-campaign list + lifecycle detail/management
 // ══════════════════════════════════════════════════════
-document.getElementById('leadLookupBtn').addEventListener('click', lookupLead);
-document.getElementById('leadLookupInput').addEventListener('keydown', e => { if(e.key==='Enter') lookupLead(); });
+let leadsSearchDebounce = null;
+let currentLeadNumber = null;
 
-async function lookupLead() {
-  const resultEl = document.getElementById('leadLookupResult');
-  if(MODE!=='server') return setS('leadLookupStatus','Lead lookup requires server mode.', true);
-  const input = document.getElementById('leadLookupInput').value.trim();
-  if(!input) return setS('leadLookupStatus','Enter a Lead # (e.g. L-000001).', true);
-  const r = await fetch('/leads/'+encodeURIComponent(input));
+document.getElementById('leadsSearch').addEventListener('input', () => {
+  clearTimeout(leadsSearchDebounce);
+  leadsSearchDebounce = setTimeout(loadLeadsList, 250);
+});
+document.getElementById('leadsStatusFilter').addEventListener('change', loadLeadsList);
+
+async function loadLeadsList() {
+  const body = document.getElementById('leadsListBody'), empty = document.getElementById('leadsListEmpty');
+  if(MODE!=='server') { body.innerHTML=''; empty.textContent='Leads requires server mode.'; empty.classList.remove('hidden'); return; }
+  const search = document.getElementById('leadsSearch').value.trim();
+  const status = document.getElementById('leadsStatusFilter').value;
+  const params = new URLSearchParams();
+  if(search) params.set('search', search);
+  if(status) params.set('status', status);
+  const r = await fetch('/leads?'+params.toString());
+  const rows = await r.json();
+  if(!r.ok) { body.innerHTML=''; empty.textContent='Could not load leads.'; empty.classList.remove('hidden'); return; }
+  if(!rows.length) { body.innerHTML=''; empty.textContent='No leads match.'; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  body.innerHTML = rows.map(l => `<tr class="row-click" onclick="openLeadDetail('${esc(l.lead_number)}')">
+    <td class="mono nowrap">${esc(l.lead_number)}</td>
+    <td>${esc([l.first_name,l.last_name].filter(Boolean).join(' ')||'—')}</td>
+    <td>${esc(l.company||'—')}</td>
+    <td class="mono">${esc(l.email||'—')}</td>
+    <td>${pill(l.status)}</td>
+    <td>${esc(l.campaign_name||'—')}${l.campaign_count>1?` <span class="muted">(+${l.campaign_count-1})</span>`:''}</td>
+    <td>${l.deal_value!=null?'$'+Number(l.deal_value).toLocaleString():'—'}</td>
+    <td class="muted nowrap">${l.last_activity_at?fmt(l.last_activity_at):'—'}</td>
+    <td><button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();openLeadDetail('${esc(l.lead_number)}')">View</button></td>
+  </tr>`).join('');
+}
+
+async function openLeadDetail(leadNumber) {
+  currentLeadNumber = leadNumber;
+  const panel = document.getElementById('leadDetailPanel');
+  panel.classList.remove('hidden');
+  setS('leadDetailStatus','Loading…');
+  document.getElementById('leadDetailBody').innerHTML='';
+  panel.scrollIntoView({behavior:'smooth', block:'start'});
+  const r = await fetch('/leads/'+encodeURIComponent(leadNumber));
   const d = await r.json();
-  if(!r.ok) { resultEl.innerHTML=''; return setS('leadLookupStatus', d.detail||'Not found', true); }
-  setS('leadLookupStatus', '');
-  resultEl.innerHTML = renderLeadTimeline(d);
+  if(!r.ok) { setS('leadDetailStatus', d.detail||'Not found', true); return; }
+  setS('leadDetailStatus','');
+  document.getElementById('leadDetailBody').innerHTML = renderLeadTimeline(d);
+}
+
+function closeLeadDetail() {
+  currentLeadNumber = null;
+  document.getElementById('leadDetailPanel').classList.add('hidden');
+}
+
+async function refreshLeadDetail() {
+  if(currentLeadNumber) await openLeadDetail(currentLeadNumber);
+  loadLeadsList();
+}
+
+function membershipActions(m) {
+  if(m.status==='Replied') return `<button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="leadRequestQuote(${m.campaign_id},${m.id})">Request quote</button>`;
+  if(m.status==='QuoteRequested') return `<button class="btn ok" style="padding:3px 10px;font-size:11px;" onclick="leadMarkWon(${m.campaign_id},${m.id})">Mark Won</button><button class="btn reject" style="padding:3px 10px;font-size:11px;" onclick="leadMarkLost(${m.campaign_id},${m.id})">Mark Lost</button>`;
+  if(m.status==='Won') return `<button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="leadMarkWon(${m.campaign_id},${m.id})">Edit amount</button><button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="leadReopen(${m.campaign_id},${m.id})">Reopen</button>`;
+  if(m.status==='Lost') return `<button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="leadMarkLost(${m.campaign_id},${m.id})">Edit reason</button><button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="leadReopen(${m.campaign_id},${m.id})">Reopen</button>`;
+  return '';
+}
+
+async function leadRequestQuote(cid,cpid) {
+  await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/request-quote',{method:'POST'});
+  refreshLeadDetail();
+}
+async function leadMarkWon(cid,cpid) {
+  const v=prompt('Deal value (optional):');
+  if(v===null) return;
+  const dv=v&&!isNaN(parseFloat(v))?parseFloat(v):null;
+  const r=await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/won',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deal_value:dv})});
+  const d=await r.json();
+  if(!r.ok) return setS('leadDetailStatus', d.detail||'Failed', true);
+  refreshLeadDetail();
+}
+async function leadMarkLost(cid,cpid) {
+  const reason=prompt('Reason (optional):');
+  if(reason===null) return;
+  const r=await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/lost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:reason||null})});
+  const d=await r.json();
+  if(!r.ok) return setS('leadDetailStatus', d.detail||'Failed', true);
+  refreshLeadDetail();
+}
+async function leadReopen(cid,cpid) {
+  if(!confirm('Reopen this deal back to Quote Requested? The current Won/Lost details will be cleared.')) return;
+  const r=await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/reopen',{method:'POST'});
+  const d=await r.json();
+  if(!r.ok) return setS('leadDetailStatus', d.detail||'Failed', true);
+  refreshLeadDetail();
 }
 
 function renderLeadTimeline(d) {
@@ -1492,7 +1612,7 @@ function renderLeadTimeline(d) {
   if(d.memberships.length) {
     html += `<div class="tbl-wrap scrollx"><table><thead><tr>
       <th>Campaign</th><th>Status</th><th class="nowrap">Added</th><th class="nowrap">Approved</th><th class="nowrap">Sent</th>
-      <th class="nowrap">Replied</th><th class="nowrap">Quote req.</th><th class="nowrap">Won</th><th class="nowrap">Lost</th><th>Value</th><th class="wrap">Lost reason</th>
+      <th class="nowrap">Replied</th><th class="nowrap">Quote req.</th><th class="nowrap">Won</th><th class="nowrap">Lost</th><th>Value</th><th class="wrap">Lost reason</th><th>Manage</th>
     </tr></thead><tbody>` + d.memberships.map(m => `<tr>
       <td>${esc(m.campaign_name)}</td><td>${pill(m.status)}</td>
       <td class="muted nowrap">${m.added_at?fmt(m.added_at):'—'}</td>
@@ -1504,6 +1624,7 @@ function renderLeadTimeline(d) {
       <td class="muted nowrap">${m.lost_at?fmt(m.lost_at):'—'}</td>
       <td>${m.deal_value!=null?'$'+Number(m.deal_value).toLocaleString():'—'}</td>
       <td class="wrap">${esc(m.lost_reason||'—')}</td>
+      <td class="nowrap">${membershipActions(m)}</td>
     </tr>`).join('') + `</tbody></table></div>`;
   } else {
     html += `<div class="empty">Not yet queued into a campaign.</div>`;
