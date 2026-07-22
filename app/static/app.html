@@ -454,9 +454,9 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 
   <div class="panel">
     <div class="panel-head"><h2>Lead lookup</h2><span class="obj-tag">full lifecycle by Lead #</span></div>
-    <p class="hint" style="margin:0 0 10px;">Every prospect gets an immutable Lead # the moment it's imported (e.g. L000123) — look one up to see its full history: import, every campaign it's been part of, every stage timestamp, win/loss and value. Find a Lead # in any table below or on the Campaigns tab.</p>
+    <p class="hint" style="margin:0 0 10px;">Every prospect gets an immutable Lead # the moment it's imported (e.g. L-000123) — look one up to see its full history: import, every campaign it's been part of, every stage timestamp, win/loss and value. Find a Lead # in any table below or on the Campaigns tab.</p>
     <div class="row">
-      <input type="text" id="leadLookupInput" placeholder="e.g. L000001"/>
+      <input type="text" id="leadLookupInput" placeholder="e.g. L-000001"/>
       <button class="btn" id="leadLookupBtn">Look up</button>
     </div>
     <div class="status" id="leadLookupStatus"></div>
@@ -1465,7 +1465,7 @@ async function lookupLead() {
   const resultEl = document.getElementById('leadLookupResult');
   if(MODE!=='server') return setS('leadLookupStatus','Lead lookup requires server mode.', true);
   const input = document.getElementById('leadLookupInput').value.trim();
-  if(!input) return setS('leadLookupStatus','Enter a Lead # (e.g. L000001).', true);
+  if(!input) return setS('leadLookupStatus','Enter a Lead # (e.g. L-000001).', true);
   const r = await fetch('/leads/'+encodeURIComponent(input));
   const d = await r.json();
   if(!r.ok) { resultEl.innerHTML=''; return setS('leadLookupStatus', d.detail||'Not found', true); }

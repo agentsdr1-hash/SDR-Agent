@@ -1,7 +1,7 @@
 """
 Lead lifecycle lookup.
 
-A "lead" is a prospect from the moment it's imported -- L000123 is a
+A "lead" is a prospect from the moment it's imported -- L-000123 is a
 human-referenceable, immutable identifier derived from prospects_raw.id
 (already unique and monotonically increasing, so no separate counter is
 needed; this is the same pattern Salesforce/HubSpot/etc. use for their
@@ -23,11 +23,14 @@ LEAD_PREFIX = "L"
 
 
 def lead_number_for(prospect_id: int) -> str:
-    return f"{LEAD_PREFIX}{prospect_id:06d}"
+    return f"{LEAD_PREFIX}-{prospect_id:06d}"
 
 
 def parse_lead_number(lead_number: str) -> int | None:
-    m = re.match(rf"^{LEAD_PREFIX}0*(\d+)$", (lead_number or "").strip().upper())
+    # hyphen optional on input so old-format numbers (L000123, from before
+    # the L-000123 format) still resolve -- lead_number_for() above always
+    # emits the hyphenated form going forward.
+    m = re.match(rf"^{LEAD_PREFIX}-?0*(\d+)$", (lead_number or "").strip().upper())
     return int(m.group(1)) if m else None
 
 
