@@ -22,7 +22,7 @@ from app.services.approval_and_delivery import (
     simulate_reply,
     ApprovalError,
 )
-from app.services.sales_outcomes import request_quote, mark_won, mark_lost, OutcomeError
+from app.services.sales_outcomes import request_quote, mark_won, mark_lost, reopen_outcome, OutcomeError
 from app.integrations.email_provider import EmailNotConfiguredError
 
 router = APIRouter(prefix="/campaigns", tags=["OBJ-003"])
@@ -146,5 +146,18 @@ def lost(campaign_id: int, prospect_row_id: int, payload: LostPayload):
     try:
         mark_lost(campaign_id, prospect_row_id, payload.reason)
         return {"status": "Lost"}
+    except OutcomeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/reopen", tags=["OBJ-011"])
+def reopen(campaign_id: int, prospect_row_id: int):
+    """Back a Won or Lost deal out to Quote Requested -- e.g. it was logged
+    by mistake, or the customer re-opened the conversation. To correct or
+    switch an outcome without fully reopening it, call /won or /lost again
+    directly -- both accept an already-closed prospect."""
+    try:
+        reopen_outcome(campaign_id, prospect_row_id)
+        return {"status": "QuoteRequested"}
     except OutcomeError as e:
         raise HTTPException(status_code=422, detail=str(e))

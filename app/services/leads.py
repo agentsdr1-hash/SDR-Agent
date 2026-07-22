@@ -47,6 +47,91 @@ def _summarize(memberships: list[dict]) -> dict:
     }
 
 
+# Reverse funnel order -- the first of these that's set on the latest
+# membership is that membership's most recent stage, which (since the app
+# only ever advances a status forward, never backdates one) is also its
+# most recent timestamp. Used to sort the consolidated list by "most
+# recently active" and to show a single "last activity" column per lead.
+_TS_FIELDS_NEWEST_FIRST = [
+    "lost_at", "won_at", "quote_requested_at", "replied_at", "sent_at", "approved_at", "added_at",
+]
+
+
+def _latest_timestamp(m: dict) -> str | None:
+    for f in _TS_FIELDS_NEWEST_FIRST:
+        if m.get(f):
+            return m[f]
+    return None
+
+
+def list_leads(search: str | None = None, status: str | None = None) -> list[dict]:
+    """Every prospect across every campaign (and prospects not yet in any
+    campaign), one row per lead, for the consolidated Leads tab -- as
+    opposed to get_lead_timeline()'s single-lead full-detail view, or the
+    Dashboard/Campaigns tab's per-campaign or per-import-batch tables."""
+    with get_conn() as conn:
+        prospects = [dict(r) for r in conn.execute(
+            "SELECT id, first_name, last_name, email, company, phone, status AS validation_status "
+            "FROM prospects_raw ORDER BY id DESC"
+        ).fetchall()]
+
+        memberships_by_prospect: dict[int, list[dict]] = {}
+        if prospects:
+            ph = ",".join("?" * len(prospects))
+            m_rows = conn.execute(
+                f"""SELECT cp.*, c.name AS campaign_name
+                    FROM campaign_prospects cp
+                    JOIN campaigns c ON c.id = cp.campaign_id
+                    WHERE cp.prospect_id IN ({ph})
+                    ORDER BY cp.added_at""",
+                [p["id"] for p in prospects],
+            ).fetchall()
+            for m in m_rows:
+                memberships_by_prospect.setdefault(m["prospect_id"], []).append(dict(m))
+
+    leads = []
+    for p in prospects:
+        memberships = memberships_by_prospect.get(p["id"], [])
+        summary = _summarize(memberships)
+        latest = memberships[-1] if memberships else None
+        leads.append({
+            "lead_number": lead_number_for(p["id"]),
+            "prospect_id": p["id"],
+            "first_name": p["first_name"],
+            "last_name": p["last_name"],
+            "email": p["email"],
+            "company": p["company"],
+            "phone": p["phone"],
+            "validation_status": p["validation_status"],
+            "campaign_count": len(memberships),
+            "campaign_id": latest["campaign_id"] if latest else None,
+            "campaign_prospect_id": latest["id"] if latest else None,
+            "campaign_name": latest["campaign_name"] if latest else None,
+            "status": summary["overall_status"],
+            "deal_value": latest["deal_value"] if latest else None,
+            "lost_reason": latest["lost_reason"] if latest else None,
+            "won": summary["won"],
+            "lost": summary["lost"],
+            "last_activity_at": _latest_timestamp(latest) if latest else None,
+        })
+
+    if status:
+        leads = [l for l in leads if l["status"] == status]
+    if search:
+        s = search.strip().lower()
+        leads = [
+            l for l in leads
+            if s in l["lead_number"].lower()
+            or s in (l["first_name"] or "").lower()
+            or s in (l["last_name"] or "").lower()
+            or s in (l["email"] or "").lower()
+            or s in (l["company"] or "").lower()
+        ]
+
+    leads.sort(key=lambda l: l["last_activity_at"] or "", reverse=True)
+    return leads
+
+
 def get_lead_timeline(lead_number: str) -> dict | None:
     prospect_id = parse_lead_number(lead_number)
     if prospect_id is None:
