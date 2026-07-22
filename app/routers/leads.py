@@ -1,5 +1,5 @@
 """
-Lead lifecycle lookup -- given a LEAD-###### number, return everything
+Lead lifecycle lookup -- given a L###### number, return everything
 known about that lead: who they are, every campaign they've been part
 of with full stage timestamps, and the audit trail. See
 app/services/leads.py for the design rationale.
