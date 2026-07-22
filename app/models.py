@@ -97,10 +97,16 @@ class SendResult(BaseModel):
 class EmailStatus(BaseModel):
     configured: bool
     gmail_address: Optional[str] = None
+    source: str = "none"  # 'database' (set via Admin tab) / 'environment' / 'none'
     poll_interval_minutes: int
     last_poll_at: Optional[str] = None
     last_poll_replies_found: Optional[int] = None
     last_poll_error: Optional[str] = None
+
+
+class EmailConfigInput(BaseModel):
+    gmail_address: str
+    app_password: str
 
 
 class PollResult(BaseModel):

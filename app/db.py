@@ -105,6 +105,12 @@ CREATE TABLE IF NOT EXISTS kb_entries (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS reply_drafts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     campaign_prospect_id INTEGER NOT NULL,

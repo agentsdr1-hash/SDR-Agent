@@ -605,7 +605,28 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
     <div class="status" id="es_err"></div>
     <div class="row mt12">
       <button class="btn sec" id="pollNow">Trigger poll now</button>
-      <span class="hint" style="margin:0 0 0 8px;">To connect: add GMAIL_ADDRESS + GMAIL_APP_PASSWORD to .env and restart.</span>
+      <button class="btn sec" id="emailTestBtn">Test connection</button>
+    </div>
+
+    <div class="mt16" style="border-top:1px solid var(--line);padding-top:16px;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+        <h3 style="margin:0;font-size:14px;">Gmail App Password setup</h3>
+        <span id="emailSourceBadge"></span>
+      </div>
+      <p class="hint" style="margin:0 0 12px;">Uses a Gmail <b>App Password</b>, not your real password — this requires 2-Step Verification on the account. Generate one at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>, then paste it below (spaces are fine, they're stripped automatically). Saving here takes effect immediately, no restart needed.</p>
+      <div class="row">
+        <input type="text" id="gmailAddressInput" placeholder="you@gmail.com"/>
+      </div>
+      <div class="row mt12">
+        <input type="password" id="gmailAppPasswordInput" placeholder="16-character app password" class="mono" autocomplete="off"/>
+        <button class="btn sec" id="gmailPassToggle" type="button" style="flex:0;">Show</button>
+      </div>
+      <div class="row mt12">
+        <button class="btn" id="gmailSaveBtn">Save</button>
+        <button class="btn danger hidden" id="gmailClearBtn">Disconnect</button>
+      </div>
+      <div class="status" id="gmailConfigStatus"></div>
+      <p class="hint" style="margin:12px 0 0;">Stored in this app's database (not encrypted) so it survives restarts — the same trust boundary as every other table here. This console has no login yet, so treat access to it like access to a password.</p>
     </div>
   </div>
 
@@ -661,7 +682,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
   <div class="panel">
     <div class="panel-head"><h2>Important details</h2></div>
     <ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.9;">
-      <li><b>Sending email requires setup.</b> Add <code>GMAIL_ADDRESS</code> and <code>GMAIL_APP_PASSWORD</code> (a Gmail App Password, not your real password) as environment variables, then restart the server. Until then, everything except the actual send/reply-poll works normally.</li>
+      <li><b>Sending email requires setup.</b> Go to the <b>Admin</b> tab → "Gmail App Password setup" and enter a Gmail address plus a Gmail App Password (not your real password — generate one at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>, requires 2-Step Verification). Takes effect immediately, no restart needed. (<code>GMAIL_ADDRESS</code>/<code>GMAIL_APP_PASSWORD</code> environment variables still work too, as a fallback.) Until configured, everything except the actual send/reply-poll works normally.</li>
       <li><b>Suppression is checked twice</b> — once when queuing into a campaign, again right before sending — so an opt-out can never slip through even if it happens after a draft was already approved.</li>
       <li><b>Opt-outs are also detected automatically</b> from reply text (e.g. "unsubscribe," "remove me," "do not contact") and added to suppression without any manual step.</li>
       <li><b>How a reply gets matched back to a sent email:</b> by sender address only, not by message threading. Every poll cycle, the inbox is checked for unread mail from anyone currently in <code>Sent</code> status for some campaign; a match flips every <code>Sent</code> row for that address to <code>Replied</code>. It does not verify the message is actually a reply to that specific outreach email (no Message-ID/In-Reply-To check) — any new unread mail from that address while awaiting a reply counts.</li>
@@ -2050,7 +2071,7 @@ function barSegs(c) {
 // ADMIN — OBJ-015, OBJ-016
 // ══════════════════════════════════════════════════════
 async function loadEmailStatus() {
-  if(MODE!=='server') { set('es_c','N/A (demo)'); set('es_i','—'); set('es_lp','—'); set('es_rf','—'); return; }
+  if(MODE!=='server') { set('es_c','N/A (demo)'); set('es_i','—'); set('es_lp','—'); set('es_rf','—'); document.getElementById('emailSourceBadge').innerHTML=''; return; }
   try {
     const r=await fetch('/email/status'); const d=await r.json();
     set('es_c',d.configured?'✓ Yes':'✗ No');
@@ -2060,6 +2081,12 @@ async function loadEmailStatus() {
     const el=document.getElementById('es_err');
     el.textContent=d.last_poll_error?'Last error: '+d.last_poll_error:'';
     el.classList.toggle('err',!!d.last_poll_error);
+    const badgeMap={database:['p-valid','Configured here (database)'],environment:['p-dup','Configured via environment variable'],none:['p-neutral','Not configured']};
+    const [cls,label]=badgeMap[d.source]||badgeMap.none;
+    document.getElementById('emailSourceBadge').innerHTML=`<span class="pill ${cls}">${label}</span>`;
+    document.getElementById('gmailClearBtn').classList.toggle('hidden', d.source!=='database');
+    const addrInput=document.getElementById('gmailAddressInput');
+    if(document.activeElement!==addrInput) addrInput.value = d.gmail_address || '';
   } catch(e){}
 }
 
@@ -2068,6 +2095,46 @@ document.getElementById('pollNow').addEventListener('click', async () => {
   const r=await fetch('/email/poll-now',{method:'POST'}); const d=await r.json();
   document.getElementById('es_err').textContent='Poll complete — '+d.replies_found+' reply(ies) found.';
   loadEmailStatus();
+});
+
+document.getElementById('emailTestBtn').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('gmailConfigStatus','Requires server mode.',true);
+  setS('gmailConfigStatus','Testing…');
+  const r=await fetch('/email/test-connection',{method:'POST'});
+  const d=await r.json();
+  setS('gmailConfigStatus', d.message||d.detail||'', !r.ok);
+});
+
+document.getElementById('gmailPassToggle').addEventListener('click', () => {
+  const inp=document.getElementById('gmailAppPasswordInput');
+  const showing = inp.type==='text';
+  inp.type = showing ? 'password' : 'text';
+  document.getElementById('gmailPassToggle').textContent = showing ? 'Show' : 'Hide';
+});
+
+document.getElementById('gmailSaveBtn').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('gmailConfigStatus','Requires server mode.',true);
+  const gmail_address = document.getElementById('gmailAddressInput').value.trim();
+  const app_password = document.getElementById('gmailAppPasswordInput').value.trim();
+  if(!gmail_address || !app_password) return setS('gmailConfigStatus','Enter both the Gmail address and the app password.',true);
+  const r = await fetch('/email/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gmail_address,app_password})});
+  const d = await r.json();
+  if(!r.ok) return setS('gmailConfigStatus', d.detail||'Failed to save', true);
+  document.getElementById('gmailAppPasswordInput').value='';
+  setS('gmailConfigStatus','Saved — Gmail is configured. Click "Test connection" to confirm it works.');
+  loadEmailStatus();
+  checkEmailBadge();
+});
+
+document.getElementById('gmailClearBtn').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('gmailConfigStatus','Requires server mode.',true);
+  const r = await fetch('/email/config',{method:'DELETE'});
+  const d = await r.json();
+  if(!r.ok) return setS('gmailConfigStatus', d.detail||'Failed to disconnect', true);
+  document.getElementById('gmailAppPasswordInput').value='';
+  setS('gmailConfigStatus','Disconnected — DB-stored credentials cleared.');
+  loadEmailStatus();
+  checkEmailBadge();
 });
 
 async function loadSuppression() {

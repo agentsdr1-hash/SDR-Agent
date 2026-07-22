@@ -5,7 +5,10 @@ Works with a personal Gmail account (not Workspace) using an App Password
 instead of full OAuth: https://myaccount.google.com/apppasswords
 Requires 2-Step Verification to be enabled on the account first.
 
-Configure via environment variables (see .env.example):
+Configure via the Admin tab (Gmail integration panel) -- this writes to the
+app_settings table via app.services.settings and takes effect immediately,
+no restart needed. Environment variables still work as a fallback for
+headless/CI setups (see .env.example):
     GMAIL_ADDRESS         - the sending/monitoring Gmail address
     GMAIL_APP_PASSWORD    - the 16-character app password (NOT the real password)
     POLL_INTERVAL_MINUTES - how often to check for replies (default 5)
@@ -27,6 +30,8 @@ from email.mime.text import MIMEText
 from email.utils import parseaddr
 from datetime import datetime, timezone
 
+from app.services import settings as app_settings
+
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
 IMAP_HOST = "imap.gmail.com"
@@ -42,7 +47,7 @@ class EmailSendError(Exception):
 
 
 def _address() -> str | None:
-    return os.environ.get("GMAIL_ADDRESS")
+    return app_settings.get_setting("gmail_address") or os.environ.get("GMAIL_ADDRESS")
 
 
 def configured_address() -> str | None:
@@ -51,7 +56,33 @@ def configured_address() -> str | None:
 
 
 def _app_password() -> str | None:
-    return os.environ.get("GMAIL_APP_PASSWORD")
+    return app_settings.get_setting("gmail_app_password") or os.environ.get("GMAIL_APP_PASSWORD")
+
+
+def credential_source() -> str:
+    """Where the active credentials came from, for the Admin UI: 'database'
+    (saved via the Admin tab), 'environment' (GMAIL_* env vars only), or
+    'none'. DB always wins when both are present, matching _address()/
+    _app_password() above."""
+    if app_settings.get_setting("gmail_address") and app_settings.get_setting("gmail_app_password"):
+        return "database"
+    if os.environ.get("GMAIL_ADDRESS") and os.environ.get("GMAIL_APP_PASSWORD"):
+        return "environment"
+    return "none"
+
+
+def set_credentials(address: str, app_password: str):
+    """Save Gmail credentials to the DB (Admin tab). Takes effect on the
+    next send/poll -- no restart required."""
+    app_settings.set_setting("gmail_address", address)
+    app_settings.set_setting("gmail_app_password", app_password)
+
+
+def clear_credentials():
+    """Remove DB-stored credentials, reverting to the environment variables
+    (if any) as fallback."""
+    app_settings.set_setting("gmail_address", None)
+    app_settings.set_setting("gmail_app_password", None)
 
 
 def poll_interval_minutes() -> int:
@@ -79,6 +110,29 @@ def require_configured():
     _require_configured()
 
 
+def test_login() -> str:
+    """Attempts an SMTP login only -- no message sent -- to verify the
+    active credentials actually work with Gmail. Returns the address on
+    success; raises EmailNotConfiguredError / EmailSendError otherwise."""
+    _require_configured()
+    address = _address()
+    app_password = _app_password()
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
+            server.starttls()
+            server.login(address, app_password)
+    except smtplib.SMTPAuthenticationError as e:
+        raise EmailSendError(
+            f"Gmail rejected the login for {address}. Double-check the address and app "
+            f"password, and that the app password hasn't been revoked. Details: {e}"
+        )
+    except (smtplib.SMTPException, OSError) as e:
+        raise EmailSendError(f"Could not connect to Gmail: {e}")
+
+    return address
+
+
 def send_email(to_address: str, subject: str, body: str) -> dict:
     """Send one email via Gmail SMTP. Raises EmailNotConfiguredError if no
     credentials are set, or EmailSendError if Gmail rejects the send
@@ -102,7 +156,7 @@ def send_email(to_address: str, subject: str, body: str) -> dict:
             f"Gmail rejected the login. Check GMAIL_ADDRESS/GMAIL_APP_PASSWORD are correct "
             f"and that the app password hasn't been revoked. Details: {e}"
         )
-    except smtplib.SMTPException as e:
+    except (smtplib.SMTPException, OSError) as e:
         raise EmailSendError(f"Gmail rejected the send to {to_address}: {e}")
 
     return {"to": to_address, "sent_at": datetime.now(timezone.utc).isoformat()}
@@ -144,7 +198,7 @@ def check_for_replies(known_emails: set[str]) -> list[dict]:
                         "received_at": datetime.now(timezone.utc).isoformat(),
                     })
                     # leave it marked read so we don't reprocess it next poll
-    except imaplib.IMAP4.error as e:
+    except (imaplib.IMAP4.error, OSError) as e:
         raise EmailSendError(f"Gmail IMAP check failed: {e}")
 
     return replies
