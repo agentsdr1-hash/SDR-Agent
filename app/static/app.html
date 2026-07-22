@@ -71,6 +71,8 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);o
 .stat{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--paper);}
 .stat .n{font-family:var(--display);font-size:24px;font-weight:700;}
 .stat .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:3px;}
+.stat.clickable{cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+.stat.clickable:hover{border-color:var(--blue);box-shadow:0 1px 3px rgba(22,35,63,.08);}
 
 /* Dropzone */
 .dropzone{border:1.5px dashed var(--line);border-radius:10px;padding:38px 20px;text-align:center;cursor:pointer;transition:all .15s;}
@@ -382,18 +384,32 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
     <p class="hint" style="margin:0 0 10px;">Every prospect gets an immutable Lead # the moment it's imported — this is every one of them, across every campaign, in one place (not scoped to a single campaign or import batch like the tables on the Campaigns and Dashboard tabs). Search by name, email, company, or Lead #, then click a row to open its full lifecycle and manage its status — including reopening or editing a Won/Lost outcome.</p>
     <div class="row">
       <input type="text" id="leadsSearch" placeholder="Search name, email, company, or Lead # (e.g. L-000001)"/>
-      <select id="leadsStatusFilter" style="max-width:220px;">
-        <option value="">All statuses</option>
-        <option value="Imported -- not yet in a campaign">Imported, no campaign yet</option>
-        <option value="Queued">Queued</option>
-        <option value="Approved">Approved</option>
-        <option value="Rejected">Rejected</option>
-        <option value="Sent">Sent</option>
-        <option value="Replied">Replied</option>
-        <option value="Suppressed">Suppressed</option>
-        <option value="QuoteRequested">Quote Requested</option>
-        <option value="Won">Won</option>
-        <option value="Lost">Lost</option>
+      <select id="leadsStatusFilter" style="max-width:240px;">
+        <option value="" data-kind="">All statuses</option>
+        <optgroup label="Validation">
+          <option value="Valid" data-kind="validation_status">Valid</option>
+          <option value="Invalid" data-kind="validation_status">Invalid</option>
+          <option value="Duplicate" data-kind="validation_status">Duplicate</option>
+          <option value="Existing Customer" data-kind="validation_status">Existing customer</option>
+          <option value="Already Contacted" data-kind="validation_status">Already contacted</option>
+        </optgroup>
+        <optgroup label="Campaign status">
+          <option value="Imported -- not yet in a campaign" data-kind="status">Imported, no campaign yet</option>
+          <option value="Queued" data-kind="status">Queued</option>
+          <option value="Approved" data-kind="status">Approved</option>
+          <option value="Rejected" data-kind="status">Rejected</option>
+          <option value="Sent" data-kind="status">Sent (awaiting reply)</option>
+          <option value="Replied" data-kind="status">Replied</option>
+          <option value="Suppressed" data-kind="status">Suppressed</option>
+          <option value="QuoteRequested" data-kind="status">Quote requested</option>
+          <option value="Won" data-kind="status">Won</option>
+          <option value="Lost" data-kind="status">Lost</option>
+        </optgroup>
+        <optgroup label="Activity">
+          <option value="ever_sent" data-kind="ever_sent">Ever sent an email</option>
+          <option value="ever_replied" data-kind="ever_replied">Ever replied</option>
+          <option value="ever_quoted" data-kind="ever_quoted">Ever quote-requested</option>
+        </optgroup>
       </select>
     </div>
     <div class="tbl-wrap scrollx mt12">
@@ -500,12 +516,12 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
   <div class="panel">
     <div class="panel-head"><h2>Prospect funnel</h2><span class="obj-tag">OBJ-001 · OBJ-002</span></div>
     <div class="grid g6">
-      <div class="stat"><div class="n" style="color:var(--valid)" id="dV">–</div><div class="lbl">Valid</div></div>
-      <div class="stat"><div class="n" style="color:var(--invalid)" id="dI">–</div><div class="lbl">Invalid</div></div>
-      <div class="stat"><div class="n" style="color:var(--dup)" id="dD">–</div><div class="lbl">Duplicate</div></div>
-      <div class="stat"><div class="n" style="color:var(--indigo)" id="dE">–</div><div class="lbl">Existing customer</div></div>
-      <div class="stat"><div class="n" style="color:var(--sky)" id="dAC">–</div><div class="lbl">Already contacted</div></div>
-      <div class="stat"><div class="n" id="dT">–</div><div class="lbl">Total imported</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Valid')"><div class="n" style="color:var(--valid)" id="dV">–</div><div class="lbl">Valid</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Invalid')"><div class="n" style="color:var(--invalid)" id="dI">–</div><div class="lbl">Invalid</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Duplicate')"><div class="n" style="color:var(--dup)" id="dD">–</div><div class="lbl">Duplicate</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Existing Customer')"><div class="n" style="color:var(--indigo)" id="dE">–</div><div class="lbl">Existing customer</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Already Contacted')"><div class="n" style="color:var(--sky)" id="dAC">–</div><div class="lbl">Already contacted</div></div>
+      <div class="stat clickable" onclick="drillToLeads('')"><div class="n" id="dT">–</div><div class="lbl">Total imported</div></div>
     </div>
     <div class="status mt12" id="dNote"></div>
   </div>
@@ -513,22 +529,22 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
   <div class="panel">
     <div class="panel-head"><h2>Outreach funnel</h2><span class="obj-tag">OBJ-005 · OBJ-006 · OBJ-007</span></div>
     <div class="grid g6">
-      <div class="stat"><div class="n" id="of_q">–</div><div class="lbl">Queued</div></div>
-      <div class="stat"><div class="n" style="color:var(--valid)" id="of_ap">–</div><div class="lbl">Approved</div></div>
-      <div class="stat"><div class="n" style="color:var(--sky)" id="of_s">–</div><div class="lbl">Awaiting reply</div></div>
-      <div class="stat"><div class="n" style="color:var(--indigo)" id="of_r">–</div><div class="lbl">Replied</div></div>
-      <div class="stat"><div class="n" style="color:#4B5468" id="of_c">–</div><div class="lbl">Closed, no reply</div></div>
-      <div class="stat"><div class="n" style="color:var(--invalid)" id="of_rj">–</div><div class="lbl">Rejected</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Queued')"><div class="n" id="of_q">–</div><div class="lbl">Queued</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Approved')"><div class="n" style="color:var(--valid)" id="of_ap">–</div><div class="lbl">Approved</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Sent')"><div class="n" style="color:var(--sky)" id="of_s">–</div><div class="lbl">Awaiting reply</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Replied')"><div class="n" style="color:var(--indigo)" id="of_r">–</div><div class="lbl">Replied</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Suppressed')"><div class="n" style="color:var(--invalid)" id="of_c">–</div><div class="lbl">Suppressed</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Rejected')"><div class="n" style="color:var(--invalid)" id="of_rj">–</div><div class="lbl">Rejected</div></div>
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-head"><h2>Value captured</h2><span class="obj-tag">OBJ-011-lite</span></div>
     <div class="grid g5">
-      <div class="stat"><div class="n" style="color:var(--valid)" id="vc_w">–</div><div class="lbl">Customers won</div></div>
-      <div class="stat"><div class="n" style="color:#1B365D" id="vc_t">–</div><div class="lbl">Total turnover</div></div>
-      <div class="stat"><div class="n" style="color:var(--indigo)" id="vc_q">–</div><div class="lbl">Quotes requested</div></div>
-      <div class="stat"><div class="n" style="color:var(--invalid)" id="vc_l">–</div><div class="lbl">Deals lost</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Won')"><div class="n" style="color:var(--valid)" id="vc_w">–</div><div class="lbl">Customers won</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Won')"><div class="n" style="color:#1B365D" id="vc_t">–</div><div class="lbl">Total turnover</div></div>
+      <div class="stat clickable" onclick="drillToLeads('ever_quoted')"><div class="n" style="color:var(--indigo)" id="vc_q">–</div><div class="lbl">Quotes requested</div></div>
+      <div class="stat clickable" onclick="drillToLeads('Lost')"><div class="n" style="color:var(--invalid)" id="vc_l">–</div><div class="lbl">Deals lost</div></div>
       <div class="stat"><div class="n" id="vc_wr">–</div><div class="lbl">Win rate</div></div>
     </div>
   </div>
@@ -536,10 +552,10 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
   <div class="panel">
     <div class="panel-head"><h2>SDR performance</h2><span class="obj-tag">activity metrics</span></div>
     <div class="grid g4">
-      <div class="stat"><div class="n" style="color:var(--sky)" id="sp_s">–</div><div class="lbl">Emails sent</div></div>
-      <div class="stat"><div class="n" style="color:var(--indigo)" id="sp_r">–</div><div class="lbl">Replies received</div></div>
+      <div class="stat clickable" onclick="drillToLeads('ever_sent')"><div class="n" style="color:var(--sky)" id="sp_s">–</div><div class="lbl">Emails sent</div></div>
+      <div class="stat clickable" onclick="drillToLeads('ever_replied')"><div class="n" style="color:var(--indigo)" id="sp_r">–</div><div class="lbl">Replies received</div></div>
       <div class="stat"><div class="n" id="sp_rr">–</div><div class="lbl">Response rate</div></div>
-      <div class="stat"><div class="n" id="sp_ar">–</div><div class="lbl">Avg. reply time</div></div>
+      <div class="stat clickable" onclick="drillToLeads('ever_replied')"><div class="n" id="sp_ar">–</div><div class="lbl">Avg. reply time</div></div>
     </div>
   </div>
 
@@ -1499,6 +1515,7 @@ document.getElementById('qaFile').addEventListener('change', () => {
 // ══════════════════════════════════════════════════════
 let leadsSearchDebounce = null;
 let currentLeadNumber = null;
+let leadsListRequestSeq = 0;
 
 document.getElementById('leadsSearch').addEventListener('input', () => {
   clearTimeout(leadsSearchDebounce);
@@ -1506,16 +1523,35 @@ document.getElementById('leadsSearch').addEventListener('input', () => {
 });
 document.getElementById('leadsStatusFilter').addEventListener('change', loadLeadsList);
 
+// Called from Dashboard stat tiles -- e.g. onclick="drillToLeads('Won')" -- to
+// jump to the Leads tab pre-filtered to exactly the rows a given number
+// represents. optionValue must match one of #leadsStatusFilter's <option
+// value>s (blank clears the filter, for tiles like "Total imported").
+function drillToLeads(optionValue) {
+  go('leads');
+  document.getElementById('leadsSearch').value = '';
+  document.getElementById('leadsStatusFilter').value = optionValue;
+  loadLeadsList();
+}
+
 async function loadLeadsList() {
+  const seq = ++leadsListRequestSeq;
   const body = document.getElementById('leadsListBody'), empty = document.getElementById('leadsListEmpty');
   if(MODE!=='server') { body.innerHTML=''; empty.textContent='Leads requires server mode.'; empty.classList.remove('hidden'); return; }
   const search = document.getElementById('leadsSearch').value.trim();
-  const status = document.getElementById('leadsStatusFilter').value;
+  const sel = document.getElementById('leadsStatusFilter');
+  const opt = sel.options[sel.selectedIndex];
+  const kind = opt ? opt.dataset.kind : '';
   const params = new URLSearchParams();
   if(search) params.set('search', search);
-  if(status) params.set('status', status);
+  if(kind==='status') params.set('status', sel.value);
+  else if(kind==='validation_status') params.set('validation_status', sel.value);
+  else if(kind==='ever_sent') params.set('ever_sent', 'true');
+  else if(kind==='ever_replied') params.set('ever_replied', 'true');
+  else if(kind==='ever_quoted') params.set('ever_quoted', 'true');
   const r = await fetch('/leads?'+params.toString());
   const rows = await r.json();
+  if(seq !== leadsListRequestSeq) return; // a newer request has already superseded this one
   if(!r.ok) { body.innerHTML=''; empty.textContent='Could not load leads.'; empty.classList.remove('hidden'); return; }
   if(!rows.length) { body.innerHTML=''; empty.textContent='No leads match.'; empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
@@ -1544,6 +1580,41 @@ async function openLeadDetail(leadNumber) {
   if(!r.ok) { setS('leadDetailStatus', d.detail||'Not found', true); return; }
   setS('leadDetailStatus','');
   document.getElementById('leadDetailBody').innerHTML = renderLeadTimeline(d);
+  populateLeadAssignSelect();
+}
+
+async function populateLeadAssignSelect() {
+  const sel = document.getElementById('leadAssignCampaign');
+  if(!sel) return;
+  const r = await fetch('/campaigns');
+  const camps = await r.json();
+  sel.innerHTML = camps.length ? camps.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('') : '<option value="">No campaigns yet</option>';
+}
+
+async function saveLeadEdit(prospectId) {
+  const payload = {
+    first_name: document.getElementById('leadEditFirst').value.trim(),
+    last_name: document.getElementById('leadEditLast').value.trim(),
+    email: document.getElementById('leadEditEmail').value.trim(),
+    company: document.getElementById('leadEditCompany').value.trim(),
+    phone: document.getElementById('leadEditPhone').value.trim(),
+  };
+  const r = await fetch('/prospects/'+prospectId, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  const d = await r.json();
+  if(!r.ok) return setS('leadDetailStatus', d.detail||'Failed to save', true);
+  setS('leadDetailStatus', 'Saved — now '+d.status+(d.validation_notes?' ('+d.validation_notes+')':'')+'.');
+  refreshLeadDetail();
+}
+
+async function assignLeadToCampaign(prospectId) {
+  const sel = document.getElementById('leadAssignCampaign');
+  const cid = sel ? sel.value : '';
+  if(!cid) return setS('leadDetailStatus','Create a campaign first (Campaigns tab).', true);
+  const r = await fetch('/campaigns/'+cid+'/assign-prospect/'+prospectId, {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS('leadDetailStatus', d.detail||'Failed to assign', true);
+  setS('leadDetailStatus','Added to campaign.');
+  refreshLeadDetail();
 }
 
 function closeLeadDetail() {
@@ -1593,6 +1664,35 @@ async function leadReopen(cid,cpid) {
   refreshLeadDetail();
 }
 
+function editLeadSection(p) {
+  const openAttr = p.status!=='Valid' ? 'open' : '';
+  let html = `<details style="margin-bottom:16px;" ${openAttr}>
+    <summary style="cursor:pointer;font-weight:600;font-size:13px;color:var(--blue-deep);">Edit lead</summary>
+    <div class="mt12">
+      <div class="row">
+        <input type="text" id="leadEditFirst" placeholder="First name" value="${esc(p.first_name||'')}"/>
+        <input type="text" id="leadEditLast" placeholder="Last name" value="${esc(p.last_name||'')}"/>
+      </div>
+      <div class="row mt12">
+        <input type="text" id="leadEditEmail" placeholder="Email" value="${esc(p.email||'')}"/>
+        <input type="text" id="leadEditCompany" placeholder="Company" value="${esc(p.company||'')}"/>
+        <input type="text" id="leadEditPhone" placeholder="Phone" value="${esc(p.phone||'')}"/>
+      </div>
+      <div class="row mt12">
+        <button class="btn" onclick="saveLeadEdit(${p.id})">Save</button>
+      </div>
+    </div>
+  </details>`;
+
+  if(p.status==='Valid') {
+    html += `<div class="row" style="margin-bottom:16px;">
+      <select id="leadAssignCampaign" style="max-width:220px;"></select>
+      <button class="btn sky" onclick="assignLeadToCampaign(${p.id})">Add to campaign</button>
+    </div>`;
+  }
+  return html;
+}
+
 function renderLeadTimeline(d) {
   const p = d.prospect;
   const name = [p.first_name,p.last_name].filter(Boolean).join(' ')||'—';
@@ -1608,6 +1708,8 @@ function renderLeadTimeline(d) {
     </div>
     <p class="hint" style="margin-top:12px;">Imported ${fmt(p.batch_imported_at)} from "${esc(p.batch_filename||'—')}" · validation: ${pill(p.status)}${p.validation_notes?' — '+esc(p.validation_notes):''}</p>
   </div>`;
+
+  html += editLeadSection(p);
 
   if(d.memberships.length) {
     html += `<div class="tbl-wrap scrollx"><table><thead><tr>
@@ -1682,7 +1784,7 @@ async function loadDashboard() {
       set('sp_s',p.total_emails_sent); set('sp_r',p.total_replies_received); set('sp_rr',p.response_rate_pct+'%'); set('sp_ar',p.avg_response_time_hours==null?'—':p.avg_response_time_hours+'h');
       // outreach funnel from campaigns
       const of={q:0,ap:0,s:0,r:0,c:0,rj:0};
-      d.campaigns.forEach(c=>{of.q+=c.queued;of.ap+=c.approved||0;of.s+=c.sent;of.r+=c.replied;of.c+=c.lost||0;of.rj+=c.rejected||0;});
+      d.campaigns.forEach(c=>{of.q+=c.queued;of.ap+=c.approved||0;of.s+=c.sent;of.r+=c.replied;of.c+=c.suppressed||0;of.rj+=c.rejected||0;});
       set('of_q',of.q);set('of_ap',of.ap);set('of_s',of.s);set('of_r',of.r);set('of_c',of.c);set('of_rj',of.rj);
       // campaigns
       document.getElementById('dCamps').innerHTML = d.campaigns.length
@@ -1713,7 +1815,7 @@ async function loadDashboard() {
       if(st==='Queued')of.q++;else if(st==='Approved')of.ap++;
       else if(['Sent','Reminder1Sent','Reminder2Sent'].includes(st))of.s++;
       else if(st==='Replied'){of.r++;replied++;}
-      else if(st==='Closed')of.c++;else if(st==='Rejected')of.rj++;
+      else if(st==='Rejected')of.rj++;
       else if(st==='QuoteRequested')quotes++;
       else if(st==='Won'){won++;quotes++;if(p.dealValue)turnover+=p.dealValue;}
       else if(st==='Lost'){lost++;quotes++;}

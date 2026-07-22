@@ -8,13 +8,13 @@ new objects add routes, they don't add new tools.
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
 from app.db import get_conn
-from app.models import ImportSummary, ValidationSummary, ProspectRecord
+from app.models import ImportSummary, ValidationSummary, ProspectRecord, ProspectEdit
 from app.services.prospect_import import (
     import_prospect_file,
     import_prospect_file_from_url,
     ImportError_,
 )
-from app.services.prospect_validation import validate_batch
+from app.services.prospect_validation import validate_batch, edit_prospect
 from app.services.leads import lead_number_for
 
 router = APIRouter(prefix="/prospects", tags=["prospects"])
@@ -41,6 +41,18 @@ def import_prospects_from_url(url: str):
 def validate_prospects(batch_id: str):
     try:
         return validate_batch(batch_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.put("/{prospect_id}", tags=["OBJ-002"])
+def edit_prospect_endpoint(prospect_id: int, payload: ProspectEdit):
+    """Correct a prospect's own data (e.g. a missing/malformed email that
+    validation caught) and re-validate that one row -- lets a lead move
+    from Invalid to Valid without touching the rest of its import batch."""
+    try:
+        return edit_prospect(prospect_id, payload.first_name, payload.last_name,
+                              payload.email, payload.company, payload.phone)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

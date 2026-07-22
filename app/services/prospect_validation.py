@@ -81,6 +81,41 @@ def validate_batch(batch_id: str) -> ValidationSummary:
     )
 
 
+def edit_prospect(prospect_id: int, first_name: str, last_name: str, email: str,
+                   company: str, phone: str) -> dict:
+    """Correct a prospect's own data (e.g. a missing/malformed email caught
+    by validation) and re-run this one row through the same rules
+    validate_batch() uses, so it can move from Invalid to Valid (or the
+    reverse, if the edit breaks something) without re-validating the whole
+    batch. Duplicate-within-batch is checked against the batch's other
+    non-Invalid rows, same as the original batch pass."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM prospects_raw WHERE id = ?", (prospect_id,)).fetchone()
+        if not row:
+            raise ValueError(f"Prospect {prospect_id} not found")
+
+        customer_emails = ACTIVE_PROVIDER.get_customer_emails()
+        contacted_emails = _get_contacted_emails(conn)
+        batchmates = conn.execute(
+            "SELECT email FROM prospects_raw WHERE batch_id = ? AND id != ? AND status != 'Invalid'",
+            (row["batch_id"], prospect_id),
+        ).fetchall()
+        seen_emails = {r["email"].strip().lower() for r in batchmates if r["email"]}
+
+        updated = {**dict(row), "first_name": first_name, "last_name": last_name,
+                   "email": email, "company": company, "phone": phone}
+        status, note = _evaluate_row(updated, seen_emails, customer_emails, contacted_emails)
+
+        conn.execute(
+            """UPDATE prospects_raw SET first_name = ?, last_name = ?, email = ?, company = ?,
+               phone = ?, status = ?, validation_notes = ? WHERE id = ?""",
+            (first_name, last_name, email, company, phone, status, note, prospect_id),
+        )
+
+    log_event("prospect_edited", "prospect", str(prospect_id), f"Re-validated as {status}")
+    return {"id": prospect_id, "status": status, "validation_notes": note}
+
+
 def _evaluate_row(row, seen_emails: set[str], customer_emails: set[str], contacted_emails: set[str]) -> tuple[str, str]:
     email = (row["email"] or "").strip()
     has_name = bool((row["first_name"] or "").strip() or (row["last_name"] or "").strip())

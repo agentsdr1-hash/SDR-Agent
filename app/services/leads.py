@@ -64,11 +64,23 @@ def _latest_timestamp(m: dict) -> str | None:
     return None
 
 
-def list_leads(search: str | None = None, status: str | None = None) -> list[dict]:
+def list_leads(search: str | None = None, status: str | None = None,
+               validation_status: str | None = None, ever_sent: bool | None = None,
+               ever_replied: bool | None = None, ever_quoted: bool | None = None) -> list[dict]:
     """Every prospect across every campaign (and prospects not yet in any
     campaign), one row per lead, for the consolidated Leads tab -- as
     opposed to get_lead_timeline()'s single-lead full-detail view, or the
-    Dashboard/Campaigns tab's per-campaign or per-import-batch tables."""
+    Dashboard/Campaigns tab's per-campaign or per-import-batch tables.
+
+    status/validation_status match the Dashboard's per-campaign status
+    counts and prospect-funnel counts exactly (both are GROUP BY status
+    snapshots). ever_sent/ever_replied/ever_quoted match the SDR-performance
+    and value-captured stats, which count sent_at/replied_at/
+    quote_requested_at IS NOT NULL -- a superset of "status is currently
+    X", since those timestamps persist after the status moves on (e.g. a
+    Won deal still has sent_at and replied_at set). All four filters (like
+    the rest of this function) look only at each lead's latest campaign
+    membership, consistent with the rest of the Leads tab."""
     with get_conn() as conn:
         prospects = [dict(r) for r in conn.execute(
             "SELECT id, first_name, last_name, email, company, phone, status AS validation_status "
@@ -113,10 +125,21 @@ def list_leads(search: str | None = None, status: str | None = None) -> list[dic
             "won": summary["won"],
             "lost": summary["lost"],
             "last_activity_at": _latest_timestamp(latest) if latest else None,
+            "_sent_at": latest["sent_at"] if latest else None,
+            "_replied_at": latest["replied_at"] if latest else None,
+            "_quote_requested_at": latest["quote_requested_at"] if latest else None,
         })
 
     if status:
         leads = [l for l in leads if l["status"] == status]
+    if validation_status:
+        leads = [l for l in leads if l["validation_status"] == validation_status]
+    if ever_sent:
+        leads = [l for l in leads if l["_sent_at"]]
+    if ever_replied:
+        leads = [l for l in leads if l["_replied_at"]]
+    if ever_quoted:
+        leads = [l for l in leads if l["_quote_requested_at"]]
     if search:
         s = search.strip().lower()
         leads = [
@@ -129,6 +152,10 @@ def list_leads(search: str | None = None, status: str | None = None) -> list[dic
         ]
 
     leads.sort(key=lambda l: l["last_activity_at"] or "", reverse=True)
+    for l in leads:
+        l.pop("_sent_at", None)
+        l.pop("_replied_at", None)
+        l.pop("_quote_requested_at", None)
     return leads
 
 
@@ -175,6 +202,10 @@ def get_lead_timeline(lead_number: str) -> dict | None:
             "SELECT * FROM audit_log WHERE entity_type = 'batch' AND entity_id = ? ORDER BY timestamp",
             (prospect["batch_id"],),
         ).fetchall())
+        events += conn.execute(
+            "SELECT * FROM audit_log WHERE entity_type = 'prospect' AND entity_id = ? ORDER BY timestamp",
+            (str(prospect_id),),
+        ).fetchall()
         cp_ids = [str(m["id"]) for m in memberships]
         if cp_ids:
             placeholders = ",".join("?" * len(cp_ids))
