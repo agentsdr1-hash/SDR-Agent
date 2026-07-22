@@ -288,7 +288,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
       <div class="stat"><div class="n" style="color:var(--sky)" id="rAC">–</div><div class="lbl">Already contacted</div></div>
     </div>
     <div class="tbl-wrap">
-      <table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Company</th><th>Status</th><th>Notes</th></tr></thead>
+      <table><thead><tr><th>#</th><th>Lead #</th><th>Name</th><th>Email</th><th>Company</th><th>Status</th><th>Notes</th></tr></thead>
       <tbody id="rBody"></tbody></table>
     </div>
   </div>
@@ -432,6 +432,17 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
   </div>
 
   <div class="panel">
+    <div class="panel-head"><h2>Lead lookup</h2><span class="obj-tag">full lifecycle by Lead #</span></div>
+    <p class="hint" style="margin:0 0 10px;">Every prospect gets an immutable Lead # the moment it's imported (e.g. LEAD-000123) — look one up to see its full history: import, every campaign it's been part of, every stage timestamp, win/loss and value. Find a Lead # in any table below or on the Campaigns tab.</p>
+    <div class="row">
+      <input type="text" id="leadLookupInput" placeholder="e.g. LEAD-000001"/>
+      <button class="btn" id="leadLookupBtn">Look up</button>
+    </div>
+    <div class="status" id="leadLookupStatus"></div>
+    <div id="leadLookupResult" class="mt16"></div>
+  </div>
+
+  <div class="panel">
     <div class="panel-head"><h2>Prospect funnel</h2><span class="obj-tag">OBJ-001 · OBJ-002</span></div>
     <div class="grid g6">
       <div class="stat"><div class="n" style="color:var(--valid)" id="dV">–</div><div class="lbl">Valid</div></div>
@@ -489,7 +500,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
     </div>
     <div class="tbl-wrap scrollx mt12">
       <table><thead><tr>
-        <th>Name</th><th>Email</th><th>Company</th><th>Status</th><th>Draft</th>
+        <th>Lead #</th><th>Name</th><th>Email</th><th>Company</th><th>Status</th><th>Draft</th>
         <th class="nowrap">Added</th><th class="nowrap">Approved</th><th class="nowrap">Sent</th>
         <th class="nowrap">Replied</th><th>Reply subject</th><th class="nowrap">Quote req.</th>
         <th class="nowrap">Won</th><th class="nowrap">Lost</th><th>Deal value</th><th>Lost reason</th>
@@ -506,7 +517,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
       <select id="diSelect"></select>
     </div>
     <div class="tbl-wrap scrollx mt12">
-      <table><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Company</th><th>Phone</th><th>Status</th><th>Notes</th></tr></thead>
+      <table><thead><tr><th>#</th><th>Lead #</th><th>Name</th><th>Email</th><th>Company</th><th>Phone</th><th>Status</th><th>Notes</th></tr></thead>
       <tbody id="diBody"></tbody></table>
     </div>
     <div class="empty hidden" id="diEmpty">No import records yet.</div>
@@ -910,7 +921,7 @@ function prefillCampName() {
 function renderValidation(counts, rows) {
   set('rV',counts.Valid); set('rI',counts.Invalid); set('rD',counts.Duplicate); set('rE',counts['Existing Customer']); set('rAC',counts['Already Contacted']||0);
   document.getElementById('rBody').innerHTML = rows.map(r =>
-    `<tr><td class="mono">${r.row_number}</td><td>${esc([r.first_name,r.last_name].filter(Boolean).join(' '))||'—'}</td><td class="mono">${esc(r.email||'')}</td><td>${esc(r.company||'—')}</td><td>${pill(r.status)}</td><td class="muted wrap">${esc(r.validation_notes||'—')}</td></tr>`
+    `<tr><td class="mono">${r.row_number}</td><td class="mono">${esc(r.lead_number||'—')}</td><td>${esc([r.first_name,r.last_name].filter(Boolean).join(' '))||'—'}</td><td class="mono">${esc(r.email||'')}</td><td>${esc(r.company||'—')}</td><td>${pill(r.status)}</td><td class="muted wrap">${esc(r.validation_notes||'—')}</td></tr>`
   ).join('');
 }
 
@@ -1055,7 +1066,7 @@ function serverProspectCard(r, cid) {
   else if(r.status==='Sent') actions = `<button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},false)" title="Mimics a real detected reply, without an actual inbox">Simulate reply (test)</button><button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},true)" title="Mimics a reply containing opt-out language">Simulate opt-out (test)</button>`;
   else if(r.status==='Replied') actions = `<button class="btn sec" onclick="serverQuote('${cid}',${r.id})">Log quote</button>`;
   else if(r.status==='QuoteRequested') actions = `<button class="btn ok" onclick="serverWon('${cid}',${r.id})">Mark Won</button><button class="btn reject" onclick="serverLost('${cid}',${r.id})">Mark Lost</button>`;
-  return `<div class="email-card"><div class="ehead"><div class="who">${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')}</span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span></div></div>`;
+  return `<div class="email-card"><div class="ehead"><div class="who">${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span></div></div>`;
 }
 
 async function serverApprove(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/approve',{method:'POST'}); loadServerProspects(cid); }
@@ -1381,6 +1392,69 @@ document.getElementById('qaFile').addEventListener('change', () => {
 });
 
 // ══════════════════════════════════════════════════════
+// LEAD LOOKUP — full lifecycle by immutable Lead #
+// ══════════════════════════════════════════════════════
+document.getElementById('leadLookupBtn').addEventListener('click', lookupLead);
+document.getElementById('leadLookupInput').addEventListener('keydown', e => { if(e.key==='Enter') lookupLead(); });
+
+async function lookupLead() {
+  const resultEl = document.getElementById('leadLookupResult');
+  if(MODE!=='server') return setS('leadLookupStatus','Lead lookup requires server mode.', true);
+  const input = document.getElementById('leadLookupInput').value.trim();
+  if(!input) return setS('leadLookupStatus','Enter a Lead # (e.g. LEAD-000001).', true);
+  const r = await fetch('/leads/'+encodeURIComponent(input));
+  const d = await r.json();
+  if(!r.ok) { resultEl.innerHTML=''; return setS('leadLookupStatus', d.detail||'Not found', true); }
+  setS('leadLookupStatus', '');
+  resultEl.innerHTML = renderLeadTimeline(d);
+}
+
+function renderLeadTimeline(d) {
+  const p = d.prospect;
+  const name = [p.first_name,p.last_name].filter(Boolean).join(' ')||'—';
+  const outcomeBadge = d.won ? '<span class="pill p-valid">Won</span>' : d.lost ? '<span class="pill p-invalid">Lost</span>' : `<span class="pill p-neutral">${esc(d.overall_status)}</span>`;
+
+  let html = `<div class="panel" style="background:var(--paper);box-shadow:none;margin-bottom:16px;">
+    <div class="panel-head"><h2 class="mono">${esc(d.lead_number)}</h2>${outcomeBadge}</div>
+    <div class="grid g4">
+      <div class="stat"><div class="n" style="font-size:16px;">${esc(name)}</div><div class="lbl">Name</div></div>
+      <div class="stat"><div class="n mono" style="font-size:13px;">${esc(p.email||'—')}</div><div class="lbl">Email</div></div>
+      <div class="stat"><div class="n" style="font-size:16px;">${esc(p.company||'—')}</div><div class="lbl">Company</div></div>
+      <div class="stat"><div class="n" style="color:var(--valid)">$${(d.total_won_value||0).toLocaleString()}</div><div class="lbl">Total won value</div></div>
+    </div>
+    <p class="hint" style="margin-top:12px;">Imported ${fmt(p.batch_imported_at)} from "${esc(p.batch_filename||'—')}" · validation: ${pill(p.status)}${p.validation_notes?' — '+esc(p.validation_notes):''}</p>
+  </div>`;
+
+  if(d.memberships.length) {
+    html += `<div class="tbl-wrap scrollx"><table><thead><tr>
+      <th>Campaign</th><th>Status</th><th class="nowrap">Added</th><th class="nowrap">Approved</th><th class="nowrap">Sent</th>
+      <th class="nowrap">Replied</th><th class="nowrap">Quote req.</th><th class="nowrap">Won</th><th class="nowrap">Lost</th><th>Value</th><th class="wrap">Lost reason</th>
+    </tr></thead><tbody>` + d.memberships.map(m => `<tr>
+      <td>${esc(m.campaign_name)}</td><td>${pill(m.status)}</td>
+      <td class="muted nowrap">${m.added_at?fmt(m.added_at):'—'}</td>
+      <td class="muted nowrap">${m.approved_at?fmt(m.approved_at):'—'}</td>
+      <td class="muted nowrap">${m.sent_at?fmt(m.sent_at):'—'}</td>
+      <td class="muted nowrap">${m.replied_at?fmt(m.replied_at):'—'}</td>
+      <td class="muted nowrap">${m.quote_requested_at?fmt(m.quote_requested_at):'—'}</td>
+      <td class="muted nowrap">${m.won_at?fmt(m.won_at):'—'}</td>
+      <td class="muted nowrap">${m.lost_at?fmt(m.lost_at):'—'}</td>
+      <td>${m.deal_value!=null?'$'+Number(m.deal_value).toLocaleString():'—'}</td>
+      <td class="wrap">${esc(m.lost_reason||'—')}</td>
+    </tr>`).join('') + `</tbody></table></div>`;
+  } else {
+    html += `<div class="empty">Not yet queued into a campaign.</div>`;
+  }
+
+  if(d.timeline_events.length) {
+    html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">AUDIT TRAIL</div><div class="tbl-wrap scrollx"><table><thead><tr><th>When</th><th>Event</th><th>Details</th></tr></thead><tbody>` +
+      d.timeline_events.map(e => `<tr><td class="mono nowrap">${fmt(e.timestamp)}</td><td><span class="pill p-neutral">${esc(e.event_type)}</span></td><td class="muted wrap">${esc(e.details||'')}</td></tr>`).join('') +
+      `</tbody></table></div></div>`;
+  }
+
+  return html;
+}
+
+// ══════════════════════════════════════════════════════
 // DASHBOARD — OBJ-013
 // ══════════════════════════════════════════════════════
 async function loadDashboard() {
@@ -1464,6 +1538,7 @@ let diBatchId = null;
 function dcRowHtml(p) {
   const name = [p.first_name,p.last_name].filter(Boolean).join(' ')||'—';
   return `<tr>
+    <td class="mono">${esc(p.lead_number||'—')}</td>
     <td>${esc(name)}</td>
     <td class="mono">${esc(p.email||'')}</td>
     <td>${esc(p.company||'—')}</td>
@@ -1485,6 +1560,7 @@ function dcRowHtml(p) {
 function diRowHtml(r, rowNum) {
   return `<tr>
     <td class="mono">${rowNum}</td>
+    <td class="mono">${esc(r.lead_number||'—')}</td>
     <td>${esc([r.first_name,r.last_name].filter(Boolean).join(' '))||'—'}</td>
     <td class="mono">${esc(r.email||'')}</td>
     <td>${esc(r.company||'—')}</td>

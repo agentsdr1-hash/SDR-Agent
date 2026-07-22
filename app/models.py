@@ -11,6 +11,7 @@ class ImportSummary(BaseModel):
 
 class ProspectRecord(BaseModel):
     id: int
+    lead_number: str
     row_number: int
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -59,6 +60,7 @@ class AssignResult(BaseModel):
 class CampaignProspect(BaseModel):
     id: int
     prospect_id: int
+    lead_number: str
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[str] = None

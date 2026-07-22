@@ -14,6 +14,7 @@ from app.models import Campaign, AssignResult, CampaignProspect
 from app.services.administration import is_suppressed
 from app.services.audit import log_event
 from app.services import stock_catalog
+from app.services.leads import lead_number_for
 
 VALID_DAYS = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
 
@@ -204,4 +205,4 @@ def list_campaign_prospects(campaign_id: int) -> list[CampaignProspect]:
                ORDER BY cp.added_at""",
             (campaign_id,),
         ).fetchall()
-    return [CampaignProspect(**dict(r)) for r in rows]
+    return [CampaignProspect(**dict(r), lead_number=lead_number_for(r["prospect_id"])) for r in rows]
