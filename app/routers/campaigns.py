@@ -10,6 +10,7 @@ from app.services.campaign_management import (
     get_campaign,
     list_campaigns,
     assign_batch_to_campaign,
+    assign_prospect_to_campaign,
     list_campaign_prospects,
     CampaignError,
 )
@@ -53,6 +54,17 @@ def get_one(campaign_id: int):
 def assign(campaign_id: int, batch_id: str):
     try:
         return assign_batch_to_campaign(campaign_id, batch_id)
+    except CampaignError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/assign-prospect/{prospect_id}")
+def assign_prospect(campaign_id: int, prospect_id: int):
+    """Add one specific lead to a campaign -- e.g. one just fixed via the
+    Leads tab's edit form and now Valid -- without re-running the whole
+    import batch it came from."""
+    try:
+        return assign_prospect_to_campaign(campaign_id, prospect_id)
     except CampaignError as e:
         raise HTTPException(status_code=422, detail=str(e))
 

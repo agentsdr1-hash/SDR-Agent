@@ -22,6 +22,14 @@ class ProspectRecord(BaseModel):
     validation_notes: Optional[str] = None
 
 
+class ProspectEdit(BaseModel):
+    first_name: str = ""
+    last_name: str = ""
+    email: str = ""
+    company: str = ""
+    phone: str = ""
+
+
 class ValidationSummary(BaseModel):
     batch_id: str
     total: int

@@ -192,6 +192,41 @@ def assign_batch_to_campaign(campaign_id: int, batch_id: str) -> AssignResult:
     )
 
 
+def assign_prospect_to_campaign(campaign_id: int, prospect_id: int) -> dict:
+    """Single-lead version of assign_batch_to_campaign() -- for adding one
+    lead (e.g. one just fixed via edit_prospect() and now Valid) to a
+    campaign without re-running the whole batch it came from."""
+    with get_conn() as conn:
+        campaign = conn.execute("SELECT id FROM campaigns WHERE id = ?", (campaign_id,)).fetchone()
+        if not campaign:
+            raise CampaignError(f"Campaign {campaign_id} not found")
+
+        p = conn.execute(
+            "SELECT id, status, first_name, company, email FROM prospects_raw WHERE id = ?", (prospect_id,)
+        ).fetchone()
+        if not p:
+            raise CampaignError(f"Prospect {prospect_id} not found")
+        if p["status"] != "Valid":
+            raise CampaignError(f"Can only assign a 'Valid' prospect to a campaign (current: '{p['status']}')")
+        if is_suppressed(p["email"]):
+            raise CampaignError(f"{p['email']} is on the suppression list")
+
+        subject, body = _draft_for(p["first_name"], p["company"])
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            conn.execute(
+                """INSERT INTO campaign_prospects
+                   (campaign_id, prospect_id, status, subject, body, added_at)
+                   VALUES (?, ?, 'Queued', ?, ?, ?)""",
+                (campaign_id, prospect_id, subject, body, now),
+            )
+        except Exception:
+            raise CampaignError("Already in this campaign")
+
+    log_event("prospects_assigned", "campaign", str(campaign_id), f"Prospect {prospect_id} assigned individually")
+    return {"status": "Queued", "campaign_id": campaign_id, "prospect_id": prospect_id}
+
+
 def list_campaign_prospects(campaign_id: int) -> list[CampaignProspect]:
     with get_conn() as conn:
         rows = conn.execute(
