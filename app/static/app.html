@@ -22,14 +22,16 @@
   --shadow:0 1px 3px rgba(22,35,63,.06),0 8px 24px rgba(22,35,63,.08);
 }
 *{box-sizing:border-box;}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);}
+html{overflow-x:hidden;}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);overflow-x:hidden;}
 
 /* Topbar */
-.topbar{background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:100;}
+.topbar{background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:100;box-shadow:0 1px 2px rgba(22,35,63,.04);}
 .topbar-inner{max-width:1180px;margin:0 auto;padding:14px 26px;display:flex;align-items:center;justify-content:space-between;gap:16px;}
 .brand{display:flex;align-items:center;gap:9px;flex-shrink:0;}
 .brand-name{font-family:var(--display);font-weight:700;font-size:17px;}
 .brand-sub{font-family:var(--mono);font-size:9.5px;color:var(--muted);letter-spacing:.05em;}
+.topbar-badges{display:flex;gap:6px;align-items:center;flex-shrink:0;}
 .email-badge{font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;flex-shrink:0;}
 .badge-on{background:var(--valid-soft);color:var(--valid);}
 .badge-off{background:var(--dup-soft);color:var(--dup);}
@@ -37,10 +39,12 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);}
 
 /* Tabs */
 .tabs{display:flex;gap:2px;background:var(--paper);padding:4px;border-radius:10px;border:1px solid var(--line);}
-.tab{font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--muted);padding:6px 14px;border-radius:7px;cursor:pointer;border:none;background:transparent;display:flex;align-items:center;gap:5px;white-space:nowrap;transition:all .15s;}
+.tab{font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--muted);padding:6px 14px;border-radius:7px;cursor:pointer;border:none;background:transparent;display:flex;align-items:center;gap:5px;white-space:nowrap;transition:background .15s,color .15s;}
 .tab:hover{color:var(--ink);background:var(--line-soft);}
-.tab.active{background:var(--blue);color:#fff;}
+.tab.active{background:var(--blue);color:#fff;box-shadow:0 1px 4px rgba(36,87,217,.35);}
 .tab svg{width:13px;height:13px;flex-shrink:0;}
+.nav-toggle{display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;cursor:pointer;color:var(--ink);align-items:center;justify-content:center;flex-shrink:0;}
+.nav-toggle:hover{background:var(--line-soft);}
 
 /* Page */
 .page{max-width:1180px;margin:0 auto;padding:30px 26px 90px;}
@@ -83,17 +87,18 @@ textarea{min-height:90px;resize:vertical;font-size:13px;line-height:1.55;}
 .edit-subject:focus{outline:2px solid var(--blue);outline-offset:1px;}
 
 /* Buttons */
-.btn{font-family:var(--sans);font-size:13px;font-weight:600;border:none;border-radius:8px;padding:10px 18px;cursor:pointer;background:var(--blue);color:#fff;white-space:nowrap;transition:background .15s;}
-.btn:hover{background:var(--blue-deep);}
-.btn.sec{background:var(--panel);color:var(--ink);border:1px solid var(--line);}
+.btn{font-family:var(--sans);font-size:13px;font-weight:600;border:none;border-radius:8px;padding:10px 18px;cursor:pointer;background:var(--blue);color:#fff;white-space:nowrap;transition:background .15s,transform .1s,box-shadow .15s;box-shadow:0 1px 2px rgba(36,87,217,.25);}
+.btn:hover{background:var(--blue-deep);box-shadow:0 2px 6px rgba(36,87,217,.3);}
+.btn:active{transform:translateY(1px);}
+.btn.sec{background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:none;}
 .btn.sec:hover{background:var(--blue-soft);border-color:var(--blue);}
-.btn.ok{background:var(--valid-soft);color:var(--valid);}
+.btn.ok{background:var(--valid-soft);color:var(--valid);box-shadow:none;}
 .btn.ok:hover{background:var(--valid);color:#fff;}
-.btn.reject{background:var(--invalid-soft);color:var(--invalid);}
+.btn.reject{background:var(--invalid-soft);color:var(--invalid);box-shadow:none;}
 .btn.reject:hover{background:var(--invalid);color:#fff;}
-.btn.sky{background:var(--sky-soft);color:#0C7CA6;}
+.btn.sky{background:var(--sky-soft);color:#0C7CA6;box-shadow:none;}
 .btn.sky:hover{background:var(--sky);color:#fff;}
-.btn.danger{background:var(--invalid-soft);color:var(--invalid);}
+.btn.danger{background:var(--invalid-soft);color:var(--invalid);box-shadow:none;}
 .btn.danger:hover{background:var(--invalid);color:#fff;}
 .btn:disabled{opacity:.35;cursor:not-allowed;}
 
@@ -178,6 +183,32 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 .hint{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:6px;}
 .mt12{margin-top:12px;} .mt16{margin-top:16px;}
 .seed-note{font-size:11px;color:var(--muted);margin-top:8px;font-family:var(--mono);}
+
+/* ══════════════════════════════════════════════════════
+   RESPONSIVE — the tab bar doesn't wrap and tab labels never shrink,
+   so below this width it collapses behind a hamburger toggle instead
+   of forcing the whole page wider than the viewport (which is what
+   was happening before: the topbar silently overflowed sideways).
+   ══════════════════════════════════════════════════════ */
+@media (max-width: 860px) {
+  .topbar-inner{flex-wrap:wrap;position:relative;padding:12px 18px;}
+  .nav-toggle{display:flex;}
+  .tabs{display:none;position:absolute;top:100%;left:0;right:0;margin-top:8px;flex-direction:column;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px;box-shadow:var(--shadow);z-index:99;}
+  .tabs.open{display:flex;}
+  .tab{width:100%;padding:11px 14px;justify-content:flex-start;font-size:13.5px;}
+  .brand-sub{display:none;}
+  .page{padding:20px 16px 60px;}
+  .page-title{font-size:19px;margin-bottom:16px;}
+  .panel{padding:18px;border-radius:12px;margin-bottom:14px;}
+  .panel-head{margin-bottom:14px;}
+  .obj-tag{margin-left:0;}
+  .grid,.g2,.g3,.g4,.g5,.g6{grid-template-columns:repeat(2,1fr);}
+  .row{flex-direction:column;align-items:stretch;}
+  .row > input[type="text"],.row > select,.row > textarea{width:100%;}
+  .row > .btn{width:100%;text-align:center;}
+  .email-card,.kb-card{padding:15px 16px;}
+  .dropzone{padding:26px 14px;}
+}
 </style>
 </head>
 <body>
@@ -192,6 +223,9 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
       <span class="brand-name">APEX</span>
       <span class="brand-sub">AI-POWERED SDR PILOT</span>
     </div>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">
+      <svg viewBox="0 0 24 24" fill="none" width="19" height="19"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
     <div class="tabs" id="mainTabs">
       <button class="tab" onclick="go('import')">
         <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Import
@@ -212,7 +246,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
         <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.5" r="1" fill="currentColor"/></svg>Instructions
       </button>
     </div>
-    <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+    <div class="topbar-badges">
       <span class="demo-notice" id="modeNotice">DEMO MODE</span>
       <span class="email-badge badge-off" id="emailBadge">Email: not set</span>
     </div>
@@ -641,12 +675,21 @@ function go(name) {
     document.getElementById(VIEW_IDS[t]).classList.toggle('active', t===name);
     document.querySelectorAll('.tab')[i].classList.toggle('active', t===name);
   });
+  document.getElementById('mainTabs').classList.remove('open');
   if(name==='dashboard') loadDashboard();
   if(name==='campaigns') { syncReviewSelect(); loadReplyDrafts(); }
   if(name==='admin') { loadEmailStatus(); loadSuppression(); }
   if(name==='import') syncCampSelect();
   if(name==='kb') { renderKBAll(); loadStockCatalog(); loadQAEntries(); }
 }
+
+document.getElementById('navToggle').addEventListener('click', () => {
+  document.getElementById('mainTabs').classList.toggle('open');
+});
+document.addEventListener('click', e => {
+  const tabs = document.getElementById('mainTabs'), toggle = document.getElementById('navToggle');
+  if(tabs.classList.contains('open') && !tabs.contains(e.target) && !toggle.contains(e.target)) tabs.classList.remove('open');
+});
 
 // ══════════════════════════════════════════════════════
 // MODE DETECTION — try to reach the server
