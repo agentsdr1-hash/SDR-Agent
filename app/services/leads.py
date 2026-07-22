@@ -70,6 +70,19 @@ def get_lead_timeline(lead_number: str) -> dict | None:
         ).fetchall()
         memberships = [dict(m) for m in memberships]
 
+        cp_id_list = [m["id"] for m in memberships]
+        reply_drafts_by_cp: dict[int, list[dict]] = {}
+        if cp_id_list:
+            ph = ",".join("?" * len(cp_id_list))
+            rd_rows = conn.execute(
+                f"SELECT * FROM reply_drafts WHERE campaign_prospect_id IN ({ph}) ORDER BY created_at",
+                cp_id_list,
+            ).fetchall()
+            for rd in rd_rows:
+                reply_drafts_by_cp.setdefault(rd["campaign_prospect_id"], []).append(dict(rd))
+        for m in memberships:
+            m["reply_drafts"] = reply_drafts_by_cp.get(m["id"], [])
+
         events = list(conn.execute(
             "SELECT * FROM audit_log WHERE entity_type = 'batch' AND entity_id = ? ORDER BY timestamp",
             (prospect["batch_id"],),
