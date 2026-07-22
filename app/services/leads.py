@@ -1,7 +1,7 @@
 """
 Lead lifecycle lookup.
 
-A "lead" is a prospect from the moment it's imported -- LEAD-000123 is a
+A "lead" is a prospect from the moment it's imported -- L000123 is a
 human-referenceable, immutable identifier derived from prospects_raw.id
 (already unique and monotonically increasing, so no separate counter is
 needed; this is the same pattern Salesforce/HubSpot/etc. use for their
@@ -19,7 +19,7 @@ import re
 
 from app.db import get_conn
 
-LEAD_PREFIX = "LEAD-"
+LEAD_PREFIX = "L"
 
 
 def lead_number_for(prospect_id: int) -> str:
