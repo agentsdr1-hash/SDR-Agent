@@ -110,6 +110,25 @@ def get_summary() -> dict:
         ).fetchall()
         sends_by_day = [{"date": r["d"], "count": r["c"]} for r in sends_by_day_rows]
 
+        # ---- Activity over time (Dashboard chart) -- one row per day that
+        # had ANY sent/replied/won event, counts per kind. Sparse by design;
+        # the frontend fills gaps and re-buckets into week/month client-side.
+        activity_rows = conn.execute(
+            """SELECT d,
+                      SUM(CASE WHEN kind = 'sent' THEN 1 ELSE 0 END) sent,
+                      SUM(CASE WHEN kind = 'replied' THEN 1 ELSE 0 END) replied,
+                      SUM(CASE WHEN kind = 'won' THEN 1 ELSE 0 END) won
+               FROM (
+                   SELECT date(sent_at) d, 'sent' kind FROM campaign_prospects WHERE sent_at IS NOT NULL
+                   UNION ALL
+                   SELECT date(replied_at) d, 'replied' kind FROM campaign_prospects WHERE replied_at IS NOT NULL
+                   UNION ALL
+                   SELECT date(won_at) d, 'won' kind FROM campaign_prospects WHERE won_at IS NOT NULL
+               )
+               GROUP BY d ORDER BY d"""
+        ).fetchall()
+        activity_by_day = [{"date": r["d"], "sent": r["sent"], "replied": r["replied"], "won": r["won"]} for r in activity_rows]
+
     return {
         "total_import_batches": total_batches,
         "total_prospects": total_prospects,
@@ -138,4 +157,5 @@ def get_summary() -> dict:
             "avg_response_time_hours": avg_response_time_hours,
             "sends_by_day": sends_by_day,
         },
+        "activity_by_day": activity_by_day,
     }

@@ -16,6 +16,7 @@
   --invalid:#DC3B49; --invalid-soft:#FBE6E8;
   --dup:#D9880E; --dup-soft:#FBF0DC;
   --muted:#66708C;
+  --series-sent:#2a78d6; --series-replied:#eb6834; --series-won:#1baf7a;
   --display:"Space Grotesk",sans-serif;
   --sans:"IBM Plex Sans",-apple-system,sans-serif;
   --mono:"IBM Plex Mono","SF Mono",Consolas,monospace;
@@ -183,6 +184,26 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 .hint{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:6px;}
 .mt12{margin-top:12px;} .mt16{margin-top:16px;}
 .seed-note{font-size:11px;color:var(--muted);margin-top:8px;font-family:var(--mono);}
+
+/* Chart chrome -- chips (granularity/view toggles), legend, tooltip.
+   Colors validated against this app's surfaces with the dataviz skill's
+   six-check script (adjacent + all-pairs, light mode): #2a78d6 (sent),
+   #eb6834 (replied), #1baf7a (won). */
+.chip-group{display:inline-flex;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px;}
+.chip{font-family:var(--sans);font-size:11.5px;font-weight:600;color:var(--muted);padding:5px 11px;border-radius:6px;border:none;background:transparent;cursor:pointer;transition:background .15s,color .15s;white-space:nowrap;}
+.chip:hover{color:var(--ink);}
+.chip.active{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(22,35,63,.1);}
+.viz-legend{display:flex;gap:16px;flex-wrap:wrap;margin:14px 0 2px;font-size:11.5px;color:var(--muted);}
+.viz-legend .key{display:inline-flex;align-items:center;gap:6px;}
+.viz-legend .swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+.viz-tooltip{position:absolute;background:#0b0b0b;color:#fff;font-family:var(--sans);font-size:11.5px;padding:8px 11px;border-radius:8px;pointer-events:none;z-index:20;box-shadow:0 4px 14px rgba(0,0,0,.25);white-space:nowrap;}
+.viz-tooltip.hidden{display:none;}
+.viz-tooltip .vtt-title{font-weight:600;margin-bottom:5px;font-family:var(--mono);font-size:10.5px;color:#c3c2b7;}
+.viz-tooltip .vtt-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:1px 0;}
+.viz-tooltip .vtt-key{display:flex;align-items:center;gap:6px;color:#e5e5e0;}
+.viz-tooltip .vtt-line{width:10px;height:2px;border-radius:1px;flex-shrink:0;}
+.act-bar{cursor:pointer;transition:opacity .1s;}
+.act-bar:hover{opacity:.78;}
 
 /* ══════════════════════════════════════════════════════
    RESPONSIVE — the tab bar doesn't wrap and tab labels never shrink,
@@ -486,6 +507,28 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
       <div class="stat"><div class="n" id="sp_rr">–</div><div class="lbl">Response rate</div></div>
       <div class="stat"><div class="n" id="sp_ar">–</div><div class="lbl">Avg. reply time</div></div>
     </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Activity over time</h2><span class="obj-tag">sent · replied · won</span></div>
+    <p class="hint" style="margin:0 0 10px;">Send/reply/win volume per day, week, or month. Switch to burn-up for the cumulative running total instead of per-period volume.</p>
+    <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <div class="chip-group" id="actGranChips">
+        <button class="chip" data-gran="day" type="button">Day</button>
+        <button class="chip" data-gran="week" type="button">Week</button>
+        <button class="chip" data-gran="month" type="button">Month</button>
+      </div>
+      <div class="chip-group" id="actViewChips">
+        <button class="chip" data-view="stacked" type="button">Stacked bars</button>
+        <button class="chip" data-view="cumulative" type="button">Burn-up</button>
+      </div>
+      <button class="btn sec" style="font-size:12px;padding:6px 12px;" id="actTableToggle" type="button">View as table</button>
+    </div>
+    <div class="viz-legend" id="actLegend"></div>
+    <div id="actChartWrap" class="mt12" style="position:relative;"></div>
+    <div id="actTableWrap" class="tbl-wrap scrollx mt12 hidden"></div>
+    <div class="empty hidden" id="actEmpty">No sent/replied/won activity yet.</div>
+    <div class="viz-tooltip hidden" id="actTooltip"></div>
   </div>
 
   <div class="panel">
@@ -1445,6 +1488,15 @@ function renderLeadTimeline(d) {
     html += `<div class="empty">Not yet queued into a campaign.</div>`;
   }
 
+  const draftCount = d.memberships.reduce((n,m) => n + (m.reply_drafts?m.reply_drafts.length:0), 0);
+  if(draftCount) {
+    html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">RESPONSE DRAFTS (${draftCount})</div>` +
+      d.memberships.filter(m => m.reply_drafts && m.reply_drafts.length).map(m =>
+        `<div style="margin-bottom:14px;"><div class="muted" style="font-size:11.5px;margin-bottom:4px;">${esc(m.campaign_name)}</div>` +
+        m.reply_drafts.map(replyDraftDrillCard).join('') + `</div>`
+      ).join('') + `</div>`;
+  }
+
   if(d.timeline_events.length) {
     html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">AUDIT TRAIL</div><div class="tbl-wrap scrollx"><table><thead><tr><th>When</th><th>Event</th><th>Details</th></tr></thead><tbody>` +
       d.timeline_events.map(e => `<tr><td class="mono nowrap">${fmt(e.timestamp)}</td><td><span class="pill p-neutral">${esc(e.event_type)}</span></td><td class="muted wrap">${esc(e.details||'')}</td></tr>`).join('') +
@@ -1452,6 +1504,23 @@ function renderLeadTimeline(d) {
   }
 
   return html;
+}
+
+function replyDraftDrillCard(rd) {
+  const confBadge = rd.confidence==='matched'
+    ? `<span class="pill p-valid">matched</span>`
+    : `<span class="pill p-dup">fallback — no strong match</span>`;
+  const when = rd.sent_at ? 'sent '+fmt(rd.sent_at) : rd.rejected_at ? 'rejected '+fmt(rd.rejected_at) : rd.approved_at ? 'approved '+fmt(rd.approved_at) : 'drafted '+fmt(rd.created_at);
+  return `<details class="draft" style="margin-bottom:8px;">
+    <summary style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
+      <span>${esc(rd.subject)}</span>
+      <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">${confBadge}${pill(rd.status)}</span>
+    </summary>
+    <div class="day-note" style="margin:8px 0 6px;">In reply to: ${esc(rd.source_reply_subject||'(no subject)')} — "${esc((rd.source_reply_snippet||'').slice(0,140))}${(rd.source_reply_snippet||'').length>140?'…':''}"</div>
+    <div class="day-note" style="margin-bottom:8px;">Matched: ${esc(rd.matched_summary||'—')}</div>
+    <pre>${esc(rd.body)}</pre>
+    <div class="muted" style="font-size:11px;margin-top:6px;">${esc(when)}</div>
+  </details>`;
 }
 
 // ══════════════════════════════════════════════════════
@@ -1477,6 +1546,9 @@ async function loadDashboard() {
       document.getElementById('dCamps').innerHTML = d.campaigns.length
         ? d.campaigns.map(c=>`<div class="kb-card"><div style="display:flex;justify-content:space-between;"><b>${esc(c.name)}</b><span class="mono">${c.total} total · $${c.turnover.toLocaleString()} turnover</span></div><div class="bar-track">${barSegs(c)}</div><div class="legend"><span><span class="dot bs-queued"></span>${c.queued} queued</span><span><span class="dot bs-sent"></span>${c.sent} sent</span><span><span class="dot bs-replied"></span>${c.replied} replied</span><span><span class="dot bs-won"></span>${c.won} won</span></div></div>`).join('')
         : '<div class="empty">No campaigns yet.</div>';
+      // activity chart
+      actRawData = d.activity_by_day || [];
+      renderActivityChart();
       // full records
       populateDashboardRecordSelects(d.campaigns, d.recent_batches);
       await Promise.all([loadCampaignRecords(dcCampaignId), loadImportRecords(diBatchId), loadDbTables()]);
@@ -1526,8 +1598,271 @@ async function loadDashboard() {
     document.getElementById('dbtEmpty').classList.remove('hidden');
     document.getElementById('dAuditEmpty').classList.remove('hidden');
     document.getElementById('dAudit').innerHTML='';
+    actRawData = [];
+    document.getElementById('actChartWrap').innerHTML='';
+    document.getElementById('actLegend').innerHTML='';
+    document.getElementById('actTableWrap').innerHTML='';
+    document.getElementById('actTableWrap').classList.add('hidden');
+    document.getElementById('actEmpty').textContent='Requires server mode.';
+    document.getElementById('actEmpty').classList.remove('hidden');
   }
 }
+
+// ══════════════════════════════════════════════════════
+// ACTIVITY CHART — OBJ-013, stacked bars + burn-up cumulative
+// Series colors: --series-sent/--series-replied/--series-won, validated
+// with the dataviz skill's six-check script (adjacent + all-pairs,
+// light mode) against this app's panel surface (#FFFFFF).
+// ══════════════════════════════════════════════════════
+let actRawData = [];
+let actGranularity = 'week';
+let actView = 'stacked';
+let actTableMode = false;
+const ACT_SERIES = [
+  {key:'sent', label:'Sent', color:'var(--series-sent)'},
+  {key:'replied', label:'Replied', color:'var(--series-replied)'},
+  {key:'won', label:'Won', color:'var(--series-won)'},
+];
+
+function fillDailyGaps(rows) {
+  if (!rows.length) return [];
+  const byDate = {};
+  rows.forEach(r => byDate[r.date] = r);
+  const start = new Date(rows[0].date + 'T00:00:00');
+  const end = new Date(rows[rows.length - 1].date + 'T00:00:00');
+  const out = [];
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const key = d.toISOString().slice(0, 10);
+    const r = byDate[key];
+    out.push({date: key, sent: r ? r.sent : 0, replied: r ? r.replied : 0, won: r ? r.won : 0});
+  }
+  return out;
+}
+
+function isoWeekStart(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const dow = (d.getDay() + 6) % 7; // Monday = 0
+  d.setDate(d.getDate() - dow);
+  return d.toISOString().slice(0, 10);
+}
+
+function bucketActivity(denseRows, granularity) {
+  if (granularity === 'day') {
+    return denseRows.map(r => ({key: r.date, sent: r.sent, replied: r.replied, won: r.won}));
+  }
+  const keyFor = granularity === 'week' ? isoWeekStart : (r => r.slice(0, 7) + '-01');
+  const buckets = {};
+  const order = [];
+  denseRows.forEach(r => {
+    const k = keyFor(r.date);
+    if (!buckets[k]) { buckets[k] = {key: k, sent: 0, replied: 0, won: 0}; order.push(k); }
+    buckets[k].sent += r.sent; buckets[k].replied += r.replied; buckets[k].won += r.won;
+  });
+  return order.map(k => buckets[k]);
+}
+
+function fmtBucketLabel(key, granularity) {
+  if (granularity === 'month') {
+    const d = new Date(key + 'T00:00:00');
+    return d.toLocaleDateString(undefined, {month: 'short', year: '2-digit'});
+  }
+  const d = new Date(key + 'T00:00:00');
+  const label = d.toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+  return granularity === 'week' ? 'wk ' + label : label;
+}
+
+function niceCeil(max) {
+  if (max <= 0) return 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(max)));
+  const norm = max / mag;
+  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return step * mag;
+}
+
+function niceTicks(max, count) {
+  const ceil = niceCeil(max);
+  const step = ceil / count;
+  const ticks = [];
+  for (let i = 0; i <= count; i++) ticks.push(Math.round(step * i));
+  return ticks;
+}
+
+function renderActLegend() {
+  document.getElementById('actLegend').innerHTML = ACT_SERIES.map(s =>
+    `<span class="key"><span class="swatch" style="background:${s.color}"></span>${s.label}</span>`
+  ).join('');
+}
+
+function renderActivityChart() {
+  renderActLegend();
+  const wrap = document.getElementById('actChartWrap');
+  const tableWrap = document.getElementById('actTableWrap');
+  const empty = document.getElementById('actEmpty');
+  document.querySelectorAll('#actGranChips .chip').forEach(c => c.classList.toggle('active', c.dataset.gran === actGranularity));
+  document.querySelectorAll('#actViewChips .chip').forEach(c => c.classList.toggle('active', c.dataset.view === actView));
+  document.getElementById('actTableToggle').textContent = actTableMode ? 'View as chart' : 'View as table';
+
+  if (!actRawData.length) {
+    wrap.innerHTML = ''; wrap.classList.add('hidden');
+    tableWrap.innerHTML = ''; tableWrap.classList.add('hidden');
+    empty.textContent = 'No sent/replied/won activity yet.';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+
+  const dense = fillDailyGaps(actRawData);
+  const buckets = bucketActivity(dense, actGranularity);
+
+  if (actTableMode) {
+    wrap.classList.add('hidden');
+    tableWrap.classList.remove('hidden');
+    renderActivityTable(buckets);
+  } else {
+    tableWrap.classList.add('hidden');
+    wrap.classList.remove('hidden');
+    if (actView === 'stacked') svgStackedBars(wrap, buckets);
+    else svgCumulativeArea(wrap, buckets);
+  }
+}
+
+function svgStackedBars(wrap, buckets) {
+  const W = Math.max(wrap.clientWidth || 640, 320), H = 260;
+  const marginL = 40, marginB = 30, marginT = 10, marginR = 10;
+  const plotW = W - marginL - marginR, plotH = H - marginT - marginB;
+  const maxTotal = Math.max(1, ...buckets.map(b => b.sent + b.replied + b.won));
+  const yMax = niceCeil(maxTotal);
+  const ticks = niceTicks(yMax, 4);
+  const n = buckets.length;
+  const slot = plotW / n;
+  const barW = Math.max(4, Math.min(24, slot * 0.6));
+
+  let gridSvg = ticks.map(t => {
+    const y = marginT + plotH - (t / yMax) * plotH;
+    return `<line x1="${marginL}" y1="${y}" x2="${W - marginR}" y2="${y}" stroke="var(--line)" stroke-width="1"/>
+      <text x="${marginL - 8}" y="${y + 4}" text-anchor="end" font-size="10.5" fill="var(--muted)" font-family="var(--mono)">${t}</text>`;
+  }).join('');
+
+  let barsSvg = '';
+  buckets.forEach((b, i) => {
+    const cx = marginL + slot * i + slot / 2;
+    const x = cx - barW / 2;
+    let y0 = marginT + plotH;
+    ['sent', 'replied', 'won'].forEach(key => {
+      const val = b[key];
+      if (!val) return;
+      const h = (val / yMax) * plotH;
+      const y1 = y0 - h;
+      const color = key === 'sent' ? 'var(--series-sent)' : key === 'replied' ? 'var(--series-replied)' : 'var(--series-won)';
+      const isTop = (key === 'won' && val) || (key === 'replied' && !b.won) || (key === 'sent' && !b.replied && !b.won);
+      barsSvg += `<rect class="act-bar" data-idx="${i}" data-key="${key}" x="${x}" y="${y1}" width="${barW}" height="${Math.max(h - 2, 0)}" fill="${color}" rx="${isTop ? 4 : 0}"/>`;
+      y0 = y1 - 2;
+    });
+    if (n <= 16 || i % Math.ceil(n / 16) === 0) {
+      barsSvg += `<text x="${cx}" y="${H - marginB + 16}" text-anchor="middle" font-size="10" fill="var(--muted)" font-family="var(--mono)">${esc(fmtBucketLabel(b.key, actGranularity))}</text>`;
+    }
+    barsSvg += `<rect data-idx="${i}" class="act-hit" x="${marginL + slot * i}" y="${marginT}" width="${slot}" height="${plotH}" fill="transparent"/>`;
+  });
+
+  wrap.innerHTML = `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;">
+    <line x1="${marginL}" y1="${marginT + plotH}" x2="${W - marginR}" y2="${marginT + plotH}" stroke="var(--muted)" stroke-width="1"/>
+    ${gridSvg}${barsSvg}
+  </svg>`;
+  wireActTooltips(wrap, buckets);
+}
+
+function svgCumulativeArea(wrap, buckets) {
+  const W = Math.max(wrap.clientWidth || 640, 320), H = 260;
+  const marginL = 44, marginB = 30, marginT = 10, marginR = 10;
+  const plotW = W - marginL - marginR, plotH = H - marginT - marginB;
+  let running = {sent: 0, replied: 0, won: 0};
+  const cum = buckets.map(b => {
+    running = {sent: running.sent + b.sent, replied: running.replied + b.replied, won: running.won + b.won};
+    return {key: b.key, ...running};
+  });
+  const maxVal = Math.max(1, ...cum.map(c => Math.max(c.sent, c.replied, c.won)));
+  const yMax = niceCeil(maxVal);
+  const ticks = niceTicks(yMax, 4);
+  const n = cum.length;
+  const xFor = i => marginL + (n === 1 ? plotW / 2 : (plotW * i) / (n - 1));
+  const yFor = v => marginT + plotH - (v / yMax) * plotH;
+
+  let gridSvg = ticks.map(t => {
+    const y = yFor(t);
+    return `<line x1="${marginL}" y1="${y}" x2="${W - marginR}" y2="${y}" stroke="var(--line)" stroke-width="1"/>
+      <text x="${marginL - 8}" y="${y + 4}" text-anchor="end" font-size="10.5" fill="var(--muted)" font-family="var(--mono)">${t}</text>`;
+  }).join('');
+
+  let xLabelsSvg = cum.map((c, i) => {
+    if (n <= 16 || i % Math.ceil(n / 16) === 0) {
+      return `<text x="${xFor(i)}" y="${H - marginB + 16}" text-anchor="middle" font-size="10" fill="var(--muted)" font-family="var(--mono)">${esc(fmtBucketLabel(c.key, actGranularity))}</text>`;
+    }
+    return '';
+  }).join('');
+
+  let seriesSvg = ACT_SERIES.map(s => {
+    const pts = cum.map((c, i) => `${xFor(i)},${yFor(c[s.key])}`).join(' ');
+    const areaPts = `${xFor(0)},${yFor(0)} ${pts} ${xFor(n - 1)},${yFor(0)}`;
+    const color = s.key === 'sent' ? 'var(--series-sent)' : s.key === 'replied' ? 'var(--series-replied)' : 'var(--series-won)';
+    const last = cum[n - 1];
+    return `<polygon points="${areaPts}" fill="${color}" opacity="0.1"/>
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${xFor(n - 1)}" cy="${yFor(last[s.key])}" r="4" fill="${color}" stroke="var(--panel)" stroke-width="2"/>`;
+  }).join('');
+
+  let hitSvg = cum.map((c, i) => {
+    const w = n === 1 ? plotW : plotW / n;
+    const x = xFor(i) - w / 2;
+    return `<rect data-idx="${i}" class="act-hit" x="${x}" y="${marginT}" width="${w}" height="${plotH}" fill="transparent"/>`;
+  }).join('');
+
+  wrap.innerHTML = `<svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;">
+    <line x1="${marginL}" y1="${marginT + plotH}" x2="${W - marginR}" y2="${marginT + plotH}" stroke="var(--muted)" stroke-width="1"/>
+    ${gridSvg}${seriesSvg}${xLabelsSvg}${hitSvg}
+  </svg>`;
+  wireActTooltips(wrap, cum, true);
+}
+
+function wireActTooltips(wrap, buckets, cumulative) {
+  const tt = document.getElementById('actTooltip');
+  const svg = wrap.querySelector('svg');
+  svg.querySelectorAll('.act-hit').forEach(hit => {
+    hit.addEventListener('mousemove', e => {
+      const idx = +hit.dataset.idx;
+      const b = buckets[idx];
+      const rect = wrap.getBoundingClientRect();
+      tt.innerHTML = `<div class="vtt-title">${esc(fmtBucketLabel(b.key, actGranularity))}${cumulative ? ' · cumulative' : ''}</div>` +
+        ACT_SERIES.map(s => `<div class="vtt-row"><span class="vtt-key"><span class="vtt-line" style="background:${s.color}"></span>${s.label}</span><span class="mono">${b[s.key]}</span></div>`).join('');
+      tt.style.left = (e.clientX - rect.left + 14) + 'px';
+      tt.style.top = (e.clientY - rect.top - 10) + 'px';
+      tt.classList.remove('hidden');
+    });
+    hit.addEventListener('mouseleave', () => tt.classList.add('hidden'));
+  });
+}
+
+function renderActivityTable(buckets) {
+  const tableWrap = document.getElementById('actTableWrap');
+  tableWrap.innerHTML = `<table><thead><tr><th>${actGranularity === 'day' ? 'Date' : actGranularity === 'week' ? 'Week of' : 'Month'}</th><th>Sent</th><th>Replied</th><th>Won</th></tr></thead><tbody>` +
+    buckets.map(b => `<tr><td class="mono">${esc(fmtBucketLabel(b.key, actGranularity))}</td><td>${b.sent}</td><td>${b.replied}</td><td>${b.won}</td></tr>`).join('') +
+    `</tbody></table>`;
+}
+
+document.getElementById('actGranChips').addEventListener('click', e => {
+  const btn = e.target.closest('.chip'); if (!btn) return;
+  actGranularity = btn.dataset.gran;
+  renderActivityChart();
+});
+document.getElementById('actViewChips').addEventListener('click', e => {
+  const btn = e.target.closest('.chip'); if (!btn) return;
+  actView = btn.dataset.view;
+  renderActivityChart();
+});
+document.getElementById('actTableToggle').addEventListener('click', () => {
+  actTableMode = !actTableMode;
+  renderActivityChart();
+});
+window.addEventListener('resize', () => { if (actRawData.length && !actTableMode) renderActivityChart(); });
 
 // ══════════════════════════════════════════════════════
 // FULL RECORDS — row-level detail behind the funnel counts
