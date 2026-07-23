@@ -93,6 +93,26 @@ class DraftUpdate(BaseModel):
     body: str
 
 
+class BulkProspectIds(BaseModel):
+    prospect_row_ids: list[int]
+
+
+class BulkActionResult(BaseModel):
+    succeeded: int
+    failed: int
+    errors: list[str] = []
+
+
+class BulkAssignInput(BaseModel):
+    prospect_ids: list[int]
+    campaign_id: int
+
+
+class BulkSuppressInput(BaseModel):
+    prospect_ids: list[int]
+    reason: Optional[str] = None
+
+
 class SendResult(BaseModel):
     campaign_id: int
     attempted: int

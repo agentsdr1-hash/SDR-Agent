@@ -4,7 +4,7 @@ Create campaigns, assign validated prospects, approve/edit/send drafts.
 """
 from fastapi import APIRouter, HTTPException
 
-from app.models import Campaign, CampaignCreate, AssignResult, CampaignProspect, DraftUpdate, SendResult, WonPayload, LostPayload, SimulateReplyPayload
+from app.models import Campaign, CampaignCreate, AssignResult, CampaignProspect, DraftUpdate, SendResult, WonPayload, LostPayload, SimulateReplyPayload, BulkProspectIds, BulkActionResult
 from app.services.campaign_management import (
     create_campaign,
     get_campaign,
@@ -99,6 +99,30 @@ def reject_one(campaign_id: int, prospect_row_id: int):
         return {"status": "rejected"}
     except ApprovalError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/bulk-approve", response_model=BulkActionResult, tags=["OBJ-005"])
+def bulk_approve(campaign_id: int, payload: BulkProspectIds):
+    succeeded, errors = 0, []
+    for pid in payload.prospect_row_ids:
+        try:
+            approve(campaign_id, pid)
+            succeeded += 1
+        except ApprovalError as e:
+            errors.append(f"#{pid}: {e}")
+    return BulkActionResult(succeeded=succeeded, failed=len(errors), errors=errors)
+
+
+@router.post("/{campaign_id}/prospects/bulk-reject", response_model=BulkActionResult, tags=["OBJ-005"])
+def bulk_reject(campaign_id: int, payload: BulkProspectIds):
+    succeeded, errors = 0, []
+    for pid in payload.prospect_row_ids:
+        try:
+            reject(campaign_id, pid)
+            succeeded += 1
+        except ApprovalError as e:
+            errors.append(f"#{pid}: {e}")
+    return BulkActionResult(succeeded=succeeded, failed=len(errors), errors=errors)
 
 
 @router.post("/{campaign_id}/send", response_model=SendResult, tags=["OBJ-006"])
