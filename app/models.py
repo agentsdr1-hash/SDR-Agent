@@ -20,6 +20,10 @@ class ProspectRecord(BaseModel):
     phone: Optional[str] = None
     status: str
     validation_notes: Optional[str] = None
+    lead_source: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    next_action: Optional[str] = None
+    qualification_status: Optional[str] = None
 
 
 class ProspectEdit(BaseModel):
@@ -28,6 +32,10 @@ class ProspectEdit(BaseModel):
     email: str = ""
     company: str = ""
     phone: str = ""
+    lead_source: str = ""
+    linkedin_url: str = ""
+    next_action: str = ""
+    qualification_status: str = ""
 
 
 class ValidationSummary(BaseModel):
@@ -172,7 +180,15 @@ class LostPayload(BaseModel):
 
 class QuoteDetailsInput(BaseModel):
     materials: Optional[str] = None
+    sku_spec: Optional[str] = None
     quantity: Optional[str] = None
+    unit_of_measure: Optional[str] = None
+    destination: Optional[str] = None
+    shipping_terms: Optional[str] = None
+    delivery_date: Optional[str] = None
+    currency: Optional[str] = None
+    payment_terms: Optional[str] = None
+    packaging_requirements: Optional[str] = None
     target_price: Optional[float] = None
     quote_notes: Optional[str] = None
 

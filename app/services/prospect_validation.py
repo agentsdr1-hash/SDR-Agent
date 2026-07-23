@@ -82,7 +82,9 @@ def validate_batch(batch_id: str) -> ValidationSummary:
 
 
 def edit_prospect(prospect_id: int, first_name: str, last_name: str, email: str,
-                   company: str, phone: str) -> dict:
+                   company: str, phone: str, lead_source: str | None = None,
+                   linkedin_url: str | None = None, next_action: str | None = None,
+                   qualification_status: str | None = None) -> dict:
     """Correct a prospect's own data (e.g. a missing/malformed email caught
     by validation) and re-run this one row through the same rules
     validate_batch() uses, so it can move from Invalid to Valid (or the
@@ -108,8 +110,11 @@ def edit_prospect(prospect_id: int, first_name: str, last_name: str, email: str,
 
         conn.execute(
             """UPDATE prospects_raw SET first_name = ?, last_name = ?, email = ?, company = ?,
-               phone = ?, status = ?, validation_notes = ? WHERE id = ?""",
-            (first_name, last_name, email, company, phone, status, note, prospect_id),
+               phone = ?, status = ?, validation_notes = ?, lead_source = ?, linkedin_url = ?,
+               next_action = ?, qualification_status = ? WHERE id = ?""",
+            (first_name, last_name, email, company, phone, status, note,
+             lead_source or None, linkedin_url or None, next_action or None,
+             qualification_status or None, prospect_id),
         )
 
     log_event("prospect_edited", "prospect", str(prospect_id), f"Re-validated as {status}")

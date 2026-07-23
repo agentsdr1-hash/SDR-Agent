@@ -433,6 +433,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
           <option value="ever_sent">Ever sent an email</option>
           <option value="ever_replied">Ever replied</option>
           <option value="ever_quoted">Ever quote-requested</option>
+          <option value="quote_ready">Quote-ready (checklist complete)</option>
         </optgroup>
       </select>
     </div>
@@ -448,7 +449,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
     <div class="tbl-wrap scrollx mt12">
       <table><thead><tr>
         <th style="width:32px;"><input type="checkbox" id="leadsSelectAll"/></th>
-        <th>Lead #</th><th>Name</th><th>Company</th><th>Email</th><th>Status</th><th>Campaign</th><th>Deal value</th><th class="nowrap">Last activity</th><th></th>
+        <th>Lead #</th><th>Name</th><th>Company</th><th>Email</th><th class="nowrap">Score</th><th>Status</th><th>Campaign</th><th>Deal value</th><th class="nowrap">Last activity</th><th></th>
       </tr></thead><tbody id="leadsListBody"></tbody></table>
     </div>
     <div class="empty hidden" id="leadsListEmpty">No leads match.</div>
@@ -1644,6 +1645,7 @@ const LEAD_FILTER_KIND = {
   'Rejected': 'status', 'Sent': 'status', 'Replied': 'status', 'Suppressed': 'status',
   'QuoteRequested': 'status', 'Won': 'status', 'Lost': 'status',
   'ever_sent': 'ever_sent', 'ever_replied': 'ever_replied', 'ever_quoted': 'ever_quoted',
+  'quote_ready': 'quote_ready',
 };
 function leadsParamsFor(optionValue) {
   const params = new URLSearchParams();
@@ -1651,7 +1653,7 @@ function leadsParamsFor(optionValue) {
   if(!optionValue || !kind) return params;
   if(kind === 'status') params.set('status', optionValue);
   else if(kind === 'validation_status') params.set('validation_status', optionValue);
-  else params.set(kind, 'true'); // ever_sent / ever_replied / ever_quoted
+  else params.set(kind, 'true'); // ever_sent / ever_replied / ever_quoted / quote_ready
   return params;
 }
 
@@ -1700,10 +1702,11 @@ function leadDocumentCard(l) {
   const active = leadDetailCtx.leadNumber===l.lead_number && leadDetailCtx.bodyId==='dashDrillDetailWrap' ? ' active' : '';
   const materialsField = l.materials ? `<div class="lead-doc-field span2"><div class="k">Materials</div><div class="v">${esc(l.materials)}</div></div>` : '';
   const targetPriceField = l.target_price!=null ? `<div class="lead-doc-field"><div class="k">Target price</div><div class="v">$${Number(l.target_price).toLocaleString()}</div></div>` : '';
+  const readiness = l.quote_readiness || {filled:0,total:11,ready:false};
   return `<div class="lead-doc${active}" onclick="openLeadDetail('${esc(l.lead_number)}','dashDrillDetailWrap','dashDrillStatus')">
     <div class="lead-doc-head">
       <span class="lead-doc-num">${esc(l.lead_number)}</span>
-      ${pill(l.status)}
+      <span>${scorePill(l.lead_score)}${pill(l.status)}</span>
     </div>
     <div class="lead-doc-body">
       <div class="lead-doc-field span2"><div class="k">Name</div><div class="v">${esc(name)}</div></div>
@@ -1713,6 +1716,7 @@ function leadDocumentCard(l) {
       ${targetPriceField}
       <div class="lead-doc-field span2"><div class="k">Email</div><div class="v">${esc(l.email||'—')}</div></div>
       <div class="lead-doc-field span2"><div class="k">Campaign</div><div class="v">${esc(l.campaign_name||'—')}${l.campaign_count>1?` (+${l.campaign_count-1})`:''}</div></div>
+      <div class="lead-doc-field span2"><div class="k">Quote readiness</div><div class="v">${readiness.filled}/${readiness.total}${readiness.ready?' — ready':''}</div></div>
     </div>
     <div class="lead-doc-foot"><span>${l.last_activity_at?fmt(l.last_activity_at):'no activity yet'}</span><span>View record →</span></div>
   </div>`;
@@ -1744,6 +1748,7 @@ async function loadLeadsList() {
     <td>${esc([l.first_name,l.last_name].filter(Boolean).join(' ')||'—')}</td>
     <td>${esc(l.company||'—')}</td>
     <td class="mono">${esc(l.email||'—')}</td>
+    <td>${scorePill(l.lead_score)}</td>
     <td>${pill(l.status)}</td>
     <td>${esc(l.campaign_name||'—')}${l.campaign_count>1?` <span class="muted">(+${l.campaign_count-1})</span>`:''}</td>
     <td>${l.deal_value!=null?'$'+Number(l.deal_value).toLocaleString():'—'}</td>
@@ -1840,11 +1845,17 @@ document.getElementById('leadsExportBtn').addEventListener('click', () => {
     'Email': l.email || '',
     'Phone': l.phone || '',
     'Validation status': l.validation_status,
+    'Lead source': l.lead_source || '',
+    'LinkedIn': l.linkedin_url || '',
+    'Lead score': l.lead_score,
+    'Qualification status': l.qualification_status || '',
+    'Next action': l.next_action || '',
     'Status': l.status,
     'Campaign': l.campaign_name || '',
     'Materials': l.materials || '',
     'Quantity': l.quantity || '',
     'Target price': l.target_price != null ? l.target_price : '',
+    'Quote readiness': l.quote_readiness ? `${l.quote_readiness.filled}/${l.quote_readiness.total}` : '',
     'Deal value': l.deal_value != null ? l.deal_value : '',
     'Last activity': l.last_activity_at ? fmt(l.last_activity_at) : '',
   }));
@@ -1924,6 +1935,10 @@ async function saveLeadEdit(prospectId) {
     email: document.getElementById('leadEditEmail').value.trim(),
     company: document.getElementById('leadEditCompany').value.trim(),
     phone: document.getElementById('leadEditPhone').value.trim(),
+    lead_source: document.getElementById('leadEditSource').value,
+    linkedin_url: document.getElementById('leadEditLinkedin').value.trim(),
+    qualification_status: document.getElementById('leadEditQualStatus').value,
+    next_action: document.getElementById('leadEditNextAction').value.trim(),
   };
   const r = await fetch('/prospects/'+prospectId, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
   const d = await r.json();
@@ -1933,15 +1948,25 @@ async function saveLeadEdit(prospectId) {
 }
 
 async function saveQuoteDetails(cid, cpid) {
-  const materials = document.getElementById('quoteMaterials-'+cpid).value.trim();
-  const quantity = document.getElementById('quoteQuantity-'+cpid).value.trim();
+  const payload = {};
+  QUOTE_CHECKLIST_INPUTS.forEach(([key]) => {
+    payload[key] = document.getElementById('quote-'+key+'-'+cpid).value.trim();
+  });
   const tpRaw = document.getElementById('quoteTargetPrice-'+cpid).value;
-  const target_price = tpRaw!=='' && !isNaN(parseFloat(tpRaw)) ? parseFloat(tpRaw) : null;
-  const quote_notes = document.getElementById('quoteNotes-'+cpid).value.trim();
-  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/quote-details', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({materials, quantity, target_price, quote_notes})});
+  payload.target_price = tpRaw!=='' && !isNaN(parseFloat(tpRaw)) ? parseFloat(tpRaw) : null;
+  payload.quote_notes = document.getElementById('quoteNotes-'+cpid).value.trim();
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/quote-details', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
   const d = await r.json();
   if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to save', true);
   setS(leadDetailCtx.statusId, 'Quote details saved.');
+  refreshLeadDetail();
+}
+
+async function draftQuoteSummary(cid, cpid) {
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/draft-quote-summary', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to draft', true);
+  setS(leadDetailCtx.statusId, 'Draft ready for review below — nothing sent yet.');
   refreshLeadDetail();
 }
 
@@ -2005,28 +2030,59 @@ async function leadReopen(cid,cpid) {
   refreshLeadDetail();
 }
 
+// Quote Readiness Checklist -- field id, label, placeholder. Mirrors
+// app/services/leads.py's QUOTE_CHECKLIST_FIELDS (target_price is kept
+// separate -- it's a budget hint, not a checklist item).
+const QUOTE_CHECKLIST_INPUTS = [
+  ['materials', 'Product(s)', 'e.g. Flat bars, ERW pipes, Angles'],
+  ['sku_spec', 'SKU or specification', 'e.g. FB-50x5, Grade S355'],
+  ['quantity', 'Quantity', 'e.g. 50 tons'],
+  ['unit_of_measure', 'Unit of Measure', 'e.g. tons, pcs, meters'],
+  ['destination', 'Destination', 'e.g. Dubai, UAE'],
+  ['shipping_terms', 'Shipping Terms (Incoterms)', 'e.g. FOB, CIF'],
+  ['delivery_date', 'Delivery Date', 'e.g. 2026-08-01'],
+  ['currency', 'Currency', 'e.g. AED, USD'],
+  ['payment_terms', 'Payment Terms', 'e.g. Net 30'],
+  ['packaging_requirements', 'Packaging Requirements', 'e.g. Bundled, palletized'],
+];
+
+function readinessBadge(m) {
+  const total = QUOTE_CHECKLIST_INPUTS.length + 1; // + quote_notes
+  const filled = QUOTE_CHECKLIST_INPUTS.filter(([key]) => m[key]).length + (m.quote_notes ? 1 : 0);
+  const ready = filled === total;
+  return `<span class="pill ${ready?'p-valid':'p-neutral'}" style="margin-left:8px;">${filled}/${total} ready</span>`;
+}
+
 function quoteDetailsSection(m) {
   const openAttr = ['Replied','QuoteRequested'].includes(m.status) ? 'open' : '';
-  const hasAny = m.materials || m.quantity || m.target_price!=null || m.quote_notes;
+  const hasAny = QUOTE_CHECKLIST_INPUTS.some(([key]) => m[key]) || m.quote_notes || m.target_price!=null;
+  const fieldRows = [];
+  for(let i=0;i<QUOTE_CHECKLIST_INPUTS.length;i+=2) {
+    const pair = QUOTE_CHECKLIST_INPUTS.slice(i,i+2);
+    fieldRows.push(`<div class="row mt12">${pair.map(([key,label,ph]) =>
+      `<input type="text" id="quote-${key}-${m.id}" placeholder="${esc(label)} — ${esc(ph)}" value="${esc(m[key]||'')}"/>`
+    ).join('')}</div>`);
+  }
   return `<details ${openAttr}>
-    <summary style="cursor:pointer;font-weight:600;font-size:12.5px;color:var(--blue-deep);">Quote details${hasAny?'':' — not filled in yet'}</summary>
+    <summary style="cursor:pointer;font-weight:600;font-size:12.5px;color:var(--blue-deep);">Quote details${hasAny?'':' — not filled in yet'}${readinessBadge(m)}</summary>
     <div class="mt12">
-      <div class="row">
-        <input type="text" id="quoteMaterials-${m.id}" placeholder="Materials / products, e.g. Flat bars, ERW pipes, Angles" value="${esc(m.materials||'')}"/>
-      </div>
+      ${fieldRows.join('')}
       <div class="row mt12">
-        <input type="text" id="quoteQuantity-${m.id}" placeholder="Quantity, e.g. 50 tons" value="${esc(m.quantity||'')}"/>
         <input type="number" id="quoteTargetPrice-${m.id}" placeholder="Target price (optional)" value="${m.target_price!=null?m.target_price:''}"/>
       </div>
       <div class="row mt12">
-        <textarea id="quoteNotes-${m.id}" placeholder="Specs, grade, delivery timeline/location, other notes" style="min-height:60px;">${esc(m.quote_notes||'')}</textarea>
+        <textarea id="quoteNotes-${m.id}" placeholder="Special instructions" style="min-height:60px;">${esc(m.quote_notes||'')}</textarea>
       </div>
       <div class="row mt12">
         <button class="btn" onclick="saveQuoteDetails(${m.campaign_id},${m.id})">Save quote details</button>
+        <button class="btn sky" onclick="draftQuoteSummary(${m.campaign_id},${m.id})">Draft quote summary email</button>
       </div>
     </div>
   </details>`;
 }
+
+const LEAD_SOURCE_OPTIONS = ['Website', 'Trade Show', 'Referral'];
+const QUALIFICATION_STATUS_OPTIONS = ['New', 'Contacted', 'Qualified', 'Unqualified', 'Nurturing'];
 
 function editLeadSection(p) {
   const openAttr = p.status!=='Valid' ? 'open' : '';
@@ -2041,6 +2097,21 @@ function editLeadSection(p) {
         <input type="text" id="leadEditEmail" placeholder="Email" value="${esc(p.email||'')}"/>
         <input type="text" id="leadEditCompany" placeholder="Company" value="${esc(p.company||'')}"/>
         <input type="text" id="leadEditPhone" placeholder="Phone" value="${esc(p.phone||'')}"/>
+      </div>
+      <div class="hint" style="margin:14px 0 6px;">LEAD QUALIFICATION</div>
+      <div class="row">
+        <select id="leadEditSource" style="max-width:200px;">
+          <option value="">Lead source…</option>
+          ${LEAD_SOURCE_OPTIONS.map(o=>`<option value="${esc(o)}" ${p.lead_source===o?'selected':''}>${esc(o)}</option>`).join('')}
+        </select>
+        <input type="text" id="leadEditLinkedin" placeholder="LinkedIn URL" value="${esc(p.linkedin_url||'')}"/>
+        <select id="leadEditQualStatus" style="max-width:200px;">
+          <option value="">Qualification status…</option>
+          ${QUALIFICATION_STATUS_OPTIONS.map(o=>`<option value="${esc(o)}" ${p.qualification_status===o?'selected':''}>${esc(o)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="row mt12">
+        <input type="text" id="leadEditNextAction" placeholder="Next action, e.g. Call back Friday" value="${esc(p.next_action||'')}"/>
       </div>
       <div class="row mt12">
         <button class="btn" onclick="saveLeadEdit(${p.id})">Save</button>
@@ -2097,7 +2168,7 @@ function renderLeadTimeline(d) {
   }
 
   if(d.memberships.length) {
-    html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">QUOTE DETAILS — materials, quantity, pricing</div>` +
+    html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">QUOTE READINESS CHECKLIST</div>` +
       d.memberships.map(m =>
         `<div style="margin-bottom:10px;">${d.memberships.length>1?`<div class="muted" style="font-size:11.5px;margin-bottom:4px;">${esc(m.campaign_name)}</div>`:''}${quoteDetailsSection(m)}</div>`
       ).join('') + `</div>`;
@@ -2122,7 +2193,9 @@ function renderLeadTimeline(d) {
 }
 
 function replyDraftDrillCard(rd) {
-  const confBadge = rd.confidence==='matched'
+  const confBadge = rd.confidence==='quote_summary'
+    ? `<span class="pill p-quote">quote summary</span>`
+    : rd.confidence==='matched'
     ? `<span class="pill p-valid">matched</span>`
     : `<span class="pill p-dup">fallback — no strong match</span>`;
   const when = rd.sent_at ? 'sent '+fmt(rd.sent_at) : rd.rejected_at ? 'rejected '+fmt(rd.rejected_at) : rd.approved_at ? 'approved '+fmt(rd.approved_at) : 'drafted '+fmt(rd.created_at);
@@ -2791,6 +2864,10 @@ function pill(s){
     Rejected:'p-rejected',Won:'p-won',Lost:'p-lost',QuoteRequested:'p-quote',
     Reminder1Sent:'p-reminder',Reminder2Sent:'p-reminder',Closed:'p-closed'};
   return `<span class="pill ${map[s]||'p-neutral'}">${s}</span>`;
+}
+function scorePill(score) {
+  const cls = score>=65 ? 'p-valid' : score>=30 ? 'p-quote' : 'p-neutral';
+  return `<span class="pill ${cls}">${score}</span>`;
 }
 
 // Boot — start on Import tab

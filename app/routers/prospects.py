@@ -52,7 +52,9 @@ def edit_prospect_endpoint(prospect_id: int, payload: ProspectEdit):
     from Invalid to Valid without touching the rest of its import batch."""
     try:
         return edit_prospect(prospect_id, payload.first_name, payload.last_name,
-                              payload.email, payload.company, payload.phone)
+                              payload.email, payload.company, payload.phone,
+                              payload.lead_source, payload.linkedin_url,
+                              payload.next_action, payload.qualification_status)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
