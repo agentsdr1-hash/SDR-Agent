@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.integrations import email_provider
 from app.services import inbox_monitor
-from app.models import EmailStatus, PollResult, EmailConfigInput
+from app.models import EmailStatus, PollResult, EmailConfigInput, DailySendLimitInput
 
 router = APIRouter(prefix="/email", tags=["OBJ-016"])
 
@@ -20,10 +20,22 @@ def status():
         gmail_address=email_provider.configured_address(),
         source=email_provider.credential_source(),
         poll_interval_minutes=email_provider.poll_interval_minutes(),
+        daily_send_limit=email_provider.daily_send_limit(),
+        sent_today=email_provider.sent_today_count(),
         last_poll_at=poll_status["last_poll_at"],
         last_poll_replies_found=poll_status["last_poll_replies_found"],
         last_poll_error=poll_status["last_poll_error"],
     )
+
+
+@router.put("/daily-send-limit", response_model=EmailStatus)
+def set_daily_send_limit(payload: DailySendLimitInput):
+    """Configure the daily cap on real sends (campaign + reply-draft sends
+    combined) from the Admin tab. Takes effect immediately."""
+    if payload.limit <= 0:
+        raise HTTPException(status_code=422, detail="Daily send limit must be a positive number.")
+    email_provider.set_daily_send_limit(payload.limit)
+    return status()
 
 
 @router.post("/poll-now", response_model=PollResult)

@@ -46,6 +46,10 @@ class EmailSendError(Exception):
     pass
 
 
+class DailySendLimitReached(EmailSendError):
+    pass
+
+
 def _address() -> str | None:
     return app_settings.get_setting("gmail_address") or os.environ.get("GMAIL_ADDRESS")
 
@@ -92,6 +96,51 @@ def poll_interval_minutes() -> int:
         return 5
 
 
+DEFAULT_DAILY_SEND_LIMIT = 20
+
+
+def daily_send_limit() -> int:
+    """Configurable via the Admin tab -- stored the same way as Gmail
+    credentials (app_settings, takes effect immediately). Defaults to 20:
+    a personal (non-Workspace) Gmail account sending a big batch of
+    similar-looking emails in one go is exactly the pattern Gmail's spam
+    detection watches for, so real sends are paced to this many per day
+    rather than firing an entire approved campaign at once."""
+    v = app_settings.get_setting("daily_send_limit")
+    try:
+        return int(v) if v else DEFAULT_DAILY_SEND_LIMIT
+    except ValueError:
+        return DEFAULT_DAILY_SEND_LIMIT
+
+
+def set_daily_send_limit(limit: int):
+    app_settings.set_setting("daily_send_limit", str(limit))
+
+
+def sent_today_count() -> int:
+    """Real sends only, across BOTH outbound paths -- campaign sends and
+    reply-draft sends -- since Gmail's abuse detection doesn't distinguish
+    which flow inside this app an email came from, only how many left the
+    account today. Counted from the audit log (event_type 'email_sent' /
+    'reply_sent') rather than campaign_prospects.sent_at / reply_drafts.
+    sent_at directly, because simulate_sent() -- the "Simulate send (test)"
+    button used to exercise the funnel without real Gmail credentials --
+    also stamps sent_at despite never touching Gmail; the audit log is the
+    only place real and simulated sends are actually distinguished
+    (email_sent vs email_sent_simulated)."""
+    from app.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) c FROM audit_log WHERE event_type IN ('email_sent', 'reply_sent') "
+            "AND date(timestamp) = date('now')"
+        ).fetchone()
+    return row["c"]
+
+
+def remaining_sends_today() -> int:
+    return max(0, daily_send_limit() - sent_today_count())
+
+
 def is_configured() -> bool:
     return bool(_address() and _app_password())
 
@@ -135,9 +184,18 @@ def test_login() -> str:
 
 def send_email(to_address: str, subject: str, body: str) -> dict:
     """Send one email via Gmail SMTP. Raises EmailNotConfiguredError if no
-    credentials are set, or EmailSendError if Gmail rejects the send
-    (bad credentials, address blocked, daily limit hit, etc.)."""
+    credentials are set, DailySendLimitReached if this app's own configured
+    cap for today is already hit (see daily_send_limit()), or EmailSendError
+    if Gmail itself rejects the send (bad credentials, address blocked,
+    Gmail's own limit hit, etc.). This is the single chokepoint every real
+    send goes through -- campaign sends and reply-draft sends alike -- so
+    gating here covers both without duplicating the check."""
     _require_configured()
+    if remaining_sends_today() <= 0:
+        raise DailySendLimitReached(
+            f"Daily send limit of {daily_send_limit()} reached for today. "
+            f"Try again tomorrow, or raise the limit in Admin."
+        )
     address = _address()
     app_password = _app_password()
 

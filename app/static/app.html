@@ -672,8 +672,9 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 
   <div class="panel">
     <div class="panel-head"><h2>Email integration</h2><span class="obj-tag">OBJ-016</span></div>
-    <div class="grid g4">
+    <div class="grid g5">
       <div class="stat"><div class="n" id="es_c">–</div><div class="lbl">Gmail configured</div></div>
+      <div class="stat"><div class="n" id="es_sent">–</div><div class="lbl">Sent today</div></div>
       <div class="stat"><div class="n" id="es_i">–</div><div class="lbl">Poll interval</div></div>
       <div class="stat"><div class="n" id="es_lp">–</div><div class="lbl">Last poll</div></div>
       <div class="stat"><div class="n" id="es_rf">–</div><div class="lbl">Replies found</div></div>
@@ -703,6 +704,16 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
       </div>
       <div class="status" id="gmailConfigStatus"></div>
       <p class="hint" style="margin:12px 0 0;">Stored in this app's database (not encrypted) so it survives restarts — the same trust boundary as every other table here. This console has no login yet, so treat access to it like access to a password.</p>
+    </div>
+
+    <div class="mt16" style="border-top:1px solid var(--line);padding-top:16px;">
+      <h3 style="margin:0 0 10px;font-size:14px;">Daily send limit</h3>
+      <p class="hint" style="margin:0 0 12px;">A personal Gmail account sending a big batch of similar emails at once is exactly what Gmail's spam detection watches for. Real sends — campaign sends and reply-draft sends combined — are capped at this many per day; the rest stay Approved and go out on the next run. Simulated sends (the testing buttons on the Campaigns tab) never count against this.</p>
+      <div class="row">
+        <input type="number" id="dailyLimitInput" min="1" step="1" style="max-width:120px;"/>
+        <button class="btn" id="dailyLimitSaveBtn">Save</button>
+      </div>
+      <div class="status" id="dailyLimitStatus"></div>
     </div>
   </div>
 
@@ -761,6 +772,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
     <ul style="margin:0;padding-left:20px;font-size:13px;line-height:1.9;">
       <li><b>Sending email requires setup.</b> Go to the <b>Admin</b> tab → "Gmail App Password setup" and enter a Gmail address plus a Gmail App Password (not your real password — generate one at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>, requires 2-Step Verification). Takes effect immediately, no restart needed. (<code>GMAIL_ADDRESS</code>/<code>GMAIL_APP_PASSWORD</code> environment variables still work too, as a fallback.) Until configured, everything except the actual send/reply-poll works normally.</li>
       <li><b>Suppression is checked twice</b> — once when queuing into a campaign, again right before sending — so an opt-out can never slip through even if it happens after a draft was already approved.</li>
+      <li><b>Real sends are capped at a daily limit</b> (Admin tab → "Daily send limit," default 20) — campaign sends and reply-draft sends combined, since Gmail's spam detection doesn't care which flow inside this app an email came from. "Send all approved" stops once the cap is hit for the day and leaves the rest Approved for the next run; simulated sends never count against it.</li>
       <li><b>Opt-outs are also detected automatically</b> from reply text (e.g. "unsubscribe," "remove me," "do not contact") and added to suppression without any manual step.</li>
       <li><b>How a reply gets matched back to a sent email:</b> by sender address only, not by message threading. Every poll cycle, the inbox is checked for unread mail from anyone currently in <code>Sent</code> status for some campaign; a match flips every <code>Sent</code> row for that address to <code>Replied</code>. It does not verify the message is actually a reply to that specific outreach email (no Message-ID/In-Reply-To check) — any new unread mail from that address while awaiting a reply counts.</li>
       <li><b>Testing the funnel without Gmail connected:</b> real sending and real reply-detection both hard-require Gmail credentials, by design — nothing ever pretends to send. To test the downstream funnel (Replied → Quote Requested → Won/Lost) and the dashboard math anyway, the Campaigns tab has "Simulate send (test)" on Approved drafts and "Simulate reply (test)" / "Simulate opt-out (test)" on Sent ones — same state transitions and audit trail as the real thing, clearly labeled and logged as simulated so they're never confused with a real send/reply. For a full-fidelity test of the actual Gmail send + IMAP matching code (not just the funnel math), the highest-confidence option is two real Gmail accounts: configure one as the sender, import the other as a test prospect, send for real, reply for real, then check <code>/email/poll-now</code>.</li>
@@ -1160,7 +1172,7 @@ document.getElementById('sendAllBtn').addEventListener('click', async () => {
     const r = await fetch('/campaigns/'+cid+'/send', {method:'POST'});
     const d = await r.json();
     if(!r.ok) return setS('reviewStatus', d.detail||'Failed', true);
-    setS('reviewStatus',`Sent ${d.sent}. Suppressed ${d.suppressed||0}. Failed ${d.failed}.`);
+    setS('reviewStatus',`Sent ${d.sent}. Suppressed ${d.suppressed||0}. Failed ${d.failed}.`+(d.skipped_daily_limit?` ${d.skipped_daily_limit} left Approved — daily send limit reached.`:''));
     loadServerProspects(cid);
   } else {
     const camp = campaigns.find(c=>c.id===selectedCampId);
@@ -2405,10 +2417,11 @@ function barSegs(c) {
 // ADMIN — OBJ-015, OBJ-016
 // ══════════════════════════════════════════════════════
 async function loadEmailStatus() {
-  if(MODE!=='server') { set('es_c','N/A (demo)'); set('es_i','—'); set('es_lp','—'); set('es_rf','—'); document.getElementById('emailSourceBadge').innerHTML=''; return; }
+  if(MODE!=='server') { set('es_c','N/A (demo)'); set('es_sent','—'); set('es_i','—'); set('es_lp','—'); set('es_rf','—'); document.getElementById('emailSourceBadge').innerHTML=''; return; }
   try {
     const r=await fetch('/email/status'); const d=await r.json();
     set('es_c',d.configured?'✓ Yes':'✗ No');
+    set('es_sent', d.sent_today+' / '+d.daily_send_limit);
     set('es_i',d.poll_interval_minutes+' min');
     set('es_lp',d.last_poll_at?fmt(d.last_poll_at):'—');
     set('es_rf',d.last_poll_replies_found??'—');
@@ -2421,6 +2434,8 @@ async function loadEmailStatus() {
     document.getElementById('gmailClearBtn').classList.toggle('hidden', d.source!=='database');
     const addrInput=document.getElementById('gmailAddressInput');
     if(document.activeElement!==addrInput) addrInput.value = d.gmail_address || '';
+    const limitInput=document.getElementById('dailyLimitInput');
+    if(document.activeElement!==limitInput) limitInput.value = d.daily_send_limit;
   } catch(e){}
 }
 
@@ -2437,6 +2452,17 @@ document.getElementById('emailTestBtn').addEventListener('click', async () => {
   const r=await fetch('/email/test-connection',{method:'POST'});
   const d=await r.json();
   setS('gmailConfigStatus', d.message||d.detail||'', !r.ok);
+});
+
+document.getElementById('dailyLimitSaveBtn').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('dailyLimitStatus','Requires server mode.',true);
+  const limit = parseInt(document.getElementById('dailyLimitInput').value, 10);
+  if(!limit || limit <= 0) return setS('dailyLimitStatus','Enter a positive number.', true);
+  const r = await fetch('/email/daily-send-limit', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit})});
+  const d = await r.json();
+  if(!r.ok) return setS('dailyLimitStatus', d.detail||'Failed to save', true);
+  setS('dailyLimitStatus', 'Saved — up to '+limit+' real sends per day.');
+  loadEmailStatus();
 });
 
 document.getElementById('gmailPassToggle').addEventListener('click', () => {
