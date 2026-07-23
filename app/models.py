@@ -170,6 +170,13 @@ class LostPayload(BaseModel):
     reason: Optional[str] = None
 
 
+class QuoteDetailsInput(BaseModel):
+    materials: Optional[str] = None
+    quantity: Optional[str] = None
+    target_price: Optional[float] = None
+    quote_notes: Optional[str] = None
+
+
 class SimulateReplyPayload(BaseModel):
     reply_subject: Optional[str] = None
     reply_body: Optional[str] = None
