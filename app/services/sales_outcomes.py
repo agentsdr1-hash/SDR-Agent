@@ -82,6 +82,26 @@ def mark_lost(campaign_id: int, prospect_row_id: int, reason: str | None = None)
               f"Campaign {campaign_id}: {reason or 'no reason given'} (was {status})")
 
 
+def update_quote_details(campaign_id: int, prospect_row_id: int, materials: str | None,
+                          quantity: str | None, target_price: float | None, quote_notes: str | None):
+    """High-level notes a human gathers toward preparing a real quote --
+    what materials, how much, any target price or spec/delivery notes the
+    prospect mentioned. Deliberately free-text and status-independent (no
+    VALID_FOR_* gate): useful to jot down as soon as a Replied conversation
+    starts touching specifics, not just once QuoteRequested is reached.
+    This is not itself a quote or a price calculation -- OBJ-011-lite's
+    scope explicitly excludes automated quotation/pricing; it's context a
+    person builds the real quote from."""
+    with get_conn() as conn:
+        _get_status(conn, campaign_id, prospect_row_id)  # raises OutcomeError if not found
+        conn.execute(
+            "UPDATE campaign_prospects SET materials = ?, quantity = ?, target_price = ?, quote_notes = ? "
+            "WHERE id = ?",
+            (materials, quantity, target_price, quote_notes, prospect_row_id),
+        )
+    log_event("quote_details_updated", "campaign_prospect", str(prospect_row_id), f"Campaign {campaign_id}")
+
+
 def reopen_outcome(campaign_id: int, prospect_row_id: int):
     with get_conn() as conn:
         status = _get_status(conn, campaign_id, prospect_row_id)

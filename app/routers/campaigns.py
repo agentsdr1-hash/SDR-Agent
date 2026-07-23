@@ -4,7 +4,7 @@ Create campaigns, assign validated prospects, approve/edit/send drafts.
 """
 from fastapi import APIRouter, HTTPException
 
-from app.models import Campaign, CampaignCreate, AssignResult, CampaignProspect, DraftUpdate, SendResult, WonPayload, LostPayload, SimulateReplyPayload, BulkProspectIds, BulkActionResult
+from app.models import Campaign, CampaignCreate, AssignResult, CampaignProspect, DraftUpdate, SendResult, WonPayload, LostPayload, SimulateReplyPayload, BulkProspectIds, BulkActionResult, QuoteDetailsInput
 from app.services.campaign_management import (
     create_campaign,
     get_campaign,
@@ -23,7 +23,7 @@ from app.services.approval_and_delivery import (
     simulate_reply,
     ApprovalError,
 )
-from app.services.sales_outcomes import request_quote, mark_won, mark_lost, reopen_outcome, OutcomeError
+from app.services.sales_outcomes import request_quote, mark_won, mark_lost, reopen_outcome, update_quote_details, OutcomeError
 from app.integrations.email_provider import EmailNotConfiguredError
 
 router = APIRouter(prefix="/campaigns", tags=["OBJ-003"])
@@ -195,5 +195,18 @@ def reopen(campaign_id: int, prospect_row_id: int):
     try:
         reopen_outcome(campaign_id, prospect_row_id)
         return {"status": "QuoteRequested"}
+    except OutcomeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.put("/{campaign_id}/prospects/{prospect_row_id}/quote-details", tags=["OBJ-011"])
+def set_quote_details(campaign_id: int, prospect_row_id: int, payload: QuoteDetailsInput):
+    """High-level quote prep notes -- materials, quantity, target price,
+    other specs/timeline notes -- not a real quote or pricing calculation,
+    just context for the human building the actual quote."""
+    try:
+        update_quote_details(campaign_id, prospect_row_id, payload.materials,
+                              payload.quantity, payload.target_price, payload.quote_notes)
+        return {"status": "saved"}
     except OutcomeError as e:
         raise HTTPException(status_code=422, detail=str(e))

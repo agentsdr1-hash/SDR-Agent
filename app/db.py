@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS campaign_prospects (
     lost_at TEXT,
     deal_value REAL,
     lost_reason TEXT,
+    materials TEXT,                  -- high-level quote prep: what they need (e.g. "Flat bars, ERW pipes")
+    quantity TEXT,                   -- free text -- "50 tons", "200 pcs", etc., not always a bare number
+    target_price REAL,               -- budget/target price the prospect mentioned, if any
+    quote_notes TEXT,                -- specs, grade, delivery timeline/location, anything else for the quote
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id),
     FOREIGN KEY (prospect_id) REFERENCES prospects_raw(id),
     UNIQUE (campaign_id, prospect_id)
@@ -161,9 +165,23 @@ def get_conn():
     finally:
         conn.close()
 
+def _ensure_column(conn, table: str, column: str, coltype: str):
+    """Additive, idempotent migration for a column added after a table
+    already existed in production -- CREATE TABLE IF NOT EXISTS (above)
+    only helps on a fresh DB; an already-deployed one needs the column
+    added to it directly. Safe to call every startup."""
+    cols = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+
+
 def init_db(seed_customers: bool = True):
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        _ensure_column(conn, "campaign_prospects", "materials", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "quantity", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "target_price", "REAL")
+        _ensure_column(conn, "campaign_prospects", "quote_notes", "TEXT")
         if seed_customers:
             existing = conn.execute("SELECT COUNT(*) c FROM customers").fetchone()["c"]
             if existing == 0:
