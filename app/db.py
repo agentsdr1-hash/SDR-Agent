@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS campaign_prospects (
     currency TEXT,                   -- Quote Readiness Checklist: currency
     payment_terms TEXT,              -- Quote Readiness Checklist: payment terms
     packaging_requirements TEXT,     -- Quote Readiness Checklist: packaging requirements
+    quote_number TEXT,               -- real ERP-issued quote number, entered by a human once sales creates it
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id),
     FOREIGN KEY (prospect_id) REFERENCES prospects_raw(id),
     UNIQUE (campaign_id, prospect_id)
@@ -202,6 +203,7 @@ def init_db(seed_customers: bool = True):
         _ensure_column(conn, "campaign_prospects", "currency", "TEXT")
         _ensure_column(conn, "campaign_prospects", "payment_terms", "TEXT")
         _ensure_column(conn, "campaign_prospects", "packaging_requirements", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "quote_number", "TEXT")
         _ensure_column(conn, "prospects_raw", "lead_source", "TEXT")
         _ensure_column(conn, "prospects_raw", "linkedin_url", "TEXT")
         _ensure_column(conn, "prospects_raw", "next_action", "TEXT")

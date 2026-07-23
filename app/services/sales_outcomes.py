@@ -53,19 +53,34 @@ def request_quote(campaign_id: int, prospect_row_id: int):
     log_event("quote_requested", "campaign_prospect", str(prospect_row_id), f"Campaign {campaign_id}")
 
 
-def mark_won(campaign_id: int, prospect_row_id: int, deal_value: float | None = None):
+def mark_won(campaign_id: int, prospect_row_id: int, deal_value: float | None = None,
+             quote_number: str | None = None):
+    """quote_number is the real quote/reference number sales issues in their
+    own ERP once the deal is won -- optional and additive: passing None
+    (the field left blank) never clears a quote_number set earlier via
+    set_quote_number() or a prior Won."""
     with get_conn() as conn:
         status = _get_status(conn, campaign_id, prospect_row_id)
         if status not in VALID_FOR_OUTCOME:
             raise OutcomeError(f"Can only mark Won from 'Quote Requested', 'Won', or 'Lost' (current: '{status}')")
         conn.execute(
             "UPDATE campaign_prospects SET status = 'Won', won_at = ?, deal_value = ?, "
-            "lost_at = NULL, lost_reason = NULL WHERE id = ?",
-            (datetime.now(timezone.utc).isoformat(), deal_value, prospect_row_id),
+            "quote_number = COALESCE(?, quote_number), lost_at = NULL, lost_reason = NULL WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), deal_value, quote_number, prospect_row_id),
         )
     event = "deal_won" if status == "QuoteRequested" else "deal_won_edited"
     log_event(event, "campaign_prospect", str(prospect_row_id),
-              f"Campaign {campaign_id}, deal_value={deal_value} (was {status})")
+              f"Campaign {campaign_id}, deal_value={deal_value}, quote_number={quote_number or '(unchanged)'} (was {status})")
+
+
+def set_quote_number(campaign_id: int, prospect_row_id: int, quote_number: str | None):
+    """Standalone editor for the ERP quote number -- status-independent, so
+    it can be entered as soon as sales issues it (before Won) or corrected
+    afterward, without re-triggering a Won/Lost transition."""
+    with get_conn() as conn:
+        _get_status(conn, campaign_id, prospect_row_id)  # raises OutcomeError if not found
+        conn.execute("UPDATE campaign_prospects SET quote_number = ? WHERE id = ?", (quote_number, prospect_row_id))
+    log_event("quote_number_set", "campaign_prospect", str(prospect_row_id), f"Campaign {campaign_id}: {quote_number}")
 
 
 def mark_lost(campaign_id: int, prospect_row_id: int, reason: str | None = None):

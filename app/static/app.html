@@ -176,6 +176,36 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 .edited-badge{font-family:var(--mono);font-size:9.5px;color:var(--blue);background:var(--blue-soft);padding:3px 7px;border-radius:3px;}
 .day-note{font-size:10.5px;color:var(--muted);font-family:var(--mono);}
 
+/* Quote Document -- a printable, letterhead-style read of the Quote
+   Readiness Checklist, formal enough to hand to the internal sales team.
+   Screen styling only; @media print below scopes an actual print/PDF
+   pass down to just the one document being printed. */
+.quote-document{border:1px solid var(--line);border-radius:10px;background:#fff;padding:26px 28px;margin-top:4px;}
+.qd-header{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:16px;flex-wrap:wrap;}
+.qd-company-name{font-size:20px;font-weight:800;letter-spacing:.03em;color:var(--ink);}
+.qd-company-sub{font-size:12px;color:var(--ink);margin-top:2px;}
+.qd-company-addr{font-size:11px;color:var(--muted);margin-top:4px;}
+.qd-doc-meta{text-align:right;min-width:220px;}
+.qd-doc-title{font-size:15px;font-weight:800;letter-spacing:.08em;color:var(--blue-deep);margin-bottom:8px;}
+.qd-doc-row{display:flex;justify-content:flex-end;align-items:center;gap:8px;font-size:12px;margin-top:4px;}
+.qd-doc-row>span:first-child{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;}
+.qd-doc-row input{max-width:170px;text-align:right;padding:4px 8px;font-size:12px;}
+.qd-parties{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:18px;}
+.qd-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px;}
+.qd-value{font-size:13px;color:var(--ink);line-height:1.5;}
+.qd-lines{width:100%;border-collapse:collapse;}
+.qd-lines th,.qd-lines td{border:1px solid var(--line);padding:8px 10px;font-size:12.5px;text-align:left;}
+.qd-lines th{background:var(--paper);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
+.qd-lines td:first-child{width:38%;color:var(--muted);}
+.qd-budget{margin-top:12px;font-size:13px;font-weight:600;color:var(--ink);}
+.qd-footer{margin-top:18px;padding-top:12px;border-top:1px solid var(--line-soft);}
+@media print{
+  body *{visibility:hidden;}
+  .quote-document.print-target,.quote-document.print-target *{visibility:visible;}
+  .quote-document.print-target{position:absolute;left:0;top:0;width:100%;border:none;margin:0;padding:0;}
+  .quote-document.print-target .no-print{display:none !important;}
+}
+
 /* KB */
 .kb-card{border:1px solid var(--line);border-radius:10px;padding:15px 17px;margin-bottom:12px;background:var(--paper);}
 .kb-card .kq{font-family:var(--display);font-weight:600;font-size:13.5px;margin-bottom:7px;}
@@ -1293,7 +1323,7 @@ document.getElementById('campBulkRejectBtn').addEventListener('click', async () 
 async function serverApprove(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/approve',{method:'POST'}); loadServerProspects(cid); }
 async function serverReject(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/reject',{method:'POST'}); loadServerProspects(cid); }
 async function serverQuote(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/request-quote',{method:'POST'}); loadServerProspects(cid); }
-async function serverWon(cid,rid) { const v=prompt('Deal value (optional):'); if(v===null) return; const dv=v&&!isNaN(parseFloat(v))?parseFloat(v):null; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/won',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deal_value:dv})}); loadServerProspects(cid); }
+async function serverWon(cid,rid) { const v=prompt('Deal value (optional):'); if(v===null) return; const dv=v&&!isNaN(parseFloat(v))?parseFloat(v):null; const qn=prompt('ERP quote number (optional):'); if(qn===null) return; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/won',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deal_value:dv, quote_number: qn||null})}); loadServerProspects(cid); }
 async function serverReopen(cid,rid) { if(!confirm('Reopen this deal back to Quote Requested? The current Won/Lost details will be cleared.')) return; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/reopen',{method:'POST'}); loadServerProspects(cid); }
 async function serverLost(cid,rid) { const reason=prompt('Reason (optional):'); if(reason===null) return; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/lost',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:reason||null})}); loadServerProspects(cid); }
 async function serverSimulateSent(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/simulate-sent',{method:'POST'}); loadServerProspects(cid); }
@@ -1701,7 +1731,8 @@ function leadDocumentCard(l) {
   const name = [l.first_name,l.last_name].filter(Boolean).join(' ')||'—';
   const active = leadDetailCtx.leadNumber===l.lead_number && leadDetailCtx.bodyId==='dashDrillDetailWrap' ? ' active' : '';
   const materialsField = l.materials ? `<div class="lead-doc-field span2"><div class="k">Materials</div><div class="v">${esc(l.materials)}</div></div>` : '';
-  const targetPriceField = l.target_price!=null ? `<div class="lead-doc-field"><div class="k">Target price</div><div class="v">$${Number(l.target_price).toLocaleString()}</div></div>` : '';
+  const targetPriceField = l.target_price!=null ? `<div class="lead-doc-field"><div class="k">Target price</div><div class="v">${fmtMoney(l.target_price)}</div></div>` : '';
+  const quoteNumberField = l.quote_number ? `<div class="lead-doc-field"><div class="k">Quote #</div><div class="v mono">${esc(l.quote_number)}</div></div>` : '';
   const readiness = l.quote_readiness || {filled:0,total:11,ready:false};
   return `<div class="lead-doc${active}" onclick="openLeadDetail('${esc(l.lead_number)}','dashDrillDetailWrap','dashDrillStatus')">
     <div class="lead-doc-head">
@@ -1711,7 +1742,8 @@ function leadDocumentCard(l) {
     <div class="lead-doc-body">
       <div class="lead-doc-field span2"><div class="k">Name</div><div class="v">${esc(name)}</div></div>
       <div class="lead-doc-field"><div class="k">Company</div><div class="v">${esc(l.company||'—')}</div></div>
-      <div class="lead-doc-field"><div class="k">Deal value</div><div class="v">${l.deal_value!=null?'$'+Number(l.deal_value).toLocaleString():'—'}</div></div>
+      <div class="lead-doc-field"><div class="k">Deal value</div><div class="v">${fmtMoney(l.deal_value)}</div></div>
+      ${quoteNumberField}
       ${materialsField}
       ${targetPriceField}
       <div class="lead-doc-field span2"><div class="k">Email</div><div class="v">${esc(l.email||'—')}</div></div>
@@ -1751,7 +1783,7 @@ async function loadLeadsList() {
     <td>${scorePill(l.lead_score)}</td>
     <td>${pill(l.status)}</td>
     <td>${esc(l.campaign_name||'—')}${l.campaign_count>1?` <span class="muted">(+${l.campaign_count-1})</span>`:''}</td>
-    <td>${l.deal_value!=null?'$'+Number(l.deal_value).toLocaleString():'—'}</td>
+    <td>${fmtMoney(l.deal_value)}</td>
     <td class="muted nowrap">${l.last_activity_at?fmt(l.last_activity_at):'—'}</td>
     <td><button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();openLeadDetail('${esc(l.lead_number)}')">View</button></td>
   </tr>`).join('');
@@ -1856,6 +1888,7 @@ document.getElementById('leadsExportBtn').addEventListener('click', () => {
     'Quantity': l.quantity || '',
     'Target price': l.target_price != null ? l.target_price : '',
     'Quote readiness': l.quote_readiness ? `${l.quote_readiness.filled}/${l.quote_readiness.total}` : '',
+    'Quote #': l.quote_number || '',
     'Deal value': l.deal_value != null ? l.deal_value : '',
     'Last activity': l.last_activity_at ? fmt(l.last_activity_at) : '',
   }));
@@ -2009,7 +2042,9 @@ async function leadMarkWon(cid,cpid) {
   const v=prompt('Deal value (optional):');
   if(v===null) return;
   const dv=v&&!isNaN(parseFloat(v))?parseFloat(v):null;
-  const r=await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/won',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deal_value:dv})});
+  const qn=prompt('ERP quote number (optional -- leave blank if sales hasn\'t issued one yet, add it later from the Quote Document):');
+  if(qn===null) return;
+  const r=await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/won',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deal_value:dv, quote_number: qn||null})});
   const d=await r.json();
   if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed', true);
   refreshLeadDetail();
@@ -2081,6 +2116,80 @@ function quoteDetailsSection(m) {
   </details>`;
 }
 
+// Formal, letterhead-style read of the checklist -- meant to be printed
+// or saved as a PDF and handed to the internal sales team, with a Quote #
+// that ties back to this Lead # once sales issues one in their ERP.
+function quoteDocumentSection(d, m) {
+  const p = d.prospect;
+  const name = [p.first_name,p.last_name].filter(Boolean).join(' ')||'—';
+  const lines = QUOTE_CHECKLIST_INPUTS.map(([key,label]) =>
+    `<tr><td>${esc(label)}</td><td>${esc(m[key]||'—')}</td></tr>`
+  ).join('') + `<tr><td>Special instructions</td><td>${esc(m.quote_notes||'—')}</td></tr>`;
+  const budgetLine = m.target_price!=null
+    ? `<div class="qd-budget">Indicative budget: ${fmtMoney(m.target_price, m.currency)} <span class="muted" style="font-weight:400;">(target only — not a calculated price)</span></div>`
+    : '';
+  const docDate = m.quote_requested_at || m.replied_at || m.added_at;
+  const elId = `quoteDoc-${m.id}`;
+
+  return `<details style="margin-top:8px;">
+    <summary style="cursor:pointer;font-weight:600;font-size:12.5px;color:var(--blue-deep);">Quote document — printable</summary>
+    <div class="mt12 quote-document" id="${elId}">
+      <div class="qd-header">
+        <div>
+          <div class="qd-company-name">AKEIS</div>
+          <div class="qd-company-sub">Al Khaleej Equipment and Industrial Suppliers LLC</div>
+          <div class="qd-company-addr">Abu Dhabi, United Arab Emirates · ISO 9001:2015 Certified</div>
+        </div>
+        <div class="qd-doc-meta">
+          <div class="qd-doc-title">QUOTE REQUEST</div>
+          <div class="qd-doc-row"><span>Quote #</span><input type="text" id="quoteNumber-${m.id}" placeholder="Pending — issued by Sales" value="${esc(m.quote_number||'')}"/></div>
+          <div class="qd-doc-row"><span>Lead #</span><span class="mono">${esc(d.lead_number)}</span></div>
+          <div class="qd-doc-row"><span>Date</span><span>${fmtDate(docDate)}</span></div>
+          <div class="qd-doc-row"><span>Status</span>${pill(m.status)}</div>
+        </div>
+      </div>
+      <div class="qd-parties">
+        <div>
+          <div class="qd-label">Prepared for</div>
+          <div class="qd-value">${esc(name)}</div>
+          <div class="qd-value">${esc(p.company||'—')}</div>
+          <div class="qd-value mono">${esc(p.email||'—')}</div>
+          <div class="qd-value">${esc(p.phone||'—')}</div>
+        </div>
+        <div>
+          <div class="qd-label">Prepared by</div>
+          <div class="qd-value">AKEIS Sales Team</div>
+          <div class="qd-value">${esc(m.campaign_name)}</div>
+        </div>
+      </div>
+      <table class="qd-lines"><thead><tr><th>Description</th><th>Details</th></tr></thead><tbody>${lines}</tbody></table>
+      ${budgetLine}
+      <div class="qd-footer">
+        <div class="muted" style="font-size:11px;">Working reference generated by the SDR tool for internal use — not a final priced quotation. Sales issues the binding quote and its number in the ERP; enter it above to keep this record tied back to it.</div>
+      </div>
+      <div class="row mt12 no-print">
+        <button class="btn sec" onclick="saveQuoteNumber(${m.campaign_id},${m.id})">Save quote #</button>
+        <button class="btn sky" onclick="printQuoteDocument('${elId}')">🖨 Print / Save as PDF</button>
+      </div>
+    </div>
+  </details>`;
+}
+
+async function saveQuoteNumber(cid, cpid) {
+  const quote_number = document.getElementById('quoteNumber-'+cpid).value.trim();
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/quote-number', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({quote_number: quote_number||null})});
+  const d = await r.json();
+  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to save', true);
+  setS(leadDetailCtx.statusId, 'Quote # saved.');
+  refreshLeadDetail();
+}
+
+function printQuoteDocument(elId) {
+  document.querySelectorAll('.quote-document').forEach(el => el.classList.remove('print-target'));
+  document.getElementById(elId).classList.add('print-target');
+  window.print();
+}
+
 const LEAD_SOURCE_OPTIONS = ['Website', 'Trade Show', 'Referral'];
 const QUALIFICATION_STATUS_OPTIONS = ['New', 'Contacted', 'Qualified', 'Unqualified', 'Nurturing'];
 
@@ -2139,7 +2248,7 @@ function renderLeadTimeline(d) {
       <div class="stat"><div class="n" style="font-size:16px;">${esc(name)}</div><div class="lbl">Name</div></div>
       <div class="stat"><div class="n mono" style="font-size:13px;">${esc(p.email||'—')}</div><div class="lbl">Email</div></div>
       <div class="stat"><div class="n" style="font-size:16px;">${esc(p.company||'—')}</div><div class="lbl">Company</div></div>
-      <div class="stat"><div class="n" style="color:var(--valid)">$${(d.total_won_value||0).toLocaleString()}</div><div class="lbl">Total won value</div></div>
+      <div class="stat"><div class="n" style="color:var(--valid)">${fmtMoney(d.total_won_value||0)}</div><div class="lbl">Total won value</div></div>
     </div>
     <p class="hint" style="margin-top:12px;">Imported ${fmt(p.batch_imported_at)} from "${esc(p.batch_filename||'—')}" · validation: ${pill(p.status)}${p.validation_notes?' — '+esc(p.validation_notes):''}</p>
   </div>`;
@@ -2159,7 +2268,7 @@ function renderLeadTimeline(d) {
       <td class="muted nowrap">${m.quote_requested_at?fmt(m.quote_requested_at):'—'}</td>
       <td class="muted nowrap">${m.won_at?fmt(m.won_at):'—'}</td>
       <td class="muted nowrap">${m.lost_at?fmt(m.lost_at):'—'}</td>
-      <td>${m.deal_value!=null?'$'+Number(m.deal_value).toLocaleString():'—'}</td>
+      <td>${fmtMoney(m.deal_value)}</td>
       <td class="wrap">${esc(m.lost_reason||'—')}</td>
       <td class="nowrap">${membershipActions(m)}</td>
     </tr>`).join('') + `</tbody></table></div>`;
@@ -2168,18 +2277,16 @@ function renderLeadTimeline(d) {
   }
 
   if(d.memberships.length) {
-    html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">QUOTE READINESS CHECKLIST</div>` +
+    html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">EMAIL FLOW — outreach → reply → response</div>` +
       d.memberships.map(m =>
-        `<div style="margin-bottom:10px;">${d.memberships.length>1?`<div class="muted" style="font-size:11.5px;margin-bottom:4px;">${esc(m.campaign_name)}</div>`:''}${quoteDetailsSection(m)}</div>`
+        `<div style="margin-bottom:14px;">${d.memberships.length>1?`<div class="muted" style="font-size:11.5px;margin-bottom:4px;">${esc(m.campaign_name)}</div>`:''}${emailFlowSection(m)}</div>`
       ).join('') + `</div>`;
   }
 
-  const draftCount = d.memberships.reduce((n,m) => n + (m.reply_drafts?m.reply_drafts.length:0), 0);
-  if(draftCount) {
-    html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">RESPONSE DRAFTS (${draftCount})</div>` +
-      d.memberships.filter(m => m.reply_drafts && m.reply_drafts.length).map(m =>
-        `<div style="margin-bottom:14px;"><div class="muted" style="font-size:11.5px;margin-bottom:4px;">${esc(m.campaign_name)}</div>` +
-        m.reply_drafts.map(replyDraftDrillCard).join('') + `</div>`
+  if(d.memberships.length) {
+    html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">QUOTE DOCUMENT & READINESS CHECKLIST</div>` +
+      d.memberships.map(m =>
+        `<div style="margin-bottom:10px;">${d.memberships.length>1?`<div class="muted" style="font-size:11.5px;margin-bottom:4px;">${esc(m.campaign_name)}</div>`:''}${quoteDetailsSection(m)}${quoteDocumentSection(d, m)}</div>`
       ).join('') + `</div>`;
   }
 
@@ -2190,6 +2297,83 @@ function renderLeadTimeline(d) {
   }
 
   return html;
+}
+
+// The cold-outreach email itself -- the first message in the chain -- was
+// previously only visible/editable from the Campaigns tab. Surfacing it
+// here (editable while Queued, approve/reject inline) means the whole
+// lead-to-quote email flow is readable and actionable from one lead's
+// record, without a trip to Campaigns tab for single-lead work. Actual
+// *sending* still happens as a campaign batch (rate-limited, scheduled by
+// send_days) from the Campaigns tab -- that's intentionally not
+// duplicated here.
+function outreachDraftCard(m) {
+  const isQueued = m.status === 'Queued';
+  const isRejected = m.status === 'Rejected';
+  const isApproved = m.status === 'Approved';
+  let statusNote = '';
+  if(isRejected) statusNote = `<span class="pill p-invalid">Rejected</span>`;
+  else if(isApproved) statusNote = `<span class="pill p-approved">Approved — sends with next campaign batch</span>`;
+  else if(m.sent_at) statusNote = `<span class="pill p-sent">Sent ${fmt(m.sent_at)}</span>`;
+  else if(isQueued) statusNote = `<span class="pill p-queued">Queued — awaiting review</span>`;
+
+  const editable = isQueued ? `
+    <input type="text" id="outreachSubject-${m.id}" placeholder="Subject" value="${esc(m.subject||'')}" style="font-weight:600;margin-bottom:8px;"/>
+    <textarea id="outreachBody-${m.id}" style="min-height:120px;">${esc(m.body||'')}</textarea>
+    <div class="row mt12">
+      <button class="btn sec" onclick="saveOutreachDraft(${m.campaign_id},${m.id})">Save draft</button>
+      <button class="btn ok" onclick="approveOutreachDraft(${m.campaign_id},${m.id})">Approve</button>
+      <button class="btn reject" onclick="rejectOutreachDraft(${m.campaign_id},${m.id})">Reject</button>
+    </div>` : `<pre>${esc(m.body||'(no draft body)')}</pre>`;
+
+  return `<details class="draft" open style="margin-bottom:8px;">
+    <summary style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
+      <span>Outreach — ${esc(m.subject||'(no subject)')}</span>
+      <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">${statusNote}</span>
+    </summary>
+    <div class="mt12">${editable}</div>
+  </details>`;
+}
+
+// One membership's full email chain, chronologically: the cold outreach
+// draft, the customer's reply (if any), and every response drafted back
+// to them (smart-reply or quote-summary) -- the "document style" read of
+// a lead's conversation the Leads tab already did well for replies, now
+// extended to include the message that started it.
+function emailFlowSection(m) {
+  let html = outreachDraftCard(m);
+  if(m.replied_at) {
+    html += `<div class="day-note" style="margin:8px 0;">↳ Customer replied: "${esc(m.reply_subject||'(no subject)')}" — ${fmt(m.replied_at)}</div>`;
+  }
+  if(m.reply_drafts && m.reply_drafts.length) {
+    html += m.reply_drafts.map(replyDraftDrillCard).join('');
+  }
+  return html;
+}
+
+async function saveOutreachDraft(cid, cpid) {
+  const subject = document.getElementById('outreachSubject-'+cpid).value.trim();
+  const body = document.getElementById('outreachBody-'+cpid).value.trim();
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/draft', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({subject, body})});
+  const d = await r.json();
+  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to save', true);
+  setS(leadDetailCtx.statusId, 'Draft saved.');
+  refreshLeadDetail();
+}
+async function approveOutreachDraft(cid, cpid) {
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/approve', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to approve', true);
+  setS(leadDetailCtx.statusId, 'Approved — will send with the next campaign batch send.');
+  refreshLeadDetail();
+}
+async function rejectOutreachDraft(cid, cpid) {
+  if(!confirm('Reject this outreach draft? This can\'t be undone.')) return;
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/reject', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to reject', true);
+  setS(leadDetailCtx.statusId, 'Rejected.');
+  refreshLeadDetail();
 }
 
 function replyDraftDrillCard(rd) {
@@ -2226,7 +2410,7 @@ async function loadDashboard() {
       set('dV',s.Valid); set('dI',s.Invalid); set('dD',s.Duplicate); set('dE',s['Existing Customer']); set('dAC',s['Already Contacted']); set('dT',d.total_prospects);
       document.getElementById('dNote').textContent=d.total_import_batches+' batch(es) · '+d.total_customers_on_file+' existing customers on file';
       const v=d.value_captured;
-      set('vc_w',v.customers_won); set('vc_t','$'+v.total_turnover.toLocaleString()); set('vc_q',v.quotes_requested); set('vc_l',v.deals_lost); set('vc_wr',v.win_rate_pct+'%');
+      set('vc_w',v.customers_won); set('vc_t',fmtMoney(v.total_turnover)); set('vc_q',v.quotes_requested); set('vc_l',v.deals_lost); set('vc_wr',v.win_rate_pct+'%');
       const p=d.sdr_performance;
       set('sp_s',p.total_emails_sent); set('sp_r',p.total_replies_received); set('sp_rr',p.response_rate_pct+'%'); set('sp_ar',p.avg_response_time_hours==null?'—':p.avg_response_time_hours+'h');
       // outreach funnel from campaigns
@@ -2235,7 +2419,7 @@ async function loadDashboard() {
       set('of_q',of.q);set('of_ap',of.ap);set('of_s',of.s);set('of_r',of.r);set('of_c',of.c);set('of_rj',of.rj);
       // campaigns
       document.getElementById('dCamps').innerHTML = d.campaigns.length
-        ? d.campaigns.map(c=>`<div class="kb-card"><div style="display:flex;justify-content:space-between;"><b>${esc(c.name)}</b><span class="mono">${c.total} total · $${c.turnover.toLocaleString()} turnover</span></div><div class="bar-track">${barSegs(c)}</div><div class="legend"><span><span class="dot bs-queued"></span>${c.queued} queued</span><span><span class="dot bs-sent"></span>${c.sent} sent</span><span><span class="dot bs-replied"></span>${c.replied} replied</span><span><span class="dot bs-won"></span>${c.won} won</span></div></div>`).join('')
+        ? d.campaigns.map(c=>`<div class="kb-card"><div style="display:flex;justify-content:space-between;"><b>${esc(c.name)}</b><span class="mono">${c.total} total · ${fmtMoney(c.turnover)} turnover</span></div><div class="bar-track">${barSegs(c)}</div><div class="legend"><span><span class="dot bs-queued"></span>${c.queued} queued</span><span><span class="dot bs-sent"></span>${c.sent} sent</span><span><span class="dot bs-replied"></span>${c.replied} replied</span><span><span class="dot bs-won"></span>${c.won} won</span></div></div>`).join('')
         : '<div class="empty">No campaigns yet.</div>';
       // activity chart
       actRawData = d.activity_by_day || [];
@@ -2268,7 +2452,7 @@ async function loadDashboard() {
       else if(st==='Lost'){lost++;quotes++;}
     }));
     set('of_q',of.q);set('of_ap',of.ap);set('of_s',of.s);set('of_r',of.r);set('of_c',of.c);set('of_rj',of.rj);
-    set('vc_w',won);set('vc_t','$'+turnover.toLocaleString());set('vc_q',quotes);set('vc_l',lost);
+    set('vc_w',won);set('vc_t',fmtMoney(turnover));set('vc_q',quotes);set('vc_l',lost);
     const allSent=campaigns.reduce((n,c)=>n+c.prospects.filter(p=>p.emailsSent>0).reduce((s,p)=>s+(p.emailsSent||0),0),0);
     const rRate=allSent?Math.round((replied/allSent)*100):0;
     set('sp_s',allSent);set('sp_r',replied);set('sp_rr',rRate+'%');set('sp_ar','—');
@@ -2578,7 +2762,7 @@ function dcRowHtml(p) {
     <td class="muted nowrap">${p.quote_requested_at?fmt(p.quote_requested_at):'—'}</td>
     <td class="muted nowrap">${p.won_at?fmt(p.won_at):'—'}</td>
     <td class="muted nowrap">${p.lost_at?fmt(p.lost_at):'—'}</td>
-    <td>${p.deal_value!=null?'$'+Number(p.deal_value).toLocaleString():'—'}</td>
+    <td>${fmtMoney(p.deal_value)}</td>
     <td class="wrap">${esc(p.lost_reason||'—')}</td>
   </tr>`;
 }
@@ -2855,7 +3039,11 @@ async function removeSup(email) {
 // ══════════════════════════════════════════════════════
 function set(id,v){const el=document.getElementById(id);if(el)el.textContent=v;}
 function setS(id,m,e){const el=document.getElementById(id);if(!el)return;el.textContent=m;el.classList.toggle('err',!!e);}
-function fmt(ts){try{return new Date(ts).toLocaleString();}catch(e){return ts;}}
+// AKEIS is Abu Dhabi based -- format dates/times UAE-style (DD/MM/YYYY,
+// 24h) everywhere, rather than relying on the viewing browser's locale.
+function fmt(ts){try{return new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch(e){return ts;}}
+function fmtDate(ts){try{return new Date(ts).toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});}catch(e){return ts;}}
+function fmtMoney(v, currency){ if(v==null) return '—'; return (currency||'AED')+' '+Number(v).toLocaleString('en-AE'); }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function pill(s){
   const map={Valid:'p-valid',Invalid:'p-invalid',Duplicate:'p-dup','Existing Customer':'p-existing',

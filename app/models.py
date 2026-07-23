@@ -172,10 +172,15 @@ class SuppressionAdd(BaseModel):
 
 class WonPayload(BaseModel):
     deal_value: Optional[float] = None
+    quote_number: Optional[str] = None
 
 
 class LostPayload(BaseModel):
     reason: Optional[str] = None
+
+
+class QuoteNumberInput(BaseModel):
+    quote_number: Optional[str] = None
 
 
 class QuoteDetailsInput(BaseModel):

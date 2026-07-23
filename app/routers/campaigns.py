@@ -4,7 +4,7 @@ Create campaigns, assign validated prospects, approve/edit/send drafts.
 """
 from fastapi import APIRouter, HTTPException
 
-from app.models import Campaign, CampaignCreate, AssignResult, CampaignProspect, DraftUpdate, SendResult, WonPayload, LostPayload, SimulateReplyPayload, BulkProspectIds, BulkActionResult, QuoteDetailsInput
+from app.models import Campaign, CampaignCreate, AssignResult, CampaignProspect, DraftUpdate, SendResult, WonPayload, LostPayload, SimulateReplyPayload, BulkProspectIds, BulkActionResult, QuoteDetailsInput, QuoteNumberInput
 from app.services.campaign_management import (
     create_campaign,
     get_campaign,
@@ -25,7 +25,7 @@ from app.services.approval_and_delivery import (
 )
 from app.services.sales_outcomes import (
     request_quote, mark_won, mark_lost, reopen_outcome, update_quote_details,
-    draft_quote_summary_email, OutcomeError,
+    draft_quote_summary_email, set_quote_number, OutcomeError,
 )
 from app.integrations.email_provider import EmailNotConfiguredError
 
@@ -174,8 +174,20 @@ def quote(campaign_id: int, prospect_row_id: int):
 @router.post("/{campaign_id}/prospects/{prospect_row_id}/won", tags=["OBJ-011"])
 def won(campaign_id: int, prospect_row_id: int, payload: WonPayload):
     try:
-        mark_won(campaign_id, prospect_row_id, payload.deal_value)
+        mark_won(campaign_id, prospect_row_id, payload.deal_value, payload.quote_number)
         return {"status": "Won"}
+    except OutcomeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.put("/{campaign_id}/prospects/{prospect_row_id}/quote-number", tags=["OBJ-011"])
+def set_quote_number_endpoint(campaign_id: int, prospect_row_id: int, payload: QuoteNumberInput):
+    """Edit the real ERP-issued quote number anytime, independent of
+    status -- e.g. entered as soon as sales issues it, or corrected later,
+    without re-triggering a Won/Lost transition."""
+    try:
+        set_quote_number(campaign_id, prospect_row_id, payload.quote_number)
+        return {"status": "saved"}
     except OutcomeError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
