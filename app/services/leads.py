@@ -34,6 +34,61 @@ def parse_lead_number(lead_number: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+# Quote Readiness Checklist -- the high-level info a human needs on hand
+# before building a real quote. (column on campaign_prospects, display label).
+# target_price is deliberately not part of this list: it's a budget hint,
+# not a checklist item the customer needs to have supplied.
+QUOTE_CHECKLIST_FIELDS = [
+    ("materials", "Product(s)"),
+    ("sku_spec", "SKU or specification"),
+    ("quantity", "Quantity"),
+    ("unit_of_measure", "Unit of Measure"),
+    ("destination", "Destination"),
+    ("shipping_terms", "Shipping Terms (Incoterms)"),
+    ("delivery_date", "Delivery Date"),
+    ("currency", "Currency"),
+    ("payment_terms", "Payment Terms"),
+    ("packaging_requirements", "Packaging Requirements"),
+    ("quote_notes", "Special instructions"),
+]
+
+
+def quote_readiness(m: dict | None) -> dict:
+    """How much of the Quote Readiness Checklist is filled in for a
+    membership's latest campaign row -- used to flag a lead as ready for a
+    human to build a real quote from, and as one input to the lead score."""
+    total = len(QUOTE_CHECKLIST_FIELDS)
+    if not m:
+        return {"filled": 0, "total": total, "pct": 0.0, "ready": False}
+    filled = sum(1 for key, _ in QUOTE_CHECKLIST_FIELDS if m.get(key))
+    return {"filled": filled, "total": total, "pct": round(filled / total, 2), "ready": filled == total}
+
+
+# Rule-based, deterministic lead score (0-100) -- no AI, every point
+# explainable. Combines funnel progress (the strongest single signal),
+# lead source intent, LinkedIn presence (a proxy for a reachable, real
+# decision-maker), and quote-readiness completeness (how close to
+# quote-able the conversation actually is).
+_STATUS_SCORE = {
+    "Imported -- not yet in a campaign": 5, "Queued": 10, "Approved": 15,
+    "Rejected": 0, "Sent": 20, "Replied": 45, "Suppressed": 0,
+    "QuoteRequested": 65, "Won": 100, "Lost": 10,
+}
+_LEAD_SOURCE_SCORE = {"Referral": 15, "Trade Show": 10, "Website": 5}
+
+
+def compute_lead_score(status: str, lead_source: str | None, linkedin_url: str | None,
+                        readiness_pct: float) -> int:
+    if status == "Won":
+        return 100
+    score = _STATUS_SCORE.get(status, 0)
+    score += _LEAD_SOURCE_SCORE.get(lead_source or "", 0)
+    if linkedin_url:
+        score += 5
+    score += round(readiness_pct * 15)
+    return min(100, score)
+
+
 def _summarize(memberships: list[dict]) -> dict:
     if not memberships:
         return {"overall_status": "Imported -- not yet in a campaign", "total_won_value": 0.0, "won": False, "lost": False}
@@ -66,7 +121,8 @@ def _latest_timestamp(m: dict) -> str | None:
 
 def list_leads(search: str | None = None, status: str | None = None,
                validation_status: str | None = None, ever_sent: bool | None = None,
-               ever_replied: bool | None = None, ever_quoted: bool | None = None) -> list[dict]:
+               ever_replied: bool | None = None, ever_quoted: bool | None = None,
+               quote_ready: bool | None = None) -> list[dict]:
     """Every prospect across every campaign (and prospects not yet in any
     campaign), one row per lead, for the consolidated Leads tab -- as
     opposed to get_lead_timeline()'s single-lead full-detail view, or the
@@ -83,7 +139,8 @@ def list_leads(search: str | None = None, status: str | None = None,
     membership, consistent with the rest of the Leads tab."""
     with get_conn() as conn:
         prospects = [dict(r) for r in conn.execute(
-            "SELECT id, first_name, last_name, email, company, phone, status AS validation_status "
+            "SELECT id, first_name, last_name, email, company, phone, status AS validation_status, "
+            "lead_source, linkedin_url, next_action, qualification_status "
             "FROM prospects_raw ORDER BY id DESC"
         ).fetchall()]
 
@@ -106,6 +163,7 @@ def list_leads(search: str | None = None, status: str | None = None,
         memberships = memberships_by_prospect.get(p["id"], [])
         summary = _summarize(memberships)
         latest = memberships[-1] if memberships else None
+        readiness = quote_readiness(latest)
         leads.append({
             "lead_number": lead_number_for(p["id"]),
             "prospect_id": p["id"],
@@ -115,6 +173,10 @@ def list_leads(search: str | None = None, status: str | None = None,
             "company": p["company"],
             "phone": p["phone"],
             "validation_status": p["validation_status"],
+            "lead_source": p["lead_source"],
+            "linkedin_url": p["linkedin_url"],
+            "next_action": p["next_action"],
+            "qualification_status": p["qualification_status"],
             "campaign_count": len(memberships),
             "campaign_id": latest["campaign_id"] if latest else None,
             "campaign_prospect_id": latest["id"] if latest else None,
@@ -128,6 +190,8 @@ def list_leads(search: str | None = None, status: str | None = None,
             "won": summary["won"],
             "lost": summary["lost"],
             "last_activity_at": _latest_timestamp(latest) if latest else None,
+            "lead_score": compute_lead_score(summary["overall_status"], p["lead_source"], p["linkedin_url"], readiness["pct"]),
+            "quote_readiness": readiness,
             "_sent_at": latest["sent_at"] if latest else None,
             "_replied_at": latest["replied_at"] if latest else None,
             "_quote_requested_at": latest["quote_requested_at"] if latest else None,
@@ -143,6 +207,8 @@ def list_leads(search: str | None = None, status: str | None = None,
         leads = [l for l in leads if l["_replied_at"]]
     if ever_quoted:
         leads = [l for l in leads if l["_quote_requested_at"]]
+    if quote_ready:
+        leads = [l for l in leads if l["quote_readiness"]["ready"]]
     if search:
         s = search.strip().lower()
         leads = [
@@ -218,10 +284,15 @@ def get_lead_timeline(lead_number: str) -> dict | None:
             ).fetchall()
         events = sorted([dict(e) for e in events], key=lambda e: e["timestamp"])
 
+    summary = _summarize(memberships)
+    latest = memberships[-1] if memberships else None
+    readiness = quote_readiness(latest)
     return {
         "lead_number": lead_number_for(prospect_id),
         "prospect": dict(prospect),
         "memberships": memberships,
         "timeline_events": events,
-        **_summarize(memberships),
+        "lead_score": compute_lead_score(summary["overall_status"], prospect["lead_source"], prospect["linkedin_url"], readiness["pct"]),
+        "quote_readiness": readiness,
+        **summary,
     }

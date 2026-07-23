@@ -23,7 +23,10 @@ from app.services.approval_and_delivery import (
     simulate_reply,
     ApprovalError,
 )
-from app.services.sales_outcomes import request_quote, mark_won, mark_lost, reopen_outcome, update_quote_details, OutcomeError
+from app.services.sales_outcomes import (
+    request_quote, mark_won, mark_lost, reopen_outcome, update_quote_details,
+    draft_quote_summary_email, OutcomeError,
+)
 from app.integrations.email_provider import EmailNotConfiguredError
 
 router = APIRouter(prefix="/campaigns", tags=["OBJ-003"])
@@ -201,12 +204,27 @@ def reopen(campaign_id: int, prospect_row_id: int):
 
 @router.put("/{campaign_id}/prospects/{prospect_row_id}/quote-details", tags=["OBJ-011"])
 def set_quote_details(campaign_id: int, prospect_row_id: int, payload: QuoteDetailsInput):
-    """High-level quote prep notes -- materials, quantity, target price,
-    other specs/timeline notes -- not a real quote or pricing calculation,
-    just context for the human building the actual quote."""
+    """Quote Readiness Checklist + target price -- not a real quote or
+    pricing calculation, just context for the human building the actual
+    quote."""
     try:
         update_quote_details(campaign_id, prospect_row_id, payload.materials,
-                              payload.quantity, payload.target_price, payload.quote_notes)
+                              payload.quantity, payload.target_price, payload.quote_notes,
+                              payload.sku_spec, payload.unit_of_measure, payload.destination,
+                              payload.shipping_terms, payload.delivery_date, payload.currency,
+                              payload.payment_terms, payload.packaging_requirements)
         return {"status": "saved"}
+    except OutcomeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/draft-quote-summary", tags=["OBJ-011"])
+def draft_quote_summary(campaign_id: int, prospect_row_id: int):
+    """Draft a customer-facing recap of the Quote Readiness Checklist into
+    the reply_drafts review queue -- edit/approve/send from there, same as
+    a smart-reply draft. Nothing is sent until a human approves it."""
+    try:
+        draft_id = draft_quote_summary_email(campaign_id, prospect_row_id)
+        return {"status": "drafted", "draft_id": draft_id}
     except OutcomeError as e:
         raise HTTPException(status_code=422, detail=str(e))

@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS prospects_raw (
     phone TEXT,
     status TEXT NOT NULL DEFAULT 'Pending',       -- Pending/Valid/Invalid/Duplicate/Existing Customer
     validation_notes TEXT,
+    lead_source TEXT,                -- Website/Trade Show/Referral
+    linkedin_url TEXT,
+    next_action TEXT,                -- free text -- what the SDR should do next
+    qualification_status TEXT,       -- New/Contacted/Qualified/Unqualified/Nurturing
     FOREIGN KEY (batch_id) REFERENCES import_batches(batch_id)
 );
 
@@ -69,7 +73,15 @@ CREATE TABLE IF NOT EXISTS campaign_prospects (
     materials TEXT,                  -- high-level quote prep: what they need (e.g. "Flat bars, ERW pipes")
     quantity TEXT,                   -- free text -- "50 tons", "200 pcs", etc., not always a bare number
     target_price REAL,               -- budget/target price the prospect mentioned, if any
-    quote_notes TEXT,                -- specs, grade, delivery timeline/location, anything else for the quote
+    quote_notes TEXT,                -- Quote Readiness Checklist: special instructions
+    sku_spec TEXT,                   -- Quote Readiness Checklist: SKU or specification
+    unit_of_measure TEXT,            -- Quote Readiness Checklist: unit of measure
+    destination TEXT,                -- Quote Readiness Checklist: destination
+    shipping_terms TEXT,             -- Quote Readiness Checklist: shipping terms (Incoterms)
+    delivery_date TEXT,              -- Quote Readiness Checklist: delivery date
+    currency TEXT,                   -- Quote Readiness Checklist: currency
+    payment_terms TEXT,              -- Quote Readiness Checklist: payment terms
+    packaging_requirements TEXT,     -- Quote Readiness Checklist: packaging requirements
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id),
     FOREIGN KEY (prospect_id) REFERENCES prospects_raw(id),
     UNIQUE (campaign_id, prospect_id)
@@ -182,6 +194,18 @@ def init_db(seed_customers: bool = True):
         _ensure_column(conn, "campaign_prospects", "quantity", "TEXT")
         _ensure_column(conn, "campaign_prospects", "target_price", "REAL")
         _ensure_column(conn, "campaign_prospects", "quote_notes", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "sku_spec", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "unit_of_measure", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "destination", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "shipping_terms", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "delivery_date", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "currency", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "payment_terms", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "packaging_requirements", "TEXT")
+        _ensure_column(conn, "prospects_raw", "lead_source", "TEXT")
+        _ensure_column(conn, "prospects_raw", "linkedin_url", "TEXT")
+        _ensure_column(conn, "prospects_raw", "next_action", "TEXT")
+        _ensure_column(conn, "prospects_raw", "qualification_status", "TEXT")
         if seed_customers:
             existing = conn.execute("SELECT COUNT(*) c FROM customers").fetchone()["c"]
             if existing == 0:

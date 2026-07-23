@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 from app.db import get_conn
 from app.services.audit import log_event
+from app.services.leads import QUOTE_CHECKLIST_FIELDS
 
 VALID_FOR_QUOTE = {"Replied"}
 VALID_FOR_OUTCOME = {"QuoteRequested", "Won", "Lost"}
@@ -83,23 +84,80 @@ def mark_lost(campaign_id: int, prospect_row_id: int, reason: str | None = None)
 
 
 def update_quote_details(campaign_id: int, prospect_row_id: int, materials: str | None,
-                          quantity: str | None, target_price: float | None, quote_notes: str | None):
-    """High-level notes a human gathers toward preparing a real quote --
-    what materials, how much, any target price or spec/delivery notes the
-    prospect mentioned. Deliberately free-text and status-independent (no
-    VALID_FOR_* gate): useful to jot down as soon as a Replied conversation
-    starts touching specifics, not just once QuoteRequested is reached.
-    This is not itself a quote or a price calculation -- OBJ-011-lite's
-    scope explicitly excludes automated quotation/pricing; it's context a
-    person builds the real quote from."""
+                          quantity: str | None, target_price: float | None, quote_notes: str | None,
+                          sku_spec: str | None = None, unit_of_measure: str | None = None,
+                          destination: str | None = None, shipping_terms: str | None = None,
+                          delivery_date: str | None = None, currency: str | None = None,
+                          payment_terms: str | None = None, packaging_requirements: str | None = None):
+    """High-level notes a human gathers toward preparing a real quote -- the
+    Quote Readiness Checklist (materials, spec, quantity, unit, destination,
+    shipping terms, delivery date, currency, payment terms, packaging,
+    special instructions) plus a target price. Deliberately free-text and
+    status-independent (no VALID_FOR_* gate): useful to jot down as soon as
+    a Replied conversation starts touching specifics, not just once
+    QuoteRequested is reached. This is not itself a quote or a price
+    calculation -- OBJ-011-lite's scope explicitly excludes automated
+    quotation/pricing; it's context a person builds the real quote from."""
     with get_conn() as conn:
         _get_status(conn, campaign_id, prospect_row_id)  # raises OutcomeError if not found
         conn.execute(
-            "UPDATE campaign_prospects SET materials = ?, quantity = ?, target_price = ?, quote_notes = ? "
-            "WHERE id = ?",
-            (materials, quantity, target_price, quote_notes, prospect_row_id),
+            """UPDATE campaign_prospects SET materials = ?, quantity = ?, target_price = ?, quote_notes = ?,
+               sku_spec = ?, unit_of_measure = ?, destination = ?, shipping_terms = ?,
+               delivery_date = ?, currency = ?, payment_terms = ?, packaging_requirements = ?
+               WHERE id = ?""",
+            (materials, quantity, target_price, quote_notes, sku_spec, unit_of_measure,
+             destination, shipping_terms, delivery_date, currency, payment_terms,
+             packaging_requirements, prospect_row_id),
         )
     log_event("quote_details_updated", "campaign_prospect", str(prospect_row_id), f"Campaign {campaign_id}")
+
+
+def draft_quote_summary_email(campaign_id: int, prospect_row_id: int) -> int:
+    """Compose a customer-facing recap of the Quote Readiness Checklist as a
+    human-reviewable draft in the existing reply_drafts approval queue --
+    reuses the same edit/approve-and-send flow as smart replies, so nothing
+    leaves this server without a person approving it first. This is a
+    confirmation/recap email, not a real quote or price calculation --
+    OBJ-011-lite's scope explicitly excludes automated quotation/pricing;
+    it's the bridge from "lead" to "human builds the real quote" the tool
+    is meant to support. Returns the new reply_drafts.id."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT cp.*, pr.first_name, pr.company
+               FROM campaign_prospects cp
+               JOIN prospects_raw pr ON pr.id = cp.prospect_id
+               WHERE cp.campaign_id = ? AND cp.id = ?""",
+            (campaign_id, prospect_row_id),
+        ).fetchone()
+        if not row:
+            raise OutcomeError("Campaign prospect not found")
+        row = dict(row)
+
+        lines = [f"- {label}: {row[key]}" for key, label in QUOTE_CHECKLIST_FIELDS if row.get(key)]
+        if not lines:
+            raise OutcomeError("Fill in at least one Quote Readiness Checklist field before drafting a summary email")
+
+        greeting_name = row["first_name"] or "there"
+        body = (
+            f"Hi {greeting_name},\n\n"
+            "Thanks for the details -- here's what we have noted so far for your quote:\n\n"
+            + "\n".join(lines) +
+            "\n\nLet us know if anything needs adjusting, and we'll follow up with a formal quote shortly.\n\n"
+            "Best regards"
+        )
+        subject = f"Quote request summary -- {row['company'] or greeting_name}"
+
+        now = datetime.now(timezone.utc).isoformat()
+        cur = conn.execute(
+            """INSERT INTO reply_drafts
+               (campaign_prospect_id, subject, body, status, confidence, matched_summary, created_at)
+               VALUES (?, ?, ?, 'Draft', 'quote_summary', 'Quote Readiness Checklist recap', ?)""",
+            (prospect_row_id, subject, body, now),
+        )
+        draft_id = cur.lastrowid
+    log_event("quote_summary_drafted", "campaign_prospect", str(prospect_row_id),
+              f"Campaign {campaign_id}, draft #{draft_id}")
+    return draft_id
 
 
 def reopen_outcome(campaign_id: int, prospect_row_id: int):
