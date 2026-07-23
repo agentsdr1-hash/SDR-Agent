@@ -383,6 +383,12 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
         <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--valid)" id="cs_w">–</div><div class="lbl">Won</div></div>
       </div>
     </div>
+    <div class="row hidden" id="campBulkBar" style="background:var(--blue-soft);border-radius:8px;padding:10px 14px;align-items:center;margin-bottom:12px;">
+      <b style="font-size:12.5px;" id="campBulkCount">0 selected</b>
+      <button class="btn ok" style="padding:6px 12px;font-size:12px;" id="campBulkApproveBtn">Approve selected</button>
+      <button class="btn reject" style="padding:6px 12px;font-size:12px;" id="campBulkRejectBtn">Reject selected</button>
+      <button class="btn sec" style="padding:6px 12px;font-size:12px;margin-left:auto;" id="campBulkClearBtn">Clear selection</button>
+    </div>
     <div id="emailCards"></div>
   </div>
 </div>
@@ -391,12 +397,15 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 <div class="view" id="vLeads">
   <div class="page-title" style="display:flex;align-items:center;justify-content:space-between;">
     Leads
-    <button class="btn sec" style="font-size:12px;padding:6px 12px;" onclick="loadLeadsList()">↻ Refresh</button>
+    <div style="display:flex;gap:8px;">
+      <button class="btn sec" style="font-size:12px;padding:6px 12px;" id="leadsExportBtn">⬇ Export to Excel</button>
+      <button class="btn sec" style="font-size:12px;padding:6px 12px;" onclick="loadLeadsList()">↻ Refresh</button>
+    </div>
   </div>
 
   <div class="panel">
     <div class="panel-head"><h2>All leads</h2><span class="obj-tag">consolidated · every campaign</span></div>
-    <p class="hint" style="margin:0 0 10px;">Every prospect gets an immutable Lead # the moment it's imported — this is every one of them, across every campaign, in one place (not scoped to a single campaign or import batch like the tables on the Campaigns and Dashboard tabs). Search by name, email, company, or Lead #, then click a row to open its full lifecycle and manage its status — including reopening or editing a Won/Lost outcome.</p>
+    <p class="hint" style="margin:0 0 10px;">Every prospect gets an immutable Lead # the moment it's imported — this is every one of them, across every campaign, in one place (not scoped to a single campaign or import batch like the tables on the Campaigns and Dashboard tabs). Search by name, email, company, or Lead #, then click a row to open its full lifecycle and manage its status — including reopening or editing a Won/Lost outcome. Check rows for bulk actions, or use Export to download the current view.</p>
     <div class="row">
       <input type="text" id="leadsSearch" placeholder="Search name, email, company, or Lead # (e.g. L-000001)"/>
       <select id="leadsStatusFilter" style="max-width:240px;">
@@ -427,8 +436,18 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
         </optgroup>
       </select>
     </div>
+
+    <div class="row mt12 hidden" id="leadsBulkBar" style="background:var(--blue-soft);border-radius:8px;padding:10px 14px;align-items:center;">
+      <b style="font-size:12.5px;" id="leadsBulkCount">0 selected</b>
+      <select id="leadsBulkCampaign" style="max-width:200px;"></select>
+      <button class="btn sky" style="padding:6px 12px;font-size:12px;" id="leadsBulkAssignBtn">Assign to campaign</button>
+      <button class="btn reject" style="padding:6px 12px;font-size:12px;" id="leadsBulkSuppressBtn">Suppress</button>
+      <button class="btn sec" style="padding:6px 12px;font-size:12px;margin-left:auto;" id="leadsBulkClearBtn">Clear selection</button>
+    </div>
+
     <div class="tbl-wrap scrollx mt12">
       <table><thead><tr>
+        <th style="width:32px;"><input type="checkbox" id="leadsSelectAll"/></th>
         <th>Lead #</th><th>Name</th><th>Company</th><th>Email</th><th>Status</th><th>Campaign</th><th>Deal value</th><th class="nowrap">Last activity</th><th></th>
       </tr></thead><tbody id="leadsListBody"></tbody></table>
     </div>
@@ -525,7 +544,10 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 <div class="view" id="vDashboard">
   <div class="page-title" style="display:flex;align-items:center;justify-content:space-between;">
     Pipeline Dashboard
-    <button class="btn sec" style="font-size:12px;padding:6px 12px;" onclick="loadDashboard()">↻ Refresh</button>
+    <div style="display:flex;gap:8px;">
+      <button class="btn sec" style="font-size:12px;padding:6px 12px;" id="dashExportBtn">⬇ Export to Excel</button>
+      <button class="btn sec" style="font-size:12px;padding:6px 12px;" onclick="loadDashboard()">↻ Refresh</button>
+    </div>
   </div>
 
   <div class="panel hidden" id="dashDrillPanel">
@@ -1201,15 +1223,21 @@ document.getElementById('advDayBtn').addEventListener('click', () => {
   renderEmailCards();
 });
 
+let campCurrentCid = null;
+let campSelectedIds = new Set();
+
 async function loadServerProspects(cid) {
   const r = await fetch('/campaigns/'+cid+'/prospects');
   const rows = await r.json();
   if(!r.ok) return;
+  campCurrentCid = cid;
+  campSelectedIds = new Set();
   const counts = {Queued:0,Sent:0,Replied:0,Won:0};
   rows.forEach(r => { if(counts[r.status]!==undefined) counts[r.status]++; });
   set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
   document.getElementById('pProspects').classList.remove('hidden');
   document.getElementById('emailCards').innerHTML = rows.map(r => serverProspectCard(r, cid)).join('');
+  renderCampBulkBar();
 }
 
 function serverProspectCard(r, cid) {
@@ -1222,8 +1250,44 @@ function serverProspectCard(r, cid) {
   else if(r.status==='QuoteRequested') actions = `<button class="btn ok" onclick="serverWon('${cid}',${r.id})">Mark Won</button><button class="btn reject" onclick="serverLost('${cid}',${r.id})">Mark Lost</button>`;
   else if(r.status==='Won') actions = `<button class="btn sec" onclick="serverWon('${cid}',${r.id})">Edit amount</button><button class="btn sec" onclick="serverReopen('${cid}',${r.id})">Reopen</button>`;
   else if(r.status==='Lost') actions = `<button class="btn sec" onclick="serverLost('${cid}',${r.id})">Edit reason</button><button class="btn sec" onclick="serverReopen('${cid}',${r.id})">Reopen</button>`;
-  return `<div class="email-card"><div class="ehead"><div class="who">${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span></div></div>`;
+  const checkbox = r.status==='Queued' ? `<input type="checkbox" class="camp-row-check" data-id="${r.id}" onclick="toggleCampSelect(${r.id}, this.checked)" style="margin-right:10px;"/>` : '';
+  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span></div></div>`;
 }
+
+function toggleCampSelect(id, checked) {
+  if(checked) campSelectedIds.add(id); else campSelectedIds.delete(id);
+  renderCampBulkBar();
+}
+
+function renderCampBulkBar() {
+  const bar = document.getElementById('campBulkBar');
+  const n = campSelectedIds.size;
+  bar.classList.toggle('hidden', n===0);
+  set('campBulkCount', n+' selected');
+}
+
+document.getElementById('campBulkClearBtn').addEventListener('click', () => {
+  campSelectedIds = new Set();
+  document.querySelectorAll('#emailCards .camp-row-check').forEach(cb => cb.checked = false);
+  renderCampBulkBar();
+});
+
+document.getElementById('campBulkApproveBtn').addEventListener('click', async () => {
+  const r = await fetch('/campaigns/'+campCurrentCid+'/prospects/bulk-approve', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({prospect_row_ids:[...campSelectedIds]})});
+  const d = await r.json();
+  if(!r.ok) return alert(d.detail||'Failed');
+  alert(`Approved ${d.succeeded}.`+(d.failed?` ${d.failed} failed:\n`+d.errors.join('\n'):''));
+  loadServerProspects(campCurrentCid);
+});
+
+document.getElementById('campBulkRejectBtn').addEventListener('click', async () => {
+  if(!confirm(`Reject ${campSelectedIds.size} draft(s)? This can't be undone.`)) return;
+  const r = await fetch('/campaigns/'+campCurrentCid+'/prospects/bulk-reject', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({prospect_row_ids:[...campSelectedIds]})});
+  const d = await r.json();
+  if(!r.ok) return alert(d.detail||'Failed');
+  alert(`Rejected ${d.succeeded}.`+(d.failed?` ${d.failed} failed:\n`+d.errors.join('\n'):''));
+  loadServerProspects(campCurrentCid);
+});
 
 async function serverApprove(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/approve',{method:'POST'}); loadServerProspects(cid); }
 async function serverReject(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/reject',{method:'POST'}); loadServerProspects(cid); }
@@ -1650,10 +1714,15 @@ function leadDocumentCard(l) {
   </div>`;
 }
 
+let leadsCurrentRows = [];
+let leadsSelectedIds = new Set();
+
 async function loadLeadsList() {
   const seq = ++leadsListRequestSeq;
   const body = document.getElementById('leadsListBody'), empty = document.getElementById('leadsListEmpty');
-  if(MODE!=='server') { body.innerHTML=''; empty.textContent='Leads requires server mode.'; empty.classList.remove('hidden'); return; }
+  leadsSelectedIds = new Set();
+  document.getElementById('leadsSelectAll').checked = false;
+  if(MODE!=='server') { body.innerHTML=''; empty.textContent='Leads requires server mode.'; empty.classList.remove('hidden'); leadsCurrentRows=[]; renderLeadsBulkBar(); return; }
   const search = document.getElementById('leadsSearch').value.trim();
   const sel = document.getElementById('leadsStatusFilter');
   const params = leadsParamsFor(sel.value);
@@ -1661,10 +1730,12 @@ async function loadLeadsList() {
   const r = await fetch('/leads?'+params.toString());
   const rows = await r.json();
   if(seq !== leadsListRequestSeq) return; // a newer request has already superseded this one
-  if(!r.ok) { body.innerHTML=''; empty.textContent='Could not load leads.'; empty.classList.remove('hidden'); return; }
-  if(!rows.length) { body.innerHTML=''; empty.textContent='No leads match.'; empty.classList.remove('hidden'); return; }
+  if(!r.ok) { body.innerHTML=''; empty.textContent='Could not load leads.'; empty.classList.remove('hidden'); leadsCurrentRows=[]; renderLeadsBulkBar(); return; }
+  leadsCurrentRows = rows;
+  if(!rows.length) { body.innerHTML=''; empty.textContent='No leads match.'; empty.classList.remove('hidden'); renderLeadsBulkBar(); return; }
   empty.classList.add('hidden');
   body.innerHTML = rows.map(l => `<tr class="row-click" onclick="openLeadDetail('${esc(l.lead_number)}')">
+    <td onclick="event.stopPropagation()"><input type="checkbox" class="lead-row-check" data-id="${l.prospect_id}" onclick="toggleLeadSelect(${l.prospect_id}, this.checked)"/></td>
     <td class="mono nowrap">${esc(l.lead_number)}</td>
     <td>${esc([l.first_name,l.last_name].filter(Boolean).join(' ')||'—')}</td>
     <td>${esc(l.company||'—')}</td>
@@ -1675,7 +1746,142 @@ async function loadLeadsList() {
     <td class="muted nowrap">${l.last_activity_at?fmt(l.last_activity_at):'—'}</td>
     <td><button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();openLeadDetail('${esc(l.lead_number)}')">View</button></td>
   </tr>`).join('');
+  renderLeadsBulkBar();
 }
+
+function toggleLeadSelect(prospectId, checked) {
+  if(checked) leadsSelectedIds.add(prospectId); else leadsSelectedIds.delete(prospectId);
+  renderLeadsBulkBar();
+}
+
+document.getElementById('leadsSelectAll').addEventListener('change', e => {
+  document.querySelectorAll('#leadsListBody .lead-row-check').forEach(cb => {
+    cb.checked = e.target.checked;
+    const id = Number(cb.dataset.id);
+    if(e.target.checked) leadsSelectedIds.add(id); else leadsSelectedIds.delete(id);
+  });
+  renderLeadsBulkBar();
+});
+
+async function renderLeadsBulkBar() {
+  const bar = document.getElementById('leadsBulkBar');
+  const n = leadsSelectedIds.size;
+  if(!n) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  set('leadsBulkCount', n+' selected');
+  await populateCampaignSelect('leadsBulkCampaign');
+}
+
+document.getElementById('leadsBulkClearBtn').addEventListener('click', () => {
+  leadsSelectedIds = new Set();
+  document.querySelectorAll('#leadsListBody .lead-row-check').forEach(cb => cb.checked = false);
+  document.getElementById('leadsSelectAll').checked = false;
+  renderLeadsBulkBar();
+});
+
+document.getElementById('leadsBulkAssignBtn').addEventListener('click', async () => {
+  const cid = document.getElementById('leadsBulkCampaign').value;
+  if(!cid) return setS('leadsListEmpty','Create a campaign first (Campaigns tab).', true);
+  const r = await fetch('/leads/bulk-assign', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({prospect_ids:[...leadsSelectedIds], campaign_id:Number(cid)})});
+  const d = await r.json();
+  if(!r.ok) return alert(d.detail||'Failed');
+  alert(`Assigned ${d.succeeded}.`+(d.failed?` ${d.failed} skipped:\n`+d.errors.join('\n'):''));
+  loadLeadsList();
+});
+
+document.getElementById('leadsBulkSuppressBtn').addEventListener('click', async () => {
+  const reason = prompt('Reason (optional):');
+  if(reason===null) return;
+  const r = await fetch('/leads/bulk-suppress', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({prospect_ids:[...leadsSelectedIds], reason:reason||null})});
+  const d = await r.json();
+  if(!r.ok) return alert(d.detail||'Failed');
+  alert(`Suppressed ${d.succeeded}.`+(d.failed?` ${d.failed} skipped:\n`+d.errors.join('\n'):''));
+  loadLeadsList();
+});
+
+async function populateCampaignSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  if(!sel) return;
+  const r = await fetch('/campaigns');
+  const camps = await r.json();
+  sel.innerHTML = camps.length ? camps.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('') : '<option value="">No campaigns yet</option>';
+}
+
+// Builds and downloads an .xlsx workbook client-side via the SheetJS
+// library already loaded (in <head>) for parsing imported files -- no
+// backend endpoint needed since the data driving every export already
+// lives in the browser (fetched for the view being exported).
+// sheets: {sheetName: [{col: value, ...}, ...]}
+function downloadExcel(sheets, filenamePrefix) {
+  if(typeof XLSX === 'undefined') {
+    alert('The Excel library failed to load (check your internet connection) -- cannot export right now.');
+    return false;
+  }
+  const wb = XLSX.utils.book_new();
+  for(const [name, rows] of Object.entries(sheets)) {
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{}]);
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31)); // Excel sheet-name limit
+  }
+  const stamp = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `${filenamePrefix}-${stamp}.xlsx`);
+  return true;
+}
+
+document.getElementById('leadsExportBtn').addEventListener('click', () => {
+  if(!leadsCurrentRows.length) return alert('No leads to export — adjust your search/filter, or load the Leads tab first.');
+  const rows = leadsCurrentRows.map(l => ({
+    'Lead #': l.lead_number,
+    'Name': [l.first_name, l.last_name].filter(Boolean).join(' '),
+    'Company': l.company || '',
+    'Email': l.email || '',
+    'Phone': l.phone || '',
+    'Validation status': l.validation_status,
+    'Status': l.status,
+    'Campaign': l.campaign_name || '',
+    'Deal value': l.deal_value != null ? l.deal_value : '',
+    'Last activity': l.last_activity_at ? fmt(l.last_activity_at) : '',
+  }));
+  downloadExcel({'Leads': rows}, 'apex-leads');
+});
+
+document.getElementById('dashExportBtn').addEventListener('click', () => {
+  if(!dashSummaryData) return alert('Nothing to export yet — load the Dashboard first.');
+  const d = dashSummaryData;
+  const s = d.prospect_status_counts, v = d.value_captured, p = d.sdr_performance;
+
+  const summary = [
+    {Metric: 'Total imported', Value: d.total_prospects},
+    {Metric: 'Valid', Value: s.Valid},
+    {Metric: 'Invalid', Value: s.Invalid},
+    {Metric: 'Duplicate', Value: s.Duplicate},
+    {Metric: 'Existing customer', Value: s['Existing Customer']},
+    {Metric: 'Already contacted', Value: s['Already Contacted']},
+    {Metric: 'Import batches', Value: d.total_import_batches},
+    {Metric: 'Existing customers on file', Value: d.total_customers_on_file},
+    {Metric: 'Customers won', Value: v.customers_won},
+    {Metric: 'Total turnover', Value: v.total_turnover},
+    {Metric: 'Quotes requested', Value: v.quotes_requested},
+    {Metric: 'Deals lost', Value: v.deals_lost},
+    {Metric: 'Win rate %', Value: v.win_rate_pct},
+    {Metric: 'Emails sent', Value: p.total_emails_sent},
+    {Metric: 'Replies received', Value: p.total_replies_received},
+    {Metric: 'Response rate %', Value: p.response_rate_pct},
+    {Metric: 'Avg. reply time (hours)', Value: p.avg_response_time_hours ?? ''},
+  ];
+
+  const campaignRows = d.campaigns.map(c => ({
+    'Campaign': c.name, 'Status': c.status, 'Created': fmt(c.created_at),
+    'Queued': c.queued, 'Approved': c.approved, 'Rejected': c.rejected, 'Sent': c.sent,
+    'Replied': c.replied, 'Suppressed': c.suppressed, 'Quote requested': c.quote_requested,
+    'Won': c.won, 'Lost': c.lost, 'Turnover': c.turnover, 'Total prospects': c.total,
+  }));
+
+  const activityRows = (d.activity_by_day || []).map(a => ({
+    'Date': a.date, 'Sent': a.sent, 'Replied': a.replied, 'Won': a.won,
+  }));
+
+  downloadExcel({'Summary': summary, 'Campaigns': campaignRows, 'Activity by day': activityRows}, 'apex-dashboard');
+});
 
 async function openLeadDetail(leadNumber, bodyId, statusId) {
   bodyId = bodyId || 'leadDetailBody';
@@ -1701,15 +1907,7 @@ async function openLeadDetail(leadNumber, bodyId, statusId) {
   if(!r.ok) { setS(statusId, d.detail||'Not found', true); return; }
   setS(statusId, '');
   document.getElementById(bodyId).innerHTML = renderLeadTimeline(d);
-  populateLeadAssignSelect();
-}
-
-async function populateLeadAssignSelect() {
-  const sel = document.getElementById('leadAssignCampaign');
-  if(!sel) return;
-  const r = await fetch('/campaigns');
-  const camps = await r.json();
-  sel.innerHTML = camps.length ? camps.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('') : '<option value="">No campaigns yet</option>';
+  populateCampaignSelect('leadAssignCampaign');
 }
 
 async function saveLeadEdit(prospectId) {
@@ -1893,11 +2091,14 @@ function replyDraftDrillCard(rd) {
 // ══════════════════════════════════════════════════════
 // DASHBOARD — OBJ-013
 // ══════════════════════════════════════════════════════
+let dashSummaryData = null;
+
 async function loadDashboard() {
   if(MODE==='server') {
     try {
       const [sr,ar] = await Promise.all([fetch('/reports/summary'), fetch('/audit/events?limit=30')]);
       const d=await sr.json(), audit=await ar.json();
+      dashSummaryData = d;
       const s=d.prospect_status_counts;
       set('dV',s.Valid); set('dI',s.Invalid); set('dD',s.Duplicate); set('dE',s['Existing Customer']); set('dAC',s['Already Contacted']); set('dT',d.total_prospects);
       document.getElementById('dNote').textContent=d.total_import_batches+' batch(es) · '+d.total_customers_on_file+' existing customers on file';
