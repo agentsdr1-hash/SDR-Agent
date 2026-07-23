@@ -94,8 +94,14 @@ def send_approved(campaign_id: int) -> SendResult:
     sent = 0
     failed = 0
     suppressed = 0
+    skipped_daily_limit = 0
     errors = []
     now = datetime.now(timezone.utc).isoformat()
+    # Checked once up front rather than attempted-and-caught per row -- once
+    # the cap is hit, the remaining approved drafts are simply left Approved
+    # (not marked failed) so they send on the next run rather than needing
+    # to be re-approved.
+    remaining = email_provider.remaining_sends_today()
 
     for row in rows:
         if is_suppressed(row["email"]):
@@ -108,6 +114,9 @@ def send_approved(campaign_id: int) -> SendResult:
             errors.append(f"{row['email']}: skipped — on suppression list, not sent")
             log_event("send_blocked_suppressed", "campaign_prospect", str(row["id"]), f"{row['email']} is on suppression list")
             continue
+        if remaining <= 0:
+            skipped_daily_limit += 1
+            continue
         try:
             email_provider.send_email(row["email"], row["subject"], row["body"])
             with get_conn() as conn:
@@ -116,13 +125,21 @@ def send_approved(campaign_id: int) -> SendResult:
                     (now, row["id"]),
                 )
             sent += 1
+            remaining -= 1
             log_event("email_sent", "campaign_prospect", str(row["id"]), f"Sent to {row['email']}")
         except email_provider.EmailSendError as e:
             failed += 1
             errors.append(f"{row['email']}: {e}")
             log_event("email_send_failed", "campaign_prospect", str(row["id"]), f"{row['email']}: {e}")
 
-    return SendResult(campaign_id=campaign_id, attempted=attempted, sent=sent, failed=failed, suppressed=suppressed, errors=errors)
+    if skipped_daily_limit:
+        errors.append(
+            f"{skipped_daily_limit} draft(s) left Approved — today's send limit of "
+            f"{email_provider.daily_send_limit()} reached. They'll send next run, or raise the limit in Admin."
+        )
+
+    return SendResult(campaign_id=campaign_id, attempted=attempted, sent=sent, failed=failed,
+                       suppressed=suppressed, skipped_daily_limit=skipped_daily_limit, errors=errors)
 
 
 def _get_status(conn, campaign_id: int, prospect_row_id: int) -> str:

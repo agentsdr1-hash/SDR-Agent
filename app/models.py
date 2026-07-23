@@ -99,6 +99,7 @@ class SendResult(BaseModel):
     sent: int
     failed: int
     suppressed: int = 0
+    skipped_daily_limit: int = 0
     errors: list[str] = []
 
 
@@ -107,6 +108,8 @@ class EmailStatus(BaseModel):
     gmail_address: Optional[str] = None
     source: str = "none"  # 'database' (set via Admin tab) / 'environment' / 'none'
     poll_interval_minutes: int
+    daily_send_limit: int
+    sent_today: int
     last_poll_at: Optional[str] = None
     last_poll_replies_found: Optional[int] = None
     last_poll_error: Optional[str] = None
@@ -115,6 +118,10 @@ class EmailStatus(BaseModel):
 class EmailConfigInput(BaseModel):
     gmail_address: str
     app_password: str
+
+
+class DailySendLimitInput(BaseModel):
+    limit: int
 
 
 class PollResult(BaseModel):
