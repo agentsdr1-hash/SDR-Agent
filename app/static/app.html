@@ -197,13 +197,40 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 .qd-lines th,.qd-lines td{border:1px solid var(--line);padding:8px 10px;font-size:12.5px;text-align:left;}
 .qd-lines th{background:var(--paper);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
 .qd-lines td:first-child{width:38%;color:var(--muted);}
+/* Editable line items -- inputs sit flush in the cell so editing still
+   reads like filling out the document itself, not a separate form. */
+.qd-lines input,.qd-lines textarea{width:100%;border:none;background:transparent;font-size:12.5px;font-family:inherit;color:var(--ink);padding:0;resize:vertical;}
+.qd-lines input:focus,.qd-lines textarea:focus{outline:none;background:var(--blue-soft);border-radius:4px;padding:2px 4px;margin:-2px -4px;}
 .qd-budget{margin-top:12px;font-size:13px;font-weight:600;color:var(--ink);}
+.qd-budget input{border:none;background:transparent;font-size:13px;font-weight:600;font-family:inherit;color:var(--ink);width:140px;}
+.qd-budget input:focus{outline:none;background:var(--blue-soft);border-radius:4px;padding:1px 4px;}
 .qd-footer{margin-top:18px;padding-top:12px;border-top:1px solid var(--line-soft);}
+
+/* Quote Document modal -- a focused pop-up for reading/editing the
+   document instead of a cramped inline <details> block, so the whole
+   letterhead layout has room to breathe and reads as its own "drill
+   down" screen. */
+.modal-overlay{display:flex;align-items:flex-start;justify-content:center;position:fixed;inset:0;background:rgba(15,23,42,.6);z-index:1000;padding:5vh 20px;overflow-y:auto;}
+.modal-overlay.hidden{display:none;}
+.modal-panel{background:var(--panel);border-radius:14px;max-width:760px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.35);position:relative;margin-bottom:5vh;}
+.modal-panel-body{padding:22px 24px;}
+.modal-close{position:absolute;top:14px;right:14px;background:var(--paper);border:1px solid var(--line);width:30px;height:30px;border-radius:8px;font-size:16px;cursor:pointer;color:var(--muted);line-height:1;display:flex;align-items:center;justify-content:center;}
+.modal-close:hover{background:var(--line-soft);color:var(--ink);}
+.qd-trigger{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:var(--paper);}
+.qd-trigger-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 @media print{
   body *{visibility:hidden;}
   .quote-document.print-target,.quote-document.print-target *{visibility:visible;}
   .quote-document.print-target{position:absolute;left:0;top:0;width:100%;border:none;margin:0;padding:0;}
   .quote-document.print-target .no-print{display:none !important;}
+  .modal-overlay{position:static !important;background:none !important;padding:0 !important;display:block !important;}
+  .modal-panel{box-shadow:none !important;max-width:none !important;position:static !important;}
+  .modal-panel-body{padding:0 !important;}
+  /* An empty field's placeholder hint (e.g. "e.g. tons, pcs, meters") is
+     useful while editing but would print as if it were a real answer --
+     blank it out so an unfilled line just reads empty, same as before
+     this became an editable document. */
+  .qd-lines input::placeholder,.qd-lines textarea::placeholder,.qd-budget input::placeholder{color:transparent;}
 }
 
 /* KB */
@@ -840,6 +867,8 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 </div>
 
 </div><!-- /page -->
+
+<div id="quoteModalRoot" class="modal-overlay hidden"></div>
 
 <script>
 // ══════════════════════════════════════════════════════
@@ -1658,6 +1687,12 @@ let leadsListRequestSeq = 0;
 // collide.
 const LEAD_DETAIL_BODY_IDS = ['leadDetailBody', 'dashDrillDetailWrap'];
 let leadDetailCtx = { leadNumber: null, bodyId: 'leadDetailBody', statusId: 'leadDetailStatus' };
+// Full payload of the currently-open lead, kept around so the Quote
+// Document modal (a separate DOM root, opened on top of whichever
+// container is showing the lead) can look up a membership's fields
+// without re-fetching, and can be refreshed in place after a save
+// without closing the modal.
+let leadDetailData = null;
 
 document.getElementById('leadsSearch').addEventListener('input', () => {
   clearTimeout(leadsSearchDebounce);
@@ -1957,6 +1992,7 @@ async function openLeadDetail(leadNumber, bodyId, statusId) {
   if(leadDetailCtx.leadNumber !== leadNumber) return; // superseded by a newer open
   if(!r.ok) { setS(statusId, d.detail||'Not found', true); return; }
   setS(statusId, '');
+  leadDetailData = d;
   document.getElementById(bodyId).innerHTML = renderLeadTimeline(d);
   populateCampaignSelect('leadAssignCampaign');
 }
@@ -1977,29 +2013,6 @@ async function saveLeadEdit(prospectId) {
   const d = await r.json();
   if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to save', true);
   setS(leadDetailCtx.statusId, 'Saved — now '+d.status+(d.validation_notes?' ('+d.validation_notes+')':'')+'.');
-  refreshLeadDetail();
-}
-
-async function saveQuoteDetails(cid, cpid) {
-  const payload = {};
-  QUOTE_CHECKLIST_INPUTS.forEach(([key]) => {
-    payload[key] = document.getElementById('quote-'+key+'-'+cpid).value.trim();
-  });
-  const tpRaw = document.getElementById('quoteTargetPrice-'+cpid).value;
-  payload.target_price = tpRaw!=='' && !isNaN(parseFloat(tpRaw)) ? parseFloat(tpRaw) : null;
-  payload.quote_notes = document.getElementById('quoteNotes-'+cpid).value.trim();
-  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/quote-details', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-  const d = await r.json();
-  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to save', true);
-  setS(leadDetailCtx.statusId, 'Quote details saved.');
-  refreshLeadDetail();
-}
-
-async function draftQuoteSummary(cid, cpid) {
-  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/draft-quote-summary', {method:'POST'});
-  const d = await r.json();
-  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to draft', true);
-  setS(leadDetailCtx.statusId, 'Draft ready for review below — nothing sent yet.');
   refreshLeadDetail();
 }
 
@@ -2085,103 +2098,135 @@ function readinessBadge(m) {
   const total = QUOTE_CHECKLIST_INPUTS.length + 1; // + quote_notes
   const filled = QUOTE_CHECKLIST_INPUTS.filter(([key]) => m[key]).length + (m.quote_notes ? 1 : 0);
   const ready = filled === total;
-  return `<span class="pill ${ready?'p-valid':'p-neutral'}" style="margin-left:8px;">${filled}/${total} ready</span>`;
+  return `<span class="pill ${ready?'p-valid':'p-neutral'}">${filled}/${total} ready</span>`;
 }
 
-function quoteDetailsSection(m) {
-  const openAttr = ['Replied','QuoteRequested'].includes(m.status) ? 'open' : '';
+// Compact entry point shown inline in the lead timeline -- a snapshot
+// (readiness, quote #) plus one button that drills into the full
+// letterhead document as a focused pop-up, instead of a cramped inline
+// <details> block competing for space with everything else on the page.
+function quoteDocTrigger(m) {
   const hasAny = QUOTE_CHECKLIST_INPUTS.some(([key]) => m[key]) || m.quote_notes || m.target_price!=null;
-  const fieldRows = [];
-  for(let i=0;i<QUOTE_CHECKLIST_INPUTS.length;i+=2) {
-    const pair = QUOTE_CHECKLIST_INPUTS.slice(i,i+2);
-    fieldRows.push(`<div class="row mt12">${pair.map(([key,label,ph]) =>
-      `<input type="text" id="quote-${key}-${m.id}" placeholder="${esc(label)} — ${esc(ph)}" value="${esc(m[key]||'')}"/>`
-    ).join('')}</div>`);
-  }
-  return `<details ${openAttr}>
-    <summary style="cursor:pointer;font-weight:600;font-size:12.5px;color:var(--blue-deep);">Quote details${hasAny?'':' — not filled in yet'}${readinessBadge(m)}</summary>
-    <div class="mt12">
-      ${fieldRows.join('')}
-      <div class="row mt12">
-        <input type="number" id="quoteTargetPrice-${m.id}" placeholder="Target price (optional)" value="${m.target_price!=null?m.target_price:''}"/>
-      </div>
-      <div class="row mt12">
-        <textarea id="quoteNotes-${m.id}" placeholder="Special instructions" style="min-height:60px;">${esc(m.quote_notes||'')}</textarea>
-      </div>
-      <div class="row mt12">
-        <button class="btn" onclick="saveQuoteDetails(${m.campaign_id},${m.id})">Save quote details</button>
-        <button class="btn sky" onclick="draftQuoteSummary(${m.campaign_id},${m.id})">Draft quote summary email</button>
-      </div>
+  return `<div class="qd-trigger">
+    <div class="qd-trigger-left">
+      <b style="font-size:12.5px;">Quote document</b>
+      ${readinessBadge(m)}
+      ${m.quote_number ? `<span class="pill p-sky mono">Quote # ${esc(m.quote_number)}</span>` : ''}
+      ${!hasAny ? '<span class="muted" style="font-size:11.5px;">not filled in yet</span>' : ''}
     </div>
-  </details>`;
+    <button class="btn sky" style="padding:6px 14px;font-size:12px;" onclick="openQuoteModal(${m.id})">Open quote document</button>
+  </div>`;
 }
 
-// Formal, letterhead-style read of the checklist -- meant to be printed
-// or saved as a PDF and handed to the internal sales team, with a Quote #
-// that ties back to this Lead # once sales issues one in their ERP.
-function quoteDocumentSection(d, m) {
+// Formal, letterhead-style, *editable* read of the checklist -- meant to
+// be filled in like the real document (inputs sit flush in the line-item
+// cells rather than a separate form), then printed/saved as PDF and
+// handed to the internal sales team. Quote # ties back to this Lead #
+// once sales issues one in their ERP.
+function quoteDocumentHTML(d, m) {
   const p = d.prospect;
   const name = [p.first_name,p.last_name].filter(Boolean).join(' ')||'—';
-  const lines = QUOTE_CHECKLIST_INPUTS.map(([key,label]) =>
-    `<tr><td>${esc(label)}</td><td>${esc(m[key]||'—')}</td></tr>`
-  ).join('') + `<tr><td>Special instructions</td><td>${esc(m.quote_notes||'—')}</td></tr>`;
-  const budgetLine = m.target_price!=null
-    ? `<div class="qd-budget">Indicative budget: ${fmtMoney(m.target_price, m.currency)} <span class="muted" style="font-weight:400;">(target only — not a calculated price)</span></div>`
-    : '';
+  const lines = QUOTE_CHECKLIST_INPUTS.map(([key,label,ph]) =>
+    `<tr><td>${esc(label)}</td><td><input type="text" id="qm-${key}-${m.id}" placeholder="${esc(ph)}" value="${esc(m[key]||'')}"/></td></tr>`
+  ).join('') + `<tr><td>Special instructions</td><td><textarea id="qm-quote_notes-${m.id}" rows="2">${esc(m.quote_notes||'')}</textarea></td></tr>`;
   const docDate = m.quote_requested_at || m.replied_at || m.added_at;
   const elId = `quoteDoc-${m.id}`;
 
-  return `<details style="margin-top:8px;">
-    <summary style="cursor:pointer;font-weight:600;font-size:12.5px;color:var(--blue-deep);">Quote document — printable</summary>
-    <div class="mt12 quote-document" id="${elId}">
-      <div class="qd-header">
-        <div>
-          <div class="qd-company-name">AKEIS</div>
-          <div class="qd-company-sub">Al Khaleej Equipment and Industrial Suppliers LLC</div>
-          <div class="qd-company-addr">Abu Dhabi, United Arab Emirates · ISO 9001:2015 Certified</div>
-        </div>
-        <div class="qd-doc-meta">
-          <div class="qd-doc-title">QUOTE REQUEST</div>
-          <div class="qd-doc-row"><span>Quote #</span><input type="text" id="quoteNumber-${m.id}" placeholder="Pending — issued by Sales" value="${esc(m.quote_number||'')}"/></div>
-          <div class="qd-doc-row"><span>Lead #</span><span class="mono">${esc(d.lead_number)}</span></div>
-          <div class="qd-doc-row"><span>Date</span><span>${fmtDate(docDate)}</span></div>
-          <div class="qd-doc-row"><span>Status</span>${pill(m.status)}</div>
-        </div>
+  return `<div class="quote-document" id="${elId}">
+    <div class="qd-header">
+      <div>
+        <div class="qd-company-name">AKEIS</div>
+        <div class="qd-company-sub">Al Khaleej Equipment and Industrial Suppliers LLC</div>
+        <div class="qd-company-addr">Abu Dhabi, United Arab Emirates · ISO 9001:2015 Certified</div>
       </div>
-      <div class="qd-parties">
-        <div>
-          <div class="qd-label">Prepared for</div>
-          <div class="qd-value">${esc(name)}</div>
-          <div class="qd-value">${esc(p.company||'—')}</div>
-          <div class="qd-value mono">${esc(p.email||'—')}</div>
-          <div class="qd-value">${esc(p.phone||'—')}</div>
-        </div>
-        <div>
-          <div class="qd-label">Prepared by</div>
-          <div class="qd-value">AKEIS Sales Team</div>
-          <div class="qd-value">${esc(m.campaign_name)}</div>
-        </div>
-      </div>
-      <table class="qd-lines"><thead><tr><th>Description</th><th>Details</th></tr></thead><tbody>${lines}</tbody></table>
-      ${budgetLine}
-      <div class="qd-footer">
-        <div class="muted" style="font-size:11px;">Working reference generated by the SDR tool for internal use — not a final priced quotation. Sales issues the binding quote and its number in the ERP; enter it above to keep this record tied back to it.</div>
-      </div>
-      <div class="row mt12 no-print">
-        <button class="btn sec" onclick="saveQuoteNumber(${m.campaign_id},${m.id})">Save quote #</button>
-        <button class="btn sky" onclick="printQuoteDocument('${elId}')">🖨 Print / Save as PDF</button>
+      <div class="qd-doc-meta">
+        <div class="qd-doc-title">QUOTE REQUEST</div>
+        <div class="qd-doc-row"><span>Quote #</span><input type="text" id="qm-quote_number-${m.id}" placeholder="Pending — issued by Sales" value="${esc(m.quote_number||'')}"/></div>
+        <div class="qd-doc-row"><span>Lead #</span><span class="mono">${esc(d.lead_number)}</span></div>
+        <div class="qd-doc-row"><span>Date</span><span>${fmtDate(docDate)}</span></div>
+        <div class="qd-doc-row"><span>Status</span>${pill(m.status)}</div>
       </div>
     </div>
-  </details>`;
+    <div class="qd-parties">
+      <div>
+        <div class="qd-label">Prepared for</div>
+        <div class="qd-value">${esc(name)}</div>
+        <div class="qd-value">${esc(p.company||'—')}</div>
+        <div class="qd-value mono">${esc(p.email||'—')}</div>
+        <div class="qd-value">${esc(p.phone||'—')}</div>
+      </div>
+      <div>
+        <div class="qd-label">Prepared by</div>
+        <div class="qd-value">AKEIS Sales Team</div>
+        <div class="qd-value">${esc(m.campaign_name)}</div>
+      </div>
+    </div>
+    <table class="qd-lines"><thead><tr><th>Description</th><th>Details</th></tr></thead><tbody>${lines}</tbody></table>
+    <div class="qd-budget">Indicative budget: <input type="number" id="qm-target_price-${m.id}" placeholder="—" value="${m.target_price!=null?m.target_price:''}"/> <span class="muted" style="font-weight:400;">(target only — not a calculated price)</span></div>
+    <div class="qd-footer">
+      <div class="muted" style="font-size:11px;">Working reference generated by the SDR tool for internal use — not a final priced quotation. Sales issues the binding quote and its number in the ERP; enter it above to keep this record tied back to it.</div>
+    </div>
+    <div class="row mt12 no-print" style="align-items:center;">
+      <button class="btn" onclick="saveQuoteModal(${m.campaign_id},${m.id})">Save changes</button>
+      <button class="btn sky" onclick="draftQuoteSummaryModal(${m.campaign_id},${m.id})">Draft quote summary email</button>
+      <button class="btn sec" onclick="printQuoteDocument('${elId}')">🖨 Print / Save as PDF</button>
+      <span class="status" id="quoteModalStatus" style="margin-left:auto;"></span>
+    </div>
+  </div>`;
 }
 
-async function saveQuoteNumber(cid, cpid) {
-  const quote_number = document.getElementById('quoteNumber-'+cpid).value.trim();
-  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/quote-number', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({quote_number: quote_number||null})});
+function renderQuoteModalBody(cpid) {
+  const m = leadDetailData.memberships.find(x => x.id === cpid);
+  if(!m) return;
+  document.getElementById('quoteModalRoot').innerHTML = `<div class="modal-panel">
+    <button class="modal-close no-print" onclick="closeQuoteModal()">✕</button>
+    <div class="modal-panel-body">${quoteDocumentHTML(leadDetailData, m)}</div>
+  </div>`;
+}
+
+function openQuoteModal(cpid) {
+  document.getElementById('quoteModalRoot').classList.remove('hidden');
+  renderQuoteModalBody(cpid);
+}
+
+function closeQuoteModal() {
+  const root = document.getElementById('quoteModalRoot');
+  root.classList.add('hidden');
+  root.innerHTML = '';
+}
+
+document.getElementById('quoteModalRoot').addEventListener('click', e => {
+  if(e.target.id === 'quoteModalRoot') closeQuoteModal(); // click on the backdrop, not the panel
+});
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && !document.getElementById('quoteModalRoot').classList.contains('hidden')) closeQuoteModal();
+});
+
+async function saveQuoteModal(cid, cpid) {
+  const payload = {};
+  QUOTE_CHECKLIST_INPUTS.forEach(([key]) => { payload[key] = document.getElementById('qm-'+key+'-'+cpid).value.trim(); });
+  const tpRaw = document.getElementById('qm-target_price-'+cpid).value;
+  payload.target_price = tpRaw!=='' && !isNaN(parseFloat(tpRaw)) ? parseFloat(tpRaw) : null;
+  payload.quote_notes = document.getElementById('qm-quote_notes-'+cpid).value.trim();
+  const quote_number = document.getElementById('qm-quote_number-'+cpid).value.trim();
+
+  const [r1, r2] = await Promise.all([
+    fetch('/campaigns/'+cid+'/prospects/'+cpid+'/quote-details', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}),
+    fetch('/campaigns/'+cid+'/prospects/'+cpid+'/quote-number', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({quote_number: quote_number||null})}),
+  ]);
+  if(!r1.ok || !r2.ok) { setS('quoteModalStatus', 'Failed to save', true); return; }
+  await refreshLeadDetail();
+  renderQuoteModalBody(cpid);
+  setS('quoteModalStatus', 'Saved.');
+}
+
+async function draftQuoteSummaryModal(cid, cpid) {
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/draft-quote-summary', {method:'POST'});
   const d = await r.json();
-  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to save', true);
-  setS(leadDetailCtx.statusId, 'Quote # saved.');
-  refreshLeadDetail();
+  if(!r.ok) { setS('quoteModalStatus', d.detail||'Failed to draft', true); return; }
+  await refreshLeadDetail();
+  renderQuoteModalBody(cpid);
+  setS('quoteModalStatus', 'Draft ready for review in Email flow below — nothing sent yet.');
 }
 
 function printQuoteDocument(elId) {
@@ -2286,7 +2331,7 @@ function renderLeadTimeline(d) {
   if(d.memberships.length) {
     html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">QUOTE DOCUMENT & READINESS CHECKLIST</div>` +
       d.memberships.map(m =>
-        `<div style="margin-bottom:10px;">${d.memberships.length>1?`<div class="muted" style="font-size:11.5px;margin-bottom:4px;">${esc(m.campaign_name)}</div>`:''}${quoteDetailsSection(m)}${quoteDocumentSection(d, m)}</div>`
+        `<div style="margin-bottom:10px;">${d.memberships.length>1?`<div class="muted" style="font-size:11.5px;margin-bottom:4px;">${esc(m.campaign_name)}</div>`:''}${quoteDocTrigger(m)}</div>`
       ).join('') + `</div>`;
   }
 
