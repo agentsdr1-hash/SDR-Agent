@@ -60,11 +60,15 @@ def create_campaign(name: str, send_days: str = "Mon,Tue,Wed,Thu,Fri", daily_sen
                 f"Campaign names must be unique -- try something like '{suggestion}'."
             )
 
+        # RETURNING id (not cursor.lastrowid) -- Postgres cursors don't have
+        # .lastrowid; RETURNING works identically on both SQLite 3.35+ and
+        # Postgres, so this one line is portable rather than dialect-branched.
         cur = conn.execute(
-            "INSERT INTO campaigns (name, status, send_days, daily_send_limit, created_at) VALUES (?, 'Draft', ?, ?, ?)",
+            "INSERT INTO campaigns (name, status, send_days, daily_send_limit, created_at) "
+            "VALUES (?, 'Draft', ?, ?, ?) RETURNING id",
             (name, send_days, daily_send_limit, now),
         )
-        campaign_id = cur.lastrowid
+        campaign_id = cur.fetchone()["id"]
 
     log_event("campaign_created", "campaign", str(campaign_id), f"Created campaign '{name}'")
     return get_campaign(campaign_id)

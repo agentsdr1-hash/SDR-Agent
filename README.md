@@ -148,6 +148,48 @@ cp app/apex_pilot.db ~/apex-pilot-backups/apex_pilot_$(date +%Y%m%d).db
 # Windows: Task Scheduler running the same copy command
 ```
 
+## Using Postgres / Supabase instead of SQLite
+
+Set `DATABASE_URL` (see `.env.example`) and the app switches to Postgres
+automatically — no other config, no code changes needed on your end.
+Recommended once this moves off a single local machine: data lives in a
+real hosted database instead of one file on one disk, survives redeploys
+without needing a persistent volume, and Supabase's free tier gives you a
+web dashboard to browse the data without needing this app running.
+
+```bash
+DATABASE_URL=postgresql://postgres:your-password@db.your-project-ref.supabase.co:5432/postgres \
+  uvicorn app.main:app
+```
+
+The first startup creates every table automatically (same `init_db()`
+that already runs for SQLite — nothing extra to run by hand). Leave
+`DATABASE_URL` unset for local dev and the test suite; both stay on
+SQLite by default, which is faster and needs no network.
+
+Internals, if you're touching `app/db.py`: every service/router file
+writes plain `?`-style parameterized SQL exactly like the SQLite version
+always has — a thin wrapper translates that to Postgres's `%s` style and
+makes rows dict-like the same way `sqlite3.Row` already is, so nothing
+outside `db.py` needs to know which database it's talking to. The handful
+of places that couldn't be made dialect-transparent (the schema's primary
+key phrase, `RETURNING id` in place of `.lastrowid`, a couple of date
+comparisons) are each commented at the call site.
+
+To validate the Postgres path itself — e.g. after changing `db.py` — run
+the full regression suite against a real (local or Supabase) Postgres
+instance instead of the SQLite default:
+
+```bash
+TEST_DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/postgres pytest -v
+```
+
+This creates a throwaway database per test module (mirroring the "fresh
+SQLite file per module" default) and drops it afterward — see
+`tests/README.md` for details. This was run against a real Postgres 16
+instance before this feature shipped; all tests passed with zero SQL
+differences needed beyond what's described above.
+
 ## Packaging: 1 tool, not 1-per-object
 
 Every object in the Build Tracker (OBJ-001, OBJ-002, and everything after)

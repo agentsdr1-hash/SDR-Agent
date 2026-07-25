@@ -166,10 +166,11 @@ def draft_quote_summary_email(campaign_id: int, prospect_row_id: int) -> int:
         cur = conn.execute(
             """INSERT INTO reply_drafts
                (campaign_prospect_id, subject, body, status, confidence, matched_summary, created_at)
-               VALUES (?, ?, ?, 'Draft', 'quote_summary', 'Quote Readiness Checklist recap', ?)""",
+               VALUES (?, ?, ?, 'Draft', 'quote_summary', 'Quote Readiness Checklist recap', ?)
+               RETURNING id""",
             (prospect_row_id, subject, body, now),
         )
-        draft_id = cur.lastrowid
+        draft_id = cur.fetchone()["id"]
     log_event("quote_summary_drafted", "campaign_prospect", str(prospect_row_id),
               f"Campaign {campaign_id}, draft #{draft_id}")
     return draft_id

@@ -1,3 +1,12 @@
+# Render's free plan doesn't support persistent disks (that's a paid-tier
+# feature) -- the `disk:` block below only actually persists data on a
+# paid instance type. If you're using Postgres/Supabase (DATABASE_URL,
+# see .env.example and the README's "Using Postgres / Supabase" section),
+# you don't need a disk at all: data lives in the database, not on this
+# service's filesystem, so the free plan's ephemeral disk is no longer a
+# problem. In that case, delete the `disk:` block and set DATABASE_URL
+# below (as a Render dashboard secret -- sync: false means it's never
+# stored in this file) instead of APEX_DB_PATH.
 services:
   - type: web
     name: apex-pilot
@@ -7,6 +16,8 @@ services:
     envVars:
       - key: APEX_DB_PATH
         value: /srv/data/apex_pilot.db
+      - key: DATABASE_URL
+        sync: false
     disk:
       name: apex-data
       mountPath: /srv/data

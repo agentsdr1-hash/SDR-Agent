@@ -55,11 +55,14 @@ def list_kb_entries() -> list[dict]:
 def add_kb_entry(question: str, answer: str, tags: str | None) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
+        # RETURNING id -- portable across SQLite 3.35+ and Postgres, unlike
+        # cursor.lastrowid which Postgres cursors don't have.
         cur = conn.execute(
-            "INSERT INTO kb_entries (question, answer, tags, created_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO kb_entries (question, answer, tags, created_at) VALUES (?, ?, ?, ?) RETURNING id",
             (question, answer, tags or "", now),
         )
-        row = conn.execute("SELECT id, question, answer, tags FROM kb_entries WHERE id = ?", (cur.lastrowid,)).fetchone()
+        new_id = cur.fetchone()["id"]
+        row = conn.execute("SELECT id, question, answer, tags FROM kb_entries WHERE id = ?", (new_id,)).fetchone()
     log_event("kb_entry_added", "kb_entries", str(row["id"]), question)
     return dict(row)
 
@@ -197,11 +200,11 @@ def create_reply_draft(campaign_prospect_id: int, first_name: str | None, compan
             """INSERT INTO reply_drafts
                (campaign_prospect_id, subject, body, status, confidence, matched_summary,
                 source_reply_subject, source_reply_snippet, created_at)
-               VALUES (?, ?, ?, 'Draft', ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, 'Draft', ?, ?, ?, ?, ?) RETURNING id""",
             (campaign_prospect_id, draft["subject"], draft["body"], draft["confidence"],
              draft["matched_summary"], reply_subject, (reply_text or "")[:500], now),
         )
-        draft_id = cur.lastrowid
+        draft_id = cur.fetchone()["id"]
     log_event("reply_draft_created", "reply_draft", str(draft_id),
                f"confidence={draft['confidence']} matched={draft['matched_summary']}")
     return draft_id
