@@ -41,7 +41,7 @@ def _get_contacted_emails(conn) -> set[str]:
     return {r["email"].lower() for r in rows if r["email"]}
 
 
-_REAL_PRIOR_IMPORT_STATUSES = ("Valid", "Duplicate", "Existing Customer", "Already Contacted")
+REAL_PROSPECT_STATUSES = ("Valid", "Duplicate", "Existing Customer", "Already Contacted")
 
 
 def _get_prior_import_emails(conn, batch_id: str) -> dict[str, int]:
@@ -56,12 +56,12 @@ def _get_prior_import_emails(conn, batch_id: str) -> dict[str, int]:
     copy has been sent or even added to a campaign, which
     _get_contacted_emails() alone can't (that one only fires once a real
     send has happened)."""
-    ph = ",".join("?" * len(_REAL_PRIOR_IMPORT_STATUSES))
+    ph = ",".join("?" * len(REAL_PROSPECT_STATUSES))
     rows = conn.execute(
         f"""SELECT id, email FROM prospects_raw
             WHERE batch_id != ? AND email IS NOT NULL AND status IN ({ph})
             ORDER BY id""",
-        (batch_id, *_REAL_PRIOR_IMPORT_STATUSES),
+        (batch_id, *REAL_PROSPECT_STATUSES),
     ).fetchall()
     result: dict[str, int] = {}
     for r in rows:
