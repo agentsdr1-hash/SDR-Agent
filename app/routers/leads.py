@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.db import get_conn
 from app.models import BulkAssignInput, BulkSuppressInput, BulkActionResult
-from app.services.leads import get_lead_timeline, list_leads, lead_number_for
+from app.services.leads import get_lead_timeline, list_leads, lead_number_for, parse_lead_number, delete_lead
 from app.services.campaign_management import assign_prospect_to_campaign, CampaignError
 from app.services.administration import add_to_suppression_list, AdminError
 
@@ -80,3 +80,17 @@ def lead_timeline(lead_number: str):
     if result is None:
         raise HTTPException(status_code=404, detail=f"No lead found for '{lead_number}'")
     return result
+
+
+@router.delete("/{lead_number}")
+def delete_lead_endpoint(lead_number: str):
+    """Permanently deletes a lead and everything tied to it -- no
+    soft-delete, no undo. The confirmation dialog on the frontend is the
+    safety net; there's no recovery step after this call succeeds."""
+    prospect_id = parse_lead_number(lead_number)
+    if prospect_id is None:
+        raise HTTPException(status_code=404, detail=f"'{lead_number}' is not a valid lead number")
+    try:
+        return delete_lead(prospect_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

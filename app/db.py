@@ -294,8 +294,16 @@ def init_db(seed_customers: bool = True):
         _ensure_column(conn, "prospects_raw", "next_action", "TEXT")
         _ensure_column(conn, "prospects_raw", "qualification_status", "TEXT")
         if seed_customers:
-            existing = conn.execute("SELECT COUNT(*) c FROM customers").fetchone()["c"]
-            if existing == 0:
+            # Gated on a persistent flag (app_settings), not just "table is
+            # empty" -- a reset-all-data clears the customers table too, and
+            # without this flag the two demo rows would silently reappear
+            # the next time init_db() runs (e.g. on the next deploy/restart),
+            # which defeats the point of a reset done to keep test data out
+            # of a production go-live.
+            already_seeded = conn.execute(
+                "SELECT 1 FROM app_settings WHERE key = 'demo_customers_seeded'"
+            ).fetchone()
+            if not already_seeded:
                 insert_ignore_sql = (
                     "INSERT INTO customers (email, company) VALUES (?, ?) ON CONFLICT (email) DO NOTHING"
                     if IS_POSTGRES else
@@ -307,6 +315,10 @@ def init_db(seed_customers: bool = True):
                         ("jsmith@acmecorp.com", "Acme Corp"),
                         ("dlee@globex.com", "Globex Inc"),
                     ],
+                )
+                conn.execute(
+                    "INSERT INTO app_settings (key, value, updated_at) VALUES ('demo_customers_seeded', 'true', ?)",
+                    (datetime.now(timezone.utc).isoformat(),),
                 )
             existing_kb = conn.execute("SELECT COUNT(*) c FROM kb_entries").fetchone()["c"]
             if existing_kb == 0:

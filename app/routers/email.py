@@ -3,15 +3,21 @@ OBJ-016 Email Integration router.
 Status check + manual poll trigger (for testing without waiting on the timer),
 plus Gmail App Password configuration from the Admin tab (OBJ-015 console).
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.integrations import email_provider
 from app.services import inbox_monitor
+from app.services.admin_auth import require_admin_password
 from app.models import EmailStatus, PollResult, EmailConfigInput, DailySendLimitInput
 
 router = APIRouter(prefix="/email", tags=["OBJ-016"])
 
 
+# GET /status is deliberately NOT gated -- it powers the small "Gmail:
+# connected/not configured" badge shown in the top bar on every page, not
+# just the Admin tab, and only ever returns booleans/an address, nothing
+# secret. Every other route here is a mutation (or the SMTP test), gated
+# behind the admin password the same as the rest of the Admin tab.
 @router.get("/status", response_model=EmailStatus)
 def status():
     poll_status = inbox_monitor.get_status()
@@ -28,7 +34,7 @@ def status():
     )
 
 
-@router.put("/daily-send-limit", response_model=EmailStatus)
+@router.put("/daily-send-limit", response_model=EmailStatus, dependencies=[Depends(require_admin_password)])
 def set_daily_send_limit(payload: DailySendLimitInput):
     """Configure the daily cap on real sends (campaign + reply-draft sends
     combined) from the Admin tab. Takes effect immediately."""
@@ -38,14 +44,14 @@ def set_daily_send_limit(payload: DailySendLimitInput):
     return status()
 
 
-@router.post("/poll-now", response_model=PollResult)
+@router.post("/poll-now", response_model=PollResult, dependencies=[Depends(require_admin_password)])
 def poll_now():
     """Trigger a reply check immediately instead of waiting for the timer --
     useful for testing that a real reply gets picked up."""
     return inbox_monitor.poll_once()
 
 
-@router.put("/config", response_model=EmailStatus)
+@router.put("/config", response_model=EmailStatus, dependencies=[Depends(require_admin_password)])
 def set_config(payload: EmailConfigInput):
     """Save Gmail credentials from the Admin tab. Takes effect immediately --
     no restart needed, unlike the GMAIL_* environment variable route."""
@@ -64,14 +70,14 @@ def set_config(payload: EmailConfigInput):
     return status()
 
 
-@router.delete("/config", response_model=EmailStatus)
+@router.delete("/config", response_model=EmailStatus, dependencies=[Depends(require_admin_password)])
 def clear_config():
     """Remove DB-stored Gmail credentials (falls back to GMAIL_* env vars, if set)."""
     email_provider.clear_credentials()
     return status()
 
 
-@router.post("/test-connection")
+@router.post("/test-connection", dependencies=[Depends(require_admin_password)])
 def test_connection():
     """Attempts a real Gmail SMTP login with the active credentials -- no
     email is sent. Confirms the address/app-password pair actually works

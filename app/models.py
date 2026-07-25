@@ -170,6 +170,10 @@ class SuppressionAdd(BaseModel):
     reason: Optional[str] = None
 
 
+class AdminPasswordCheck(BaseModel):
+    password: str
+
+
 class WonPayload(BaseModel):
     deal_value: Optional[float] = None
     quote_number: Optional[str] = None

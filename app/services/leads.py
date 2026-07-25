@@ -18,6 +18,7 @@ is answerable from one lookup instead of hunting across tables.
 import re
 
 from app.db import get_conn
+from app.services.audit import log_event
 
 LEAD_PREFIX = "L"
 
@@ -297,3 +298,36 @@ def get_lead_timeline(lead_number: str) -> dict | None:
         "quote_readiness": readiness,
         **summary,
     }
+
+
+def delete_lead(prospect_id: int) -> dict:
+    """Permanently removes a lead and everything tied to it (every
+    campaign membership, and any reply/quote-summary drafts on those
+    memberships) -- no soft-delete, no undo, by explicit choice: this is
+    for clearing test/junk data (e.g. before a production go-live), not
+    an everyday action, so the confirmation dialog in front of it is the
+    safety net rather than a recovery step after the fact.
+
+    The freed id is never reused: prospects_raw's AUTOINCREMENT/IDENTITY
+    primary key guarantees the next imported lead gets a new, higher id
+    regardless of what's been deleted, so a deleted lead's number
+    (L-000123) is retired for good -- the same guarantee that already
+    protects a number referenced in a sent email from ever silently
+    meaning a different lead later."""
+    with get_conn() as conn:
+        prospect = conn.execute("SELECT id FROM prospects_raw WHERE id = ?", (prospect_id,)).fetchone()
+        if not prospect:
+            raise ValueError(f"Lead {lead_number_for(prospect_id)} not found")
+
+        cp_ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM campaign_prospects WHERE prospect_id = ?", (prospect_id,)
+        ).fetchall()]
+        if cp_ids:
+            placeholders = ",".join("?" * len(cp_ids))
+            conn.execute(f"DELETE FROM reply_drafts WHERE campaign_prospect_id IN ({placeholders})", cp_ids)
+            conn.execute("DELETE FROM campaign_prospects WHERE prospect_id = ?", (prospect_id,))
+        conn.execute("DELETE FROM prospects_raw WHERE id = ?", (prospect_id,))
+
+    lead_number = lead_number_for(prospect_id)
+    log_event("lead_deleted", "prospect", str(prospect_id), f"Permanently deleted {lead_number}")
+    return {"status": "deleted", "lead_number": lead_number}
