@@ -1,0 +1,85 @@
+"""
+GET /reports/summary -- the Dashboard's aggregate math. Seeds one campaign
+with four prospects taken to different funnel depths (sent-only, replied,
+won, lost) and checks the aggregates agree with what was actually done,
+not just that the endpoint returns 200.
+
+Note: the earlier "Closed, no reply" mislabel bug (the funnel tile summing
+the wrong status client-side) lived in app.html's JS aggregation, not in
+this endpoint -- this file guards the backend math only; a UI-level test
+would be needed to catch that specific class of bug recurring.
+"""
+
+
+def _drive_to(server, cid, row_id, target):
+    """Walk one Approved prospect forward through the funnel up to (and
+    including) `target`: one of 'sent', 'replied', 'won', 'lost'."""
+    def step(name):
+        endpoints = {
+            "sent": (f"/campaigns/{cid}/prospects/{row_id}/simulate-sent", None),
+            "replied": (f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", {"reply_body": "hi"}),
+            "quoted": (f"/campaigns/{cid}/prospects/{row_id}/request-quote", None),
+            "won": (f"/campaigns/{cid}/prospects/{row_id}/won", {"deal_value": 50000}),
+            "lost": (f"/campaigns/{cid}/prospects/{row_id}/lost", {"reason": "price"}),
+        }
+        path, payload = endpoints[name]
+        r = server.post(path, json=payload) if payload is not None else server.post(path)
+        assert r.status_code == 200, f"{name} failed: {r.text}"
+
+    if target == "sent":
+        full_path = ["sent"]
+    elif target == "replied":
+        full_path = ["sent", "replied"]
+    else:  # "won" or "lost"
+        full_path = ["sent", "replied", "quoted", target]
+    for name in full_path:
+        step(name)
+
+
+def test_summary_math_matches_seeded_funnel(server):
+    cid = server.post("/campaigns", json={"name": "Reporting Test"}).json()["id"]
+
+    row_ids = {}
+    for label in ("sent_only", "replied_only", "won", "lost"):
+        pid = server.seed_prospect(email=f"{label}@example.com")
+        server.post(f"/campaigns/{cid}/assign-prospect/{pid}")
+        prospects = server.get(f"/campaigns/{cid}/prospects").json()
+        row_id = next(p["id"] for p in prospects if p["email"] == f"{label}@example.com")
+        server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+        row_ids[label] = row_id
+
+    _drive_to(server, cid, row_ids["sent_only"], "sent")
+    _drive_to(server, cid, row_ids["replied_only"], "replied")
+    _drive_to(server, cid, row_ids["won"], "won")
+    _drive_to(server, cid, row_ids["lost"], "lost")
+
+    summary = server.get("/reports/summary").json()
+
+    assert summary["value_captured"]["customers_won"] == 1
+    assert summary["value_captured"]["deals_lost"] == 1
+    assert summary["value_captured"]["quotes_requested"] == 2  # Won + Lost both passed through QuoteRequested
+    assert summary["value_captured"]["total_turnover"] == 50000
+    assert summary["value_captured"]["win_rate_pct"] == 50.0
+
+    assert summary["sdr_performance"]["total_emails_sent"] == 4       # all 4 reached Sent
+    assert summary["sdr_performance"]["total_replies_received"] == 3  # all but sent_only
+    assert summary["sdr_performance"]["response_rate_pct"] == 75.0
+
+    campaign_summary = next(c for c in summary["campaigns"] if c["id"] == cid)
+    assert campaign_summary["won"] == 1
+    assert campaign_summary["lost"] == 1
+    assert campaign_summary["turnover"] == 50000
+    assert campaign_summary["total"] == 4
+
+
+def test_summary_prospect_status_counts_reflect_validation(server):
+    server.seed_prospect(status="Valid")
+    server.seed_prospect(status="Invalid")
+    server.seed_prospect(status="Duplicate")
+
+    summary = server.get("/reports/summary").json()
+    counts = summary["prospect_status_counts"]
+    assert counts["Valid"] >= 1
+    assert counts["Invalid"] >= 1
+    assert counts["Duplicate"] >= 1
+    assert summary["total_prospects"] == sum(counts.values())
