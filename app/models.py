@@ -6,6 +6,7 @@ class ImportSummary(BaseModel):
     batch_id: str
     filename: str
     row_count: int
+    duplicate_count: int = 0  # rows skipped at import -- already a known prospect, nothing new to record
     columns_mapped: dict[str, str]
 
 

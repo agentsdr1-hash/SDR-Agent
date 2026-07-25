@@ -1095,8 +1095,8 @@ document.getElementById('urlBtn').addEventListener('click', async () => {
     const r = await fetch('/prospects/import-from-url?url='+encodeURIComponent(url), {method:'POST'});
     const d = await r.json();
     if(!r.ok) return setS('importStatus', d.detail||'Failed', true);
-    setS('importStatus','Imported '+d.row_count+' rows. Validating…');
-    serverValidate(d.batch_id);
+    setS('importStatus', importStatusMessage(d));
+    if(d.row_count > 0) serverValidate(d.batch_id);
   } else {
     setS('importStatus','URL import requires server mode. Use file upload instead.', true);
   }
@@ -1111,6 +1111,16 @@ function mapColumns(cols) {
   return map;
 }
 
+function importStatusMessage(d) {
+  if (d.row_count === 0) {
+    return `Nothing new to import — all ${d.duplicate_count} row(s) already exist as leads.`;
+  }
+  const dupNote = d.duplicate_count
+    ? ` (${d.duplicate_count} already existed as a lead and ${d.duplicate_count === 1 ? 'was' : 'were'} skipped)`
+    : '';
+  return `Imported ${d.row_count} row(s)${dupNote}. Validating…`;
+}
+
 function handleFile(file) {
   setS('importStatus','Reading '+file.name+'…');
   const reader = new FileReader();
@@ -1121,8 +1131,8 @@ function handleFile(file) {
         const r = await fetch('/prospects/import', {method:'POST', body:form});
         const d = await r.json();
         if(!r.ok) return setS('importStatus', d.detail||'Import failed', true);
-        setS('importStatus','Imported '+d.row_count+' rows. Validating…');
-        serverValidate(d.batch_id);
+        setS('importStatus', importStatusMessage(d));
+        if(d.row_count > 0) serverValidate(d.batch_id);
       } else {
         const wb = XLSX.read(e.target.result, {type:'binary'});
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
