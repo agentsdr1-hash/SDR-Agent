@@ -11,7 +11,7 @@ class ImportSummary(BaseModel):
 
 class ProspectRecord(BaseModel):
     id: int
-    lead_number: str
+    lead_number: Optional[str] = None  # None for status='Invalid' -- see leads.list_leads()'s docstring
     row_number: int
     first_name: Optional[str] = None
     last_name: Optional[str] = None
