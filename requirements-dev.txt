@@ -1,0 +1,4 @@
+# Test-only dependencies -- not needed in production, kept separate from
+# requirements.txt so the deployed image doesn't carry them.
+-r requirements.txt
+pytest>=8.0

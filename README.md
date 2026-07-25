@@ -45,6 +45,19 @@ uvicorn app.main:app --reload
 
 Open **http://localhost:8000** for the upload UI, **http://localhost:8000/dashboard** for the pipeline dashboard. API docs at `/docs`.
 
+## Regression tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -v
+```
+
+Runs the full backend regression suite against a real, throwaway SQLite
+DB per test file (no shared state with your actual `apex_pilot.db`, no
+network calls, no real Gmail credentials needed). See `tests/README.md`
+for what's covered and how it's built. Run this after any change before
+merging.
+
 ## Endpoints
 
 | Method | Path | Object | Description |

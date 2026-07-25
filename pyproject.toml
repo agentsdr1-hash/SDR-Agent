@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Repo root on sys.path so "from app...." imports work from any test file,
+# regardless of where pytest is invoked from.
+pythonpath = ["."]
+testpaths = ["tests"]
