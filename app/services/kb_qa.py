@@ -99,17 +99,47 @@ def _match_stock_families(text: str, top_n: int = 3) -> list[str]:
 
 
 # ══════════════════════════════════════════════════════
+# Deal-progression signal -- has the customer already given what we'd
+# otherwise ask for? Rule-based, not NLP: a handful of patterns for the
+# three things a quote actually needs (grade, size, quantity). Without
+# this, the closing question was static and would ask "share your
+# grade" verbatim even when the reply plainly said "Grade A" -- annoying,
+# and the opposite of moving a deal forward.
+# ══════════════════════════════════════════════════════
+_GRADE_RE = re.compile(r"\bgrade\s*[:\-]?\s*[a-z0-9]+\b", re.I)
+_QTY_RE = re.compile(r"\b\d+(\.\d+)?\s*(tons?|kgs?|pcs?|pieces?|units?|sqm|m2|m²|meters?|metres?|nos?|pallets?)\b", re.I)
+_SIZE_RE = re.compile(r"\d+(\.\d+)?\s*(x|×)\s*\d+(\.\d+)?|\d+(\.\d+)?\s*mm\b", re.I)
+
+
+def _specs_given(text: str) -> dict:
+    text = text or ""
+    return {
+        "grade": bool(_GRADE_RE.search(text)),
+        "size": bool(_SIZE_RE.search(text)),
+        "quantity": bool(_QTY_RE.search(text)),
+    }
+
+
+# ══════════════════════════════════════════════════════
 # Smart reply drafting
 # ══════════════════════════════════════════════════════
 def compose_smart_reply(first_name: str | None, company: str | None, reply_text: str) -> dict:
     """Rule-based reply composer -- matches reply_text against KB entries
     and stock-catalog product families, then assembles a short human-ish
     reply. Returns confidence + a plain-English note of what matched so a
-    reviewer can sanity-check it before approving."""
+    reviewer can sanity-check it before approving.
+
+    The closing line adapts to how much the customer already gave us
+    (grade/size/quantity, detected via _specs_given): full specs -> push
+    toward closing the deal, partial -> ask only for what's still
+    missing, none -> the original generic ask. This is the fix for the
+    reply always re-asking for a grade the customer had already given."""
     first = first_name or "there"
     co = company or "your team"
     kb_matches = _match_kb(reply_text)
     family_matches = _match_stock_families(reply_text)
+    specs = _specs_given(reply_text)
+    missing = [label for key, label in (("size", "size"), ("grade", "grade"), ("quantity", "quantity")) if not specs[key]]
 
     lines = [f"Hi {first},", "", "Thanks for getting back to us."]
     if kb_matches:
@@ -118,21 +148,34 @@ def compose_smart_reply(first_name: str | None, company: str | None, reply_text:
             lines.append(m["answer"])
     if family_matches:
         lines.append("")
-        lines.append(
-            f"On {', '.join(family_matches)} specifically -- we carry these in various sizes, grades and "
-            f"thicknesses and can put together a quote once we know your exact specs and quantity."
-        )
+        if missing:
+            lines.append(
+                f"On {', '.join(family_matches)} specifically -- we carry these in various sizes, grades and "
+                f"thicknesses and can put together a quote once we know your exact specs and quantity."
+            )
+        else:
+            lines.append(f"On {', '.join(family_matches)} specifically -- that's well within what we stock.")
     if not kb_matches and not family_matches:
         lines.append("")
         lines.append("Let me pull together the right details for your question and follow up shortly with specifics.")
 
     lines.append("")
-    lines.append(f"Could you share the sizes, grades and quantities you're looking at so we can put together a quote for {co}?")
+    if not missing:
+        lines.append(
+            f"That's everything we need -- I'll get a formal quote drafted for {co} and back to you shortly. "
+            f"Would you like to lock in a delivery window while we finalize it?"
+        )
+    elif len(missing) < 3:
+        lines.append(f"Just need the {' and '.join(missing)} to finalize -- share that and we'll get a formal quote over to {co} right away.")
+    else:
+        lines.append(f"Could you share the sizes, grades and quantities you're looking at so we can put together a quote for {co}?")
     lines.append("")
     lines.append(f"Best,\n{COMPANY_NAME} Sales Team")
 
     confidence = "matched" if (kb_matches or family_matches) else "fallback"
     summary_parts = [m["question"] for m in kb_matches] + family_matches
+    if any(specs.values()):
+        summary_parts.append("specs given: " + ", ".join(k for k, v in specs.items() if v))
     matched_summary = "; ".join(summary_parts) if summary_parts else "No strong match -- generic holding reply, review before sending"
 
     return {
