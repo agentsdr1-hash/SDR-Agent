@@ -22,6 +22,18 @@ from app.services.audit import log_event
 
 LEAD_PREFIX = "L"
 
+# Statuses that never become a visible "lead" -- Invalid (couldn't even be
+# read as a person), Duplicate (already have this exact prospect from an
+# earlier import), Existing Customer (already a paying customer, not a
+# sales target), Already Contacted (a re-import of someone whose real,
+# actionable lead already exists under a different row/lead number). Each
+# still gets written and classified normally by prospect_validation.py, so
+# the Dashboard's prospect funnel (a plain GROUP BY over prospects_raw)
+# keeps an accurate running total of everything ever imported -- only
+# list_leads()/get_lead_timeline() filter them out, so the Leads tab shows
+# only what's actually actionable.
+NON_LEAD_STATUSES = ("Invalid", "Duplicate", "Existing Customer", "Already Contacted")
+
 
 def lead_number_for(prospect_id: int) -> str:
     return f"{LEAD_PREFIX}-{prospect_id:06d}"
@@ -129,17 +141,18 @@ def list_leads(search: str | None = None, status: str | None = None,
     opposed to get_lead_timeline()'s single-lead full-detail view, or the
     Dashboard/Campaigns tab's per-campaign or per-import-batch tables.
 
-    Rows that failed import validation (status='Invalid' -- missing or
-    malformed email, missing name) are excluded entirely: a row that
-    couldn't even be read as a person was never a lead, so it doesn't
-    get a Lead # or show up here -- it stays visible only in the Import
-    tab's per-batch review table, where it can be corrected via
-    edit_prospect(). The moment an edit re-validates it to Valid (or
-    Duplicate/Existing Customer/Already Contacted -- all real,
-    identified people, just not fresh new leads), it appears here like
-    any other lead. This keeps "Invalid" as an import-quality metric
-    (still counted in the Dashboard funnel) without letting it clutter
-    the Leads tab as junk data.
+    Rows classified into any of NON_LEAD_STATUSES (Invalid, Duplicate,
+    Existing Customer, Already Contacted) are excluded entirely -- none of
+    them are a fresh, actionable lead, so none of them get a Lead # or
+    show up here. Invalid rows stay visible in the Import tab's per-batch
+    review table, where they can be corrected via edit_prospect(); the
+    moment an edit re-validates one to Valid, it appears here like any
+    other lead. The other three are permanent classifications (nothing to
+    fix), but every row -- including these -- is still written and
+    counted in the Dashboard's prospect funnel, so "how many total
+    prospects were ever added, and how many were duplicates/existing
+    customers/etc." stays answerable even though none of them clutter
+    this tab.
 
     status/validation_status match the Dashboard's per-campaign status
     counts and prospect-funnel counts exactly (both are GROUP BY status
@@ -151,10 +164,12 @@ def list_leads(search: str | None = None, status: str | None = None,
     the rest of this function) look only at each lead's latest campaign
     membership, consistent with the rest of the Leads tab."""
     with get_conn() as conn:
+        status_ph = ",".join("?" * len(NON_LEAD_STATUSES))
         prospects = [dict(r) for r in conn.execute(
-            "SELECT id, first_name, last_name, email, company, phone, status AS validation_status, "
-            "validation_notes, lead_source, linkedin_url, next_action, qualification_status "
-            "FROM prospects_raw WHERE status != 'Invalid' ORDER BY id DESC"
+            f"SELECT id, first_name, last_name, email, company, phone, status AS validation_status, "
+            f"validation_notes, lead_source, linkedin_url, next_action, qualification_status "
+            f"FROM prospects_raw WHERE status NOT IN ({status_ph}) ORDER BY id DESC",
+            NON_LEAD_STATUSES,
         ).fetchall()]
 
         memberships_by_prospect: dict[int, list[dict]] = {}
@@ -258,9 +273,8 @@ def get_lead_timeline(lead_number: str) -> dict | None:
         ).fetchone()
         if not prospect:
             return None
-        if prospect["status"] == "Invalid":
-            # A row that failed import validation (bad/missing email,
-            # missing name) never became a lead in the first place -- see
+        if prospect["status"] in NON_LEAD_STATUSES:
+            # Never became a visible lead in the first place -- see
             # list_leads()'s matching exclusion for the full rationale.
             return None
 

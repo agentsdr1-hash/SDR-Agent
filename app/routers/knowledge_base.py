@@ -8,6 +8,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.models import (
     StockImportSummary, StockCategory, StockItem,
     KBEntry, KBEntryCreate, KBImportSummary,
+    CustomerImportSummary, CustomerRecord,
 )
 from app.services.stock_catalog import (
     import_stock_list,
@@ -17,6 +18,8 @@ from app.services.stock_catalog import (
     StockImportError,
 )
 from app.services import kb_qa
+from app.services import customers as customers_service
+from app.services.customers import CustomerImportError
 
 router = APIRouter(prefix="/knowledge-base", tags=["knowledge-base"])
 
@@ -44,6 +47,29 @@ def count():
 @router.get("/stock", response_model=list[StockItem])
 def items(category: str | None = None, search: str | None = None, limit: int = 200):
     return list_items(category, search, limit)
+
+
+# ── Existing customers ──────────────────────────────────────────────────
+# Reference data for OBJ-002's "Existing Customer" validation check, kept
+# separate from prospects_raw the same way the stock catalog is -- see
+# app/services/customers.py.
+@router.post("/customers/import", response_model=CustomerImportSummary)
+async def import_customers(file: UploadFile = File(...)):
+    content = await file.read()
+    try:
+        return customers_service.import_customer_list(file.filename, content)
+    except CustomerImportError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/customers/count")
+def customers_count():
+    return {"total": customers_service.total_count()}
+
+
+@router.get("/customers", response_model=list[CustomerRecord])
+def customers_list(search: str | None = None, limit: int = 200):
+    return customers_service.list_customers(search, limit)
 
 
 # ── Q&A entries ─────────────────────────────────────────────────────────

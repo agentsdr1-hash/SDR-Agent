@@ -23,12 +23,30 @@ class CustomerProvider(ABC):
         """Return the full set of existing-customer emails, lowercased."""
         ...
 
+    @abstractmethod
+    def get_customer_companies(self) -> set[str]:
+        """Return the full set of existing-customer company names, lowercased
+        and trimmed. A prospect from a company that's already a customer --
+        even under a different contact email -- shouldn't be cold-pitched
+        either, so this is checked alongside the email match, not instead
+        of it. Exact match only (no fuzzy "Acme Corp" vs "Acme Corporation"
+        handling) -- keep the source company names consistent on import if
+        this needs to catch more."""
+        ...
+
 
 class LocalDBCustomerProvider(CustomerProvider):
     def get_customer_emails(self) -> set[str]:
         with get_conn() as conn:
             rows = conn.execute("SELECT email FROM customers").fetchall()
         return {r["email"].lower() for r in rows}
+
+    def get_customer_companies(self) -> set[str]:
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT company FROM customers WHERE company IS NOT NULL"
+            ).fetchall()
+        return {r["company"].strip().lower() for r in rows if r["company"] and r["company"].strip()}
 
 
 class CRMCustomerProvider(CustomerProvider):
@@ -52,6 +70,12 @@ class CRMCustomerProvider(CustomerProvider):
         raise NotImplementedError(
             "Wire this up to your CRM's contact/account export or query API. "
             "See docstring above for a Salesforce REST example."
+        )
+
+    def get_customer_companies(self) -> set[str]:
+        raise NotImplementedError(
+            "Wire this up to your CRM's account export or query API "
+            "(e.g. SELECT Name FROM Account for Salesforce)."
         )
 
 

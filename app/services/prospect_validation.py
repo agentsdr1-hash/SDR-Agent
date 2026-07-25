@@ -5,7 +5,11 @@ Validate data, duplicates and existing customers.
 Rules applied, in order, first failure wins per row:
   1. Required fields present (email, and at least one of first/last name)
   2. Email format valid
-  3. Already an existing customer (matched against customers table)
+  3. Already an existing customer -- matched against the customers table
+     by email OR company name (see app/services/customers.py for how that
+     list gets populated; a different contact at an already-customer
+     company shouldn't be cold-pitched either, not just the exact email
+     on file)
   4. Already contacted (email was actually sent an outreach email in any
      prior campaign/batch, not just this one -- email is the key, since a
      prospect can come back through a re-imported file with a new batch_id)
@@ -15,6 +19,12 @@ Rules applied, in order, first failure wins per row:
      anything in it has been assigned to a campaign or sent)
   6. Duplicate within the same import batch (same email seen twice here)
 Anything surviving all six is marked 'Valid'.
+
+None of Invalid/Existing Customer/Already Contacted/Duplicate become a
+visible "lead" -- see leads.py's NON_LEAD_STATUSES -- but every row still
+gets written and classified here regardless, so the Dashboard's prospect
+funnel (a plain GROUP BY over this table) keeps an accurate running total
+of everything ever imported, not just what's actionable.
 """
 import re
 
@@ -83,6 +93,7 @@ def validate_batch(batch_id: str) -> ValidationSummary:
 
         # OBJ-002 integration point: real customer matching source, not a hardcode.
         customer_emails = ACTIVE_PROVIDER.get_customer_emails()
+        customer_companies = ACTIVE_PROVIDER.get_customer_companies()
         contacted_emails = _get_contacted_emails(conn)
         prior_import_emails = _get_prior_import_emails(conn, batch_id)
 
@@ -90,7 +101,8 @@ def validate_batch(batch_id: str) -> ValidationSummary:
         counts = {"Valid": 0, "Invalid": 0, "Duplicate": 0, "Existing Customer": 0, "Already Contacted": 0}
 
         for row in rows:
-            status, note = _evaluate_row(row, seen_emails, customer_emails, contacted_emails, prior_import_emails)
+            status, note = _evaluate_row(row, seen_emails, customer_emails, contacted_emails,
+                                          prior_import_emails, customer_companies)
             counts[status] += 1
             if status not in ("Invalid",) and row["email"]:
                 seen_emails.add(row["email"].lower())
@@ -133,6 +145,7 @@ def edit_prospect(prospect_id: int, first_name: str, last_name: str, email: str,
             raise ValueError(f"Prospect {prospect_id} not found")
 
         customer_emails = ACTIVE_PROVIDER.get_customer_emails()
+        customer_companies = ACTIVE_PROVIDER.get_customer_companies()
         contacted_emails = _get_contacted_emails(conn)
         prior_import_emails = _get_prior_import_emails(conn, row["batch_id"])
         batchmates = conn.execute(
@@ -143,7 +156,8 @@ def edit_prospect(prospect_id: int, first_name: str, last_name: str, email: str,
 
         updated = {**dict(row), "first_name": first_name, "last_name": last_name,
                    "email": email, "company": company, "phone": phone}
-        status, note = _evaluate_row(updated, seen_emails, customer_emails, contacted_emails, prior_import_emails)
+        status, note = _evaluate_row(updated, seen_emails, customer_emails, contacted_emails,
+                                      prior_import_emails, customer_companies)
 
         conn.execute(
             """UPDATE prospects_raw SET first_name = ?, last_name = ?, email = ?, company = ?,
@@ -159,8 +173,10 @@ def edit_prospect(prospect_id: int, first_name: str, last_name: str, email: str,
 
 
 def _evaluate_row(row, seen_emails: set[str], customer_emails: set[str], contacted_emails: set[str],
-                   prior_import_emails: dict[str, int] | None = None) -> tuple[str, str]:
+                   prior_import_emails: dict[str, int] | None = None,
+                   customer_companies: set[str] | None = None) -> tuple[str, str]:
     email = (row["email"] or "").strip()
+    company = (row["company"] or "").strip()
     has_name = bool((row["first_name"] or "").strip() or (row["last_name"] or "").strip())
 
     if not email:
@@ -171,6 +187,8 @@ def _evaluate_row(row, seen_emails: set[str], customer_emails: set[str], contact
         return "Invalid", "Missing first and last name"
     if email.lower() in customer_emails:
         return "Existing Customer", "Email matches an existing customer record"
+    if company and customer_companies and company.lower() in customer_companies:
+        return "Existing Customer", f"Company '{company}' matches an existing customer record"
     if email.lower() in contacted_emails:
         return "Already Contacted", "An outreach email was already sent to this address in a prior campaign"
     if prior_import_emails and email.lower() in prior_import_emails:
