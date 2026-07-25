@@ -15,7 +15,7 @@ from app.services.prospect_import import (
     ImportError_,
 )
 from app.services.prospect_validation import validate_batch, edit_prospect
-from app.services.leads import lead_number_for
+from app.services.leads import lead_number_for, NON_LEAD_STATUSES
 
 router = APIRouter(prefix="/prospects", tags=["prospects"])
 
@@ -75,6 +75,6 @@ def list_prospects(batch_id: str, status: str | None = None):
         raise HTTPException(status_code=404, detail=f"No prospects found for batch '{batch_id}'")
 
     return [
-        ProspectRecord(**dict(r), lead_number=None if r["status"] == "Invalid" else lead_number_for(r["id"]))
+        ProspectRecord(**dict(r), lead_number=None if r["status"] in NON_LEAD_STATUSES else lead_number_for(r["id"]))
         for r in rows
     ]

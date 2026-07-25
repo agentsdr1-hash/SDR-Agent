@@ -481,17 +481,11 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 
   <div class="panel">
     <div class="panel-head"><h2>All leads</h2><span class="obj-tag">consolidated · every campaign</span></div>
-    <p class="hint" style="margin:0 0 10px;">Every prospect that passed import validation gets an immutable Lead # the moment it's imported — this is every one of them, across every campaign, in one place (not scoped to a single campaign or import batch like the tables on the Campaigns and Dashboard tabs). Rows that failed validation (missing/malformed email, missing name) never appear here — fix them from the Import tab's batch review table, where correcting them turns them into real leads. Search by name, email, company, or Lead #, then click a row to open its full lifecycle and manage its status — including reopening or editing a Won/Lost outcome. Check rows for bulk actions, or use Export to download the current view.</p>
+    <p class="hint" style="margin:0 0 10px;">Every prospect that's a real, actionable lead gets an immutable Lead # the moment it's imported — this is every one of them, across every campaign, in one place (not scoped to a single campaign or import batch like the tables on the Campaigns and Dashboard tabs). Rows that failed validation, are duplicates of an earlier import, are already customers, or were already contacted never appear here — they're still recorded and counted on the Dashboard funnel, just not shown as leads. Search by name, email, company, or Lead #, then click a row to open its full lifecycle and manage its status — including reopening or editing a Won/Lost outcome. Check rows for bulk actions, or use Export to download the current view.</p>
     <div class="row">
       <input type="text" id="leadsSearch" placeholder="Search name, email, company, or Lead # (e.g. L-000001)"/>
       <select id="leadsStatusFilter" style="max-width:240px;">
         <option value="">All statuses</option>
-        <optgroup label="Validation">
-          <option value="Valid">Valid</option>
-          <option value="Duplicate">Duplicate</option>
-          <option value="Existing Customer">Existing customer</option>
-          <option value="Already Contacted">Already contacted</option>
-        </optgroup>
         <optgroup label="Campaign status">
           <option value="Imported -- not yet in a campaign">Imported, no campaign yet</option>
           <option value="Queued">Queued</option>
@@ -568,6 +562,28 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
       <tbody id="stockBody"></tbody></table>
     </div>
     <div class="empty hidden" id="stockEmpty">No stock catalog imported yet — upload one above.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Existing customers</h2><span class="obj-tag">used by OBJ-002's Existing Customer check</span></div>
+    <p class="hint" style="margin:0 0 10px;">Upload your current customer list (Email + Company columns). A prospect import matches against this by email <b>or</b> company name — either match keeps a real customer (or a different contact at a company you already sell to) out of the Leads tab, since they're not a fresh sales target. Re-uploading replaces the previous list — it's a point-in-time snapshot, not additive. Server mode only.</p>
+    <div class="row">
+      <button class="btn" id="customersUploadBtn">Upload customer list (.csv/.xlsx)</button>
+      <input type="file" id="customersFile" accept=".csv,.xlsx,.xls" style="display:none;"/>
+    </div>
+    <div class="status" id="customersStatus"></div>
+    <div class="grid g2" id="customersSummary" style="display:none;">
+      <div class="stat"><div class="n" style="color:var(--blue)" id="cu_count">–</div><div class="lbl">Customers on file</div></div>
+    </div>
+    <div class="row mt12">
+      <input type="text" id="customersSearch" placeholder="Search email or company"/>
+      <button class="btn sec" id="customersSearchBtn">Search</button>
+    </div>
+    <div class="tbl-wrap scrollx mt12">
+      <table><thead><tr><th>Email</th><th>Company</th></tr></thead>
+      <tbody id="customersBody"></tbody></table>
+    </div>
+    <div class="empty hidden" id="customersEmpty">No customers on file yet — upload a list above.</div>
   </div>
 
   <div class="panel">
@@ -981,7 +997,7 @@ function go(name) {
   if(name==='leads') loadLeadsList();
   if(name==='admin') { enterAdminTab(); }
   if(name==='import') syncCampSelect();
-  if(name==='kb') { renderKBAll(); loadStockCatalog(); loadQAEntries(); }
+  if(name==='kb') { renderKBAll(); loadStockCatalog(); loadCustomers(); loadQAEntries(); }
 }
 
 document.getElementById('navToggle').addEventListener('click', () => {
@@ -1095,8 +1111,8 @@ document.getElementById('urlBtn').addEventListener('click', async () => {
     const r = await fetch('/prospects/import-from-url?url='+encodeURIComponent(url), {method:'POST'});
     const d = await r.json();
     if(!r.ok) return setS('importStatus', d.detail||'Failed', true);
-    setS('importStatus', importStatusMessage(d));
-    if(d.row_count > 0) serverValidate(d.batch_id);
+    setS('importStatus','Imported '+d.row_count+' rows. Validating…');
+    serverValidate(d.batch_id);
   } else {
     setS('importStatus','URL import requires server mode. Use file upload instead.', true);
   }
@@ -1111,16 +1127,6 @@ function mapColumns(cols) {
   return map;
 }
 
-function importStatusMessage(d) {
-  if (d.row_count === 0) {
-    return `Nothing new to import — all ${d.duplicate_count} row(s) already exist as leads.`;
-  }
-  const dupNote = d.duplicate_count
-    ? ` (${d.duplicate_count} already existed as a lead and ${d.duplicate_count === 1 ? 'was' : 'were'} skipped)`
-    : '';
-  return `Imported ${d.row_count} row(s)${dupNote}. Validating…`;
-}
-
 function handleFile(file) {
   setS('importStatus','Reading '+file.name+'…');
   const reader = new FileReader();
@@ -1131,8 +1137,8 @@ function handleFile(file) {
         const r = await fetch('/prospects/import', {method:'POST', body:form});
         const d = await r.json();
         if(!r.ok) return setS('importStatus', d.detail||'Import failed', true);
-        setS('importStatus', importStatusMessage(d));
-        if(d.row_count > 0) serverValidate(d.batch_id);
+        setS('importStatus','Imported '+d.row_count+' rows. Validating…');
+        serverValidate(d.batch_id);
       } else {
         const wb = XLSX.read(e.target.result, {type:'binary'});
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
@@ -1742,6 +1748,63 @@ async function searchStockCatalog() {
 document.getElementById('stockCatSelect').addEventListener('change', searchStockCatalog);
 document.getElementById('stockSearchBtn').addEventListener('click', searchStockCatalog);
 document.getElementById('stockSearch').addEventListener('keydown', e => { if(e.key==='Enter') searchStockCatalog(); });
+
+// ══════════════════════════════════════════════════════
+// EXISTING CUSTOMERS — server mode only, backs OBJ-002's Existing Customer check
+// ══════════════════════════════════════════════════════
+document.getElementById('customersUploadBtn').addEventListener('click', () => {
+  if(MODE!=='server') return setS('customersStatus','Customer list requires server mode.', true);
+  document.getElementById('customersFile').click();
+});
+document.getElementById('customersFile').addEventListener('change', async () => {
+  const f = document.getElementById('customersFile').files[0];
+  if(!f) return;
+  setS('customersStatus','Uploading and parsing '+f.name+'…');
+  const form = new FormData();
+  form.append('file', f);
+  try {
+    const r = await fetch('/knowledge-base/customers/import', {method:'POST', body:form});
+    const d = await r.json();
+    if(!r.ok) return setS('customersStatus', d.detail||'Import failed', true);
+    setS('customersStatus', `Imported ${d.customer_count} customer(s) from "${d.filename}".`);
+    loadCustomers();
+  } catch(e) { setS('customersStatus', e.message, true); }
+  document.getElementById('customersFile').value = '';
+});
+
+async function loadCustomers() {
+  if(MODE!=='server') {
+    document.getElementById('customersSummary').style.display='none';
+    document.getElementById('customersBody').innerHTML='';
+    document.getElementById('customersEmpty').classList.remove('hidden');
+    return;
+  }
+  try {
+    const countData = await (await fetch('/knowledge-base/customers/count')).json();
+    if(countData.total > 0) {
+      document.getElementById('customersSummary').style.display='';
+      set('cu_count', countData.total);
+    } else {
+      document.getElementById('customersSummary').style.display='none';
+    }
+    await searchCustomers();
+  } catch(e) { /* leave whatever was showing */ }
+}
+
+async function searchCustomers() {
+  if(MODE!=='server') return;
+  const search = document.getElementById('customersSearch').value.trim();
+  const params = new URLSearchParams();
+  if(search) params.set('search', search);
+  const rows = await (await fetch('/knowledge-base/customers?'+params.toString())).json();
+  const body = document.getElementById('customersBody'), empty = document.getElementById('customersEmpty');
+  if(!rows.length) { body.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  body.innerHTML = rows.map(r=>`<tr><td class="mono">${esc(r.email)}</td><td>${esc(r.company||'—')}</td></tr>`).join('');
+}
+
+document.getElementById('customersSearchBtn').addEventListener('click', searchCustomers);
+document.getElementById('customersSearch').addEventListener('keydown', e => { if(e.key==='Enter') searchCustomers(); });
 
 // ══════════════════════════════════════════════════════
 // Q&A KNOWLEDGE BASE — persisted, backs smart-reply drafting. Server mode only.
