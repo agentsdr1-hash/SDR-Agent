@@ -141,7 +141,7 @@ def list_leads(search: str | None = None, status: str | None = None,
     with get_conn() as conn:
         prospects = [dict(r) for r in conn.execute(
             "SELECT id, first_name, last_name, email, company, phone, status AS validation_status, "
-            "lead_source, linkedin_url, next_action, qualification_status "
+            "validation_notes, lead_source, linkedin_url, next_action, qualification_status "
             "FROM prospects_raw ORDER BY id DESC"
         ).fetchall()]
 
@@ -174,6 +174,7 @@ def list_leads(search: str | None = None, status: str | None = None,
             "company": p["company"],
             "phone": p["phone"],
             "validation_status": p["validation_status"],
+            "validation_notes": p["validation_notes"],
             "lead_source": p["lead_source"],
             "linkedin_url": p["linkedin_url"],
             "next_action": p["next_action"],

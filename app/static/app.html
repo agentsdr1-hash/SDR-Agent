@@ -500,13 +500,14 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
       <select id="leadsBulkCampaign" style="max-width:200px;"></select>
       <button class="btn sky" style="padding:6px 12px;font-size:12px;" id="leadsBulkAssignBtn">Assign to campaign</button>
       <button class="btn reject" style="padding:6px 12px;font-size:12px;" id="leadsBulkSuppressBtn">Suppress</button>
+      <button class="btn danger" style="padding:6px 12px;font-size:12px;" id="leadsBulkDeleteBtn">Delete</button>
       <button class="btn sec" style="padding:6px 12px;font-size:12px;margin-left:auto;" id="leadsBulkClearBtn">Clear selection</button>
     </div>
 
     <div class="tbl-wrap scrollx mt12">
       <table><thead><tr>
         <th style="width:32px;"><input type="checkbox" id="leadsSelectAll"/></th>
-        <th>Lead #</th><th>Name</th><th>Company</th><th>Email</th><th class="nowrap">Score</th><th>Status</th><th>Campaign</th><th>Deal value</th><th class="nowrap">Last activity</th><th></th>
+        <th>Lead #</th><th>Name</th><th>Company</th><th>Email</th><th class="nowrap">Score</th><th class="nowrap">Validation</th><th>Status</th><th>Campaign</th><th>Deal value</th><th class="nowrap">Last activity</th><th></th>
       </tr></thead><tbody id="leadsListBody"></tbody></table>
     </div>
     <div class="empty hidden" id="leadsListEmpty">No leads match.</div>
@@ -1851,6 +1852,7 @@ async function loadLeadsList() {
     <td>${esc(l.company||'—')}</td>
     <td class="mono">${esc(l.email||'—')}</td>
     <td>${scorePill(l.lead_score)}</td>
+    <td class="nowrap">${pill(l.validation_status)}${l.validation_notes?`<div class="muted" style="font-size:10.5px;margin-top:2px;max-width:160px;white-space:normal;">${esc(l.validation_notes)}</div>`:''}</td>
     <td>${pill(l.status)}</td>
     <td>${esc(l.campaign_name||'—')}${l.campaign_count>1?` <span class="muted">(+${l.campaign_count-1})</span>`:''}</td>
     <td>${fmtMoney(l.deal_value)}</td>
@@ -1910,6 +1912,17 @@ document.getElementById('leadsBulkSuppressBtn').addEventListener('click', async 
   const d = await r.json();
   if(!r.ok) return alert(d.detail||'Failed');
   alert(`Suppressed ${d.succeeded}.`+(d.failed?` ${d.failed} skipped:\n`+d.errors.join('\n'):''));
+  loadLeadsList();
+});
+
+document.getElementById('leadsBulkDeleteBtn').addEventListener('click', async () => {
+  const n = leadsSelectedIds.size;
+  const sure = confirm(`Permanently delete ${n} selected lead(s)? This cannot be undone.`);
+  if(!sure) return;
+  const r = await fetch('/leads/bulk-delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({prospect_ids:[...leadsSelectedIds]})});
+  const d = await r.json();
+  if(!r.ok) return alert(d.detail||'Failed');
+  alert(`Deleted ${d.succeeded}.`+(d.failed?` ${d.failed} skipped:\n`+d.errors.join('\n'):''));
   loadLeadsList();
 });
 

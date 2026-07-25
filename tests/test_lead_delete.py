@@ -99,3 +99,26 @@ def test_deleted_lead_number_is_never_reused(server):
     assert r.status_code == 404
     r = server.get(f"/leads/{lead_number_2}")
     assert r.status_code == 200
+
+
+def test_bulk_delete_leads(server):
+    ids = [server.seed_prospect() for _ in range(3)]
+    r = server.post("/leads/bulk-delete", json={"prospect_ids": ids})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["succeeded"] == 3
+    assert body["failed"] == 0
+
+    for pid in ids:
+        r = server.get(f"/leads/L-{pid:06d}")
+        assert r.status_code == 404
+
+
+def test_bulk_delete_reports_partial_failure_without_crashing(server):
+    valid_id = server.seed_prospect()
+    r = server.post("/leads/bulk-delete", json={"prospect_ids": [valid_id, 999999]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["succeeded"] == 1
+    assert body["failed"] == 1
+    assert len(body["errors"]) == 1

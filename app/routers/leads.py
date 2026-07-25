@@ -7,7 +7,7 @@ app/services/leads.py for the design rationale.
 from fastapi import APIRouter, HTTPException
 
 from app.db import get_conn
-from app.models import BulkAssignInput, BulkSuppressInput, BulkActionResult
+from app.models import BulkAssignInput, BulkSuppressInput, BulkDeleteInput, BulkActionResult
 from app.services.leads import get_lead_timeline, list_leads, lead_number_for, parse_lead_number, delete_lead
 from app.services.campaign_management import assign_prospect_to_campaign, CampaignError
 from app.services.administration import add_to_suppression_list, AdminError
@@ -71,6 +71,22 @@ def bulk_suppress(payload: BulkSuppressInput):
             succeeded += 1
         except AdminError as e:
             errors.append(f"{email}: {e}")
+    return BulkActionResult(succeeded=succeeded, failed=len(errors), errors=errors)
+
+
+@router.post("/bulk-delete", response_model=BulkActionResult)
+def bulk_delete(payload: BulkDeleteInput):
+    """Permanently delete multiple leads at once -- e.g. cleaning up a
+    batch of Duplicate rows left behind by re-uploading the same file.
+    Same no-undo guarantee as the single-lead delete; the frontend's
+    confirmation dialog in front of this is the only safety net."""
+    succeeded, errors = 0, []
+    for pid in payload.prospect_ids:
+        try:
+            delete_lead(pid)
+            succeeded += 1
+        except ValueError as e:
+            errors.append(f"{lead_number_for(pid)}: {e}")
     return BulkActionResult(succeeded=succeeded, failed=len(errors), errors=errors)
 
 

@@ -9,8 +9,12 @@ Rules applied, in order, first failure wins per row:
   4. Already contacted (email was actually sent an outreach email in any
      prior campaign/batch, not just this one -- email is the key, since a
      prospect can come back through a re-imported file with a new batch_id)
-  5. Duplicate within the same import batch (same email seen twice here)
-Anything surviving all five is marked 'Valid'.
+  5. Already imported in an earlier batch (same email exists on a live,
+     non-Invalid row from a *different* batch -- catches the same file, or
+     the same list, being (re-)uploaded more than once, even before
+     anything in it has been assigned to a campaign or sent)
+  6. Duplicate within the same import batch (same email seen twice here)
+Anything surviving all six is marked 'Valid'.
 """
 import re
 
@@ -18,6 +22,7 @@ from app.db import get_conn
 from app.integrations.customer_provider import ACTIVE_PROVIDER
 from app.models import ValidationSummary
 from app.services.audit import log_event
+from app.services.leads import lead_number_for
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -36,6 +41,36 @@ def _get_contacted_emails(conn) -> set[str]:
     return {r["email"].lower() for r in rows if r["email"]}
 
 
+_REAL_PRIOR_IMPORT_STATUSES = ("Valid", "Duplicate", "Existing Customer", "Already Contacted")
+
+
+def _get_prior_import_emails(conn, batch_id: str) -> dict[str, int]:
+    """Map email (lowercased) -> the id of the earliest prospects_raw row
+    with that email from a *different* batch that already validated as a
+    real prospect (Valid/Duplicate/Existing Customer/Already Contacted).
+    Deliberately excludes 'Pending' (imported but never validated -- it
+    might still turn out Invalid, e.g. missing a name that this new import
+    actually supplies) and 'Invalid' rows, neither of which represent a
+    confirmed real prior import worth flagging against. This is what
+    catches "the same file got uploaded and validated twice" before either
+    copy has been sent or even added to a campaign, which
+    _get_contacted_emails() alone can't (that one only fires once a real
+    send has happened)."""
+    ph = ",".join("?" * len(_REAL_PRIOR_IMPORT_STATUSES))
+    rows = conn.execute(
+        f"""SELECT id, email FROM prospects_raw
+            WHERE batch_id != ? AND email IS NOT NULL AND status IN ({ph})
+            ORDER BY id""",
+        (batch_id, *_REAL_PRIOR_IMPORT_STATUSES),
+    ).fetchall()
+    result: dict[str, int] = {}
+    for r in rows:
+        key = r["email"].strip().lower()
+        if key and key not in result:
+            result[key] = r["id"]
+    return result
+
+
 def validate_batch(batch_id: str) -> ValidationSummary:
     with get_conn() as conn:
         rows = conn.execute(
@@ -49,12 +84,13 @@ def validate_batch(batch_id: str) -> ValidationSummary:
         # OBJ-002 integration point: real customer matching source, not a hardcode.
         customer_emails = ACTIVE_PROVIDER.get_customer_emails()
         contacted_emails = _get_contacted_emails(conn)
+        prior_import_emails = _get_prior_import_emails(conn, batch_id)
 
         seen_emails: set[str] = set()
         counts = {"Valid": 0, "Invalid": 0, "Duplicate": 0, "Existing Customer": 0, "Already Contacted": 0}
 
         for row in rows:
-            status, note = _evaluate_row(row, seen_emails, customer_emails, contacted_emails)
+            status, note = _evaluate_row(row, seen_emails, customer_emails, contacted_emails, prior_import_emails)
             counts[status] += 1
             if status not in ("Invalid",) and row["email"]:
                 seen_emails.add(row["email"].lower())
@@ -98,6 +134,7 @@ def edit_prospect(prospect_id: int, first_name: str, last_name: str, email: str,
 
         customer_emails = ACTIVE_PROVIDER.get_customer_emails()
         contacted_emails = _get_contacted_emails(conn)
+        prior_import_emails = _get_prior_import_emails(conn, row["batch_id"])
         batchmates = conn.execute(
             "SELECT email FROM prospects_raw WHERE batch_id = ? AND id != ? AND status != 'Invalid'",
             (row["batch_id"], prospect_id),
@@ -106,7 +143,7 @@ def edit_prospect(prospect_id: int, first_name: str, last_name: str, email: str,
 
         updated = {**dict(row), "first_name": first_name, "last_name": last_name,
                    "email": email, "company": company, "phone": phone}
-        status, note = _evaluate_row(updated, seen_emails, customer_emails, contacted_emails)
+        status, note = _evaluate_row(updated, seen_emails, customer_emails, contacted_emails, prior_import_emails)
 
         conn.execute(
             """UPDATE prospects_raw SET first_name = ?, last_name = ?, email = ?, company = ?,
@@ -121,7 +158,8 @@ def edit_prospect(prospect_id: int, first_name: str, last_name: str, email: str,
     return {"id": prospect_id, "status": status, "validation_notes": note}
 
 
-def _evaluate_row(row, seen_emails: set[str], customer_emails: set[str], contacted_emails: set[str]) -> tuple[str, str]:
+def _evaluate_row(row, seen_emails: set[str], customer_emails: set[str], contacted_emails: set[str],
+                   prior_import_emails: dict[str, int] | None = None) -> tuple[str, str]:
     email = (row["email"] or "").strip()
     has_name = bool((row["first_name"] or "").strip() or (row["last_name"] or "").strip())
 
@@ -135,6 +173,9 @@ def _evaluate_row(row, seen_emails: set[str], customer_emails: set[str], contact
         return "Existing Customer", "Email matches an existing customer record"
     if email.lower() in contacted_emails:
         return "Already Contacted", "An outreach email was already sent to this address in a prior campaign"
+    if prior_import_emails and email.lower() in prior_import_emails:
+        prior_lead_number = lead_number_for(prior_import_emails[email.lower()])
+        return "Duplicate", f"Already imported earlier as {prior_lead_number} -- re-uploaded file or list"
     if email.lower() in seen_emails:
         return "Duplicate", "Duplicate email within this import batch"
 
