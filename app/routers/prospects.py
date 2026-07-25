@@ -74,4 +74,7 @@ def list_prospects(batch_id: str, status: str | None = None):
     if not rows:
         raise HTTPException(status_code=404, detail=f"No prospects found for batch '{batch_id}'")
 
-    return [ProspectRecord(**dict(r), lead_number=lead_number_for(r["id"])) for r in rows]
+    return [
+        ProspectRecord(**dict(r), lead_number=None if r["status"] == "Invalid" else lead_number_for(r["id"]))
+        for r in rows
+    ]

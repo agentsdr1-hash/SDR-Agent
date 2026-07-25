@@ -481,14 +481,13 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 
   <div class="panel">
     <div class="panel-head"><h2>All leads</h2><span class="obj-tag">consolidated · every campaign</span></div>
-    <p class="hint" style="margin:0 0 10px;">Every prospect gets an immutable Lead # the moment it's imported — this is every one of them, across every campaign, in one place (not scoped to a single campaign or import batch like the tables on the Campaigns and Dashboard tabs). Search by name, email, company, or Lead #, then click a row to open its full lifecycle and manage its status — including reopening or editing a Won/Lost outcome. Check rows for bulk actions, or use Export to download the current view.</p>
+    <p class="hint" style="margin:0 0 10px;">Every prospect that passed import validation gets an immutable Lead # the moment it's imported — this is every one of them, across every campaign, in one place (not scoped to a single campaign or import batch like the tables on the Campaigns and Dashboard tabs). Rows that failed validation (missing/malformed email, missing name) never appear here — fix them from the Import tab's batch review table, where correcting them turns them into real leads. Search by name, email, company, or Lead #, then click a row to open its full lifecycle and manage its status — including reopening or editing a Won/Lost outcome. Check rows for bulk actions, or use Export to download the current view.</p>
     <div class="row">
       <input type="text" id="leadsSearch" placeholder="Search name, email, company, or Lead # (e.g. L-000001)"/>
       <select id="leadsStatusFilter" style="max-width:240px;">
         <option value="">All statuses</option>
         <optgroup label="Validation">
           <option value="Valid">Valid</option>
-          <option value="Invalid">Invalid</option>
           <option value="Duplicate">Duplicate</option>
           <option value="Existing Customer">Existing customer</option>
           <option value="Already Contacted">Already contacted</option>
@@ -1209,11 +1208,79 @@ function prefillCampName() {
   if(!el.value.trim()) el.value = new Date().toISOString().slice(0,10) + ' — ';
 }
 
+// Rows that failed validation (missing/malformed email, missing name)
+// never get a Lead # and never appear in the Leads tab -- see
+// list_leads()'s docstring in app/services/leads.py for the full
+// rationale. This is the one place left to fix one: correcting the
+// name/email right here in the batch review re-runs the same
+// classification rules, and a row that now passes shows a real Lead #
+// and flows into the Leads tab like any other lead.
+function renderValidationRow(r) {
+  if (r.status !== 'Invalid') {
+    return `<tr><td class="mono">${r.row_number}</td><td class="mono">${esc(r.lead_number||'—')}</td><td>${esc([r.first_name,r.last_name].filter(Boolean).join(' '))||'—'}</td><td class="mono">${esc(r.email||'')}</td><td>${esc(r.company||'—')}</td><td>${pill(r.status)}</td><td class="muted wrap">${esc(r.validation_notes||'—')}</td></tr>`;
+  }
+  const idAttr = r.id != null ? r.id : '';
+  return `<tr>
+    <td class="mono">${r.row_number}</td>
+    <td class="mono">—</td>
+    <td><div style="display:flex;gap:4px;">
+      <input type="text" class="fix-input" data-id="${idAttr}" data-rn="${r.row_number}" data-field="first_name" placeholder="First" value="${esc(r.first_name||'')}" style="width:66px;padding:4px 6px;font-size:11.5px;flex:none;"/>
+      <input type="text" class="fix-input" data-id="${idAttr}" data-rn="${r.row_number}" data-field="last_name" placeholder="Last" value="${esc(r.last_name||'')}" style="width:66px;padding:4px 6px;font-size:11.5px;flex:none;"/>
+    </div></td>
+    <td class="mono"><input type="text" class="fix-input" data-id="${idAttr}" data-rn="${r.row_number}" data-field="email" placeholder="Email" value="${esc(r.email||'')}" style="width:150px;padding:4px 6px;font-size:11.5px;flex:none;"/></td>
+    <td>${esc(r.company||'—')}</td>
+    <td>${pill(r.status)}</td>
+    <td class="wrap">
+      <div class="muted" style="margin-bottom:4px;">${esc(r.validation_notes||'—')}</div>
+      <button class="btn sec" style="padding:3px 9px;font-size:11px;" onclick="fixInvalidRow(${r.id != null ? r.id : 'undefined'}, ${r.row_number})">Save fix</button>
+    </td>
+  </tr>`;
+}
+
+async function fixInvalidRow(id, rowNumber) {
+  const scope = MODE === 'server' ? `[data-id="${id}"]` : `[data-rn="${rowNumber}"]`;
+  const first_name = document.querySelector(`.fix-input${scope}[data-field="first_name"]`).value.trim();
+  const last_name = document.querySelector(`.fix-input${scope}[data-field="last_name"]`).value.trim();
+  const email = document.querySelector(`.fix-input${scope}[data-field="email"]`).value.trim();
+
+  if (MODE === 'server') {
+    const row = (validationRows || []).find(r => r.id === id) || {};
+    const payload = {
+      first_name, last_name, email,
+      company: row.company || '', phone: row.phone || '',
+      lead_source: row.lead_source || '', linkedin_url: row.linkedin_url || '',
+      next_action: row.next_action || '', qualification_status: row.qualification_status || '',
+    };
+    const r = await fetch('/prospects/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    const d = await r.json();
+    if(!r.ok) return alert(d.detail||'Failed to save');
+    const rows = await (await fetch('/prospects/'+currentBatch)).json();
+    const counts = {Valid:0,Invalid:0,Duplicate:0,'Existing Customer':0,'Already Contacted':0};
+    rows.forEach(x => counts[x.status] = (counts[x.status]||0) + 1);
+    renderValidation(counts, rows);
+  } else {
+    const idx = validatedProspects.findIndex(r => r.row_number === rowNumber);
+    if (idx === -1) return;
+    validatedProspects[idx] = {...validatedProspects[idx], first_name, last_name, email};
+    const seen = new Set();
+    const contacted = getContactedEmailsDemo();
+    const counts = {Valid:0,Invalid:0,Duplicate:0,'Existing Customer':0,'Already Contacted':0};
+    validatedProspects.forEach((row, i) => {
+      const [status, note] = evalRow(row, seen, contacted);
+      validatedProspects[i] = {...row, status, validation_notes: note};
+      counts[status]++;
+      if(status!=='Invalid' && row.email) seen.add(row.email.toLowerCase());
+    });
+    renderValidation(counts, validatedProspects);
+  }
+}
+
+let validationRows = [];
+
 function renderValidation(counts, rows) {
   set('rV',counts.Valid); set('rI',counts.Invalid); set('rD',counts.Duplicate); set('rE',counts['Existing Customer']); set('rAC',counts['Already Contacted']||0);
-  document.getElementById('rBody').innerHTML = rows.map(r =>
-    `<tr><td class="mono">${r.row_number}</td><td class="mono">${esc(r.lead_number||'—')}</td><td>${esc([r.first_name,r.last_name].filter(Boolean).join(' '))||'—'}</td><td class="mono">${esc(r.email||'')}</td><td>${esc(r.company||'—')}</td><td>${pill(r.status)}</td><td class="muted wrap">${esc(r.validation_notes||'—')}</td></tr>`
-  ).join('');
+  validationRows = rows;
+  document.getElementById('rBody').innerHTML = rows.map(renderValidationRow).join('');
 }
 
 // CAMPAIGN ASSIGNMENT — OBJ-003

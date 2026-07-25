@@ -129,6 +129,18 @@ def list_leads(search: str | None = None, status: str | None = None,
     opposed to get_lead_timeline()'s single-lead full-detail view, or the
     Dashboard/Campaigns tab's per-campaign or per-import-batch tables.
 
+    Rows that failed import validation (status='Invalid' -- missing or
+    malformed email, missing name) are excluded entirely: a row that
+    couldn't even be read as a person was never a lead, so it doesn't
+    get a Lead # or show up here -- it stays visible only in the Import
+    tab's per-batch review table, where it can be corrected via
+    edit_prospect(). The moment an edit re-validates it to Valid (or
+    Duplicate/Existing Customer/Already Contacted -- all real,
+    identified people, just not fresh new leads), it appears here like
+    any other lead. This keeps "Invalid" as an import-quality metric
+    (still counted in the Dashboard funnel) without letting it clutter
+    the Leads tab as junk data.
+
     status/validation_status match the Dashboard's per-campaign status
     counts and prospect-funnel counts exactly (both are GROUP BY status
     snapshots). ever_sent/ever_replied/ever_quoted match the SDR-performance
@@ -142,7 +154,7 @@ def list_leads(search: str | None = None, status: str | None = None,
         prospects = [dict(r) for r in conn.execute(
             "SELECT id, first_name, last_name, email, company, phone, status AS validation_status, "
             "validation_notes, lead_source, linkedin_url, next_action, qualification_status "
-            "FROM prospects_raw ORDER BY id DESC"
+            "FROM prospects_raw WHERE status != 'Invalid' ORDER BY id DESC"
         ).fetchall()]
 
         memberships_by_prospect: dict[int, list[dict]] = {}
@@ -245,6 +257,11 @@ def get_lead_timeline(lead_number: str) -> dict | None:
             (prospect_id,),
         ).fetchone()
         if not prospect:
+            return None
+        if prospect["status"] == "Invalid":
+            # A row that failed import validation (bad/missing email,
+            # missing name) never became a lead in the first place -- see
+            # list_leads()'s matching exclusion for the full rationale.
             return None
 
         memberships = conn.execute(

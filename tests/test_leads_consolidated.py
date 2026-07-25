@@ -36,9 +36,20 @@ def test_leads_list_includes_prospects_with_no_campaign(server):
 def test_filter_by_validation_status(server):
     server.seed_prospect(status="Invalid")
     server.seed_prospect(status="Valid")
+    # Invalid rows never became leads -- see list_leads()'s docstring --
+    # so even an explicit filter for them returns nothing.
     invalid_leads = server.get("/leads", params={"validation_status": "Invalid"}).json()
-    assert all(l["validation_status"] == "Invalid" for l in invalid_leads)
-    assert len(invalid_leads) >= 1
+    assert invalid_leads == []
+
+    valid_leads = server.get("/leads", params={"validation_status": "Valid"}).json()
+    assert len(valid_leads) >= 1
+    assert all(l["validation_status"] == "Valid" for l in valid_leads)
+
+
+def test_invalid_rows_excluded_from_leads_list_entirely(server):
+    server.seed_prospect(status="Invalid")
+    leads = server.get("/leads").json()
+    assert all(l["validation_status"] != "Invalid" for l in leads)
 
 
 def test_filter_by_campaign_status(server):

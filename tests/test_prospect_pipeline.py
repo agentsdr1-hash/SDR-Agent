@@ -55,8 +55,51 @@ def test_lead_numbers_are_l_prefixed_and_zero_padded(server):
     rows = r.json()
     assert len(rows) == 4
     for row in rows:
+        # A row that failed import validation never became a lead -- it
+        # gets no Lead # at all (see list_leads()'s docstring for why).
+        if row["status"] == "Invalid":
+            assert row["lead_number"] is None
+            continue
         assert row["lead_number"].startswith("L-")
         assert len(row["lead_number"]) == 8  # "L-" + 6 digits
+
+
+def test_invalid_row_gets_no_lead_number_and_is_absent_from_leads_until_fixed(server):
+    r = _upload(server)
+    batch_id = r.json()["batch_id"]
+    server.post(f"/prospects/validate/{batch_id}")
+
+    rows = server.get(f"/prospects/{batch_id}").json()
+    invalid_row = next(r for r in rows if r["status"] == "Invalid")
+    assert invalid_row["lead_number"] is None
+
+    # Not reachable as a lead at all -- not listed, and a direct lookup 404s
+    # even though the underlying prospects_raw row (and its id) exists.
+    all_leads = server.get("/leads").json()
+    assert not any(l["prospect_id"] == invalid_row["id"] for l in all_leads)
+    fake_lead_number = f"L-{invalid_row['id']:06d}"
+    r = server.get(f"/leads/{fake_lead_number}")
+    assert r.status_code == 404
+
+    # Fixing it (same PUT /prospects/{id} flow the Import tab's "Save fix"
+    # button drives) re-validates the row -- once it passes, it gets a
+    # real Lead # and appears in the Leads tab like anything else.
+    r = server.put(f"/prospects/{invalid_row['id']}", json={
+        "first_name": "Fixed", "last_name": "Person", "email": "now.valid@example.com",
+        "company": "Fixed Co", "phone": "",
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "Valid"
+
+    rows = server.get(f"/prospects/{batch_id}").json()
+    fixed = next(r for r in rows if r["id"] == invalid_row["id"])
+    assert fixed["lead_number"] == fake_lead_number
+
+    all_leads = server.get("/leads").json()
+    assert any(l["prospect_id"] == invalid_row["id"] and l["lead_number"] == fake_lead_number for l in all_leads)
+
+    r = server.get(f"/leads/{fake_lead_number}")
+    assert r.status_code == 200
 
 
 def test_edit_prospect_fixes_invalid_row_and_sets_qualification_fields(server):
