@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.db import init_db
+from app.db import init_db, close_pool
 from app.routers import prospects, campaigns, reports, email as email_router, admin, audit, dbtables, knowledge_base, reply_drafts, leads
 from app.integrations import email_provider
 from app.services import inbox_monitor
@@ -72,6 +72,7 @@ def startup():
 def shutdown():
     if _poll_task:
         _poll_task.cancel()
+    close_pool()
 
 
 @app.get("/", tags=["frontend"])

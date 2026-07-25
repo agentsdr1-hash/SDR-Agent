@@ -33,6 +33,23 @@ IS_POSTGRES = bool(DATABASE_URL)
 if IS_POSTGRES:
     import psycopg2
     import psycopg2.extras
+    import psycopg2.pool
+
+    # A fresh psycopg2.connect() is a real TCP+TLS+auth round trip to a
+    # remote host (Supabase, through its connection pooler) -- cheap for
+    # SQLite's in-process file access, expensive here, and this app calls
+    # get_conn() many times per single page load (one per service-layer
+    # query). Without pooling, every one of those calls pays a fresh
+    # network handshake, which is what turns "click a tab" into several
+    # seconds: a handful of endpoints firing in parallel each open their
+    # own new connection. A small pool of already-open connections,
+    # created once at startup and reused across requests, removes that
+    # cost from every request but the first few. Thread-safe (route
+    # handlers here are plain `def`, which FastAPI runs in a threadpool,
+    # so concurrent requests can call get_conn() from different threads
+    # at once) and sized conservatively since Supabase's free-tier pooler
+    # itself caps total concurrent connections project-wide.
+    _pg_pool = psycopg2.pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=DATABASE_URL)
 else:
     DB_PATH = Path(os.environ.get("APEX_DB_PATH", Path(__file__).parent / "apex_pilot.db"))
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -245,17 +262,38 @@ class PGConnWrapper:
 @contextmanager
 def get_conn():
     if IS_POSTGRES:
-        raw = psycopg2.connect(DATABASE_URL)
+        raw = _pg_pool.getconn()
         conn = PGConnWrapper(raw)
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            # A failed query leaves the connection's transaction aborted;
+            # roll it back before it goes back in the pool, or the next
+            # caller to borrow this same physical connection would
+            # immediately fail too ("current transaction is aborted").
+            raw.rollback()
+            raise
+        finally:
+            _pg_pool.putconn(raw)
     else:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def close_pool():
+    """Release every pooled connection -- called on app shutdown. A no-op
+    on SQLite, which never pools (each get_conn() call is its own
+    connection already closed by its own finally block)."""
+    if IS_POSTGRES:
+        _pg_pool.closeall()
+
 
 def _ensure_column(conn, table: str, column: str, coltype: str):
     """Additive, idempotent migration for a column added after a table
