@@ -31,7 +31,14 @@ from pathlib import Path
 import pytest
 import requests
 
+# Pure constant, no DB access -- safe to import directly in the shared
+# pytest process (unlike app.db/app.services.* generally, see the
+# TEST_DATABASE_URL comment below and tests/README.md's "isolated probe"
+# section for why that distinction matters here).
+from app.services.admin_auth import DEFAULT_ADMIN_PASSWORD
+
 REPO_ROOT = Path(__file__).parent.parent
+ADMIN_HEADERS = {"X-Admin-Password": DEFAULT_ADMIN_PASSWORD}
 
 # Opt-in only: default `pytest` runs stay on SQLite (fast, hermetic, no
 # setup). Set TEST_DATABASE_URL to an *admin*-capable Postgres connection

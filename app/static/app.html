@@ -750,6 +750,18 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 <div class="view" id="vAdmin">
   <div class="page-title">Administration Console</div>
 
+  <div class="panel" id="adminGate">
+    <div class="panel-head"><h2>Admin access</h2></div>
+    <p class="hint" style="margin:0 0 12px;">This console controls Gmail credentials, the suppression list, and the data reset below — enter the admin password to continue.</p>
+    <div class="row">
+      <input type="password" id="adminGatePassword" placeholder="Admin password" style="max-width:240px;" autocomplete="off"/>
+      <button class="btn" id="adminGateUnlockBtn">Unlock</button>
+    </div>
+    <div class="status" id="adminGateStatus"></div>
+  </div>
+
+  <div id="adminContent" class="hidden">
+
   <div class="panel">
     <div class="panel-head"><h2>Email integration</h2><span class="obj-tag">OBJ-016</span></div>
     <div class="grid g5">
@@ -812,6 +824,15 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
     </div>
     <div class="empty hidden" id="supEmpty">No suppressed emails yet.</div>
   </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Reset all data</h2><span class="obj-tag">danger zone</span></div>
+    <p class="hint" style="margin:0 0 12px;">Permanently clears every lead, campaign, import batch, sent/reply record, and suppression entry — e.g. to clear out test data before a production go-live so it never mixes with real leads. <b>There is no undo.</b> Preserved: Gmail configuration, the daily send limit, the Knowledge Base Q&amp;A entries, and the stock catalog — none of that is test lead data.</p>
+    <button class="btn danger" id="resetAllDataBtn">Reset all data…</button>
+    <div class="status" id="resetAllDataStatus"></div>
+  </div>
+
+  </div><!-- /adminContent -->
 </div>
 
 <!-- ══════════════ INSTRUCTIONS ══════════════ -->
@@ -910,6 +931,20 @@ let currentBatch = null;
 let MODE = 'demo';
 
 // ══════════════════════════════════════════════════════
+// ADMIN PASSWORD GATE — one shared password, verified server-side on
+// every gated request (see app/services/admin_auth.py), not just hidden
+// in this UI. Remembered in memory for the browser tab's lifetime once
+// entered (not persisted -- a reload re-prompts), EXCEPT for Reset All
+// Data, which always asks fresh regardless of this cache.
+// ══════════════════════════════════════════════════════
+let adminPassword = null;
+
+async function adminFetch(path, options = {}) {
+  const headers = Object.assign({}, options.headers || {}, adminPassword ? {'X-Admin-Password': adminPassword} : {});
+  return fetch(path, Object.assign({}, options, {headers}));
+}
+
+// ══════════════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════════════
 const TABS = ['import','campaigns','leads','kb','dashboard','admin','instructions'];
@@ -925,7 +960,7 @@ function go(name) {
   if(name==='dashboard') loadDashboard();
   if(name==='campaigns') { syncReviewSelect(); loadReplyDrafts(); }
   if(name==='leads') loadLeadsList();
-  if(name==='admin') { loadEmailStatus(); loadSuppression(); }
+  if(name==='admin') { enterAdminTab(); }
   if(name==='import') syncCampSelect();
   if(name==='kb') { renderKBAll(); loadStockCatalog(); loadQAEntries(); }
 }
@@ -1820,7 +1855,10 @@ async function loadLeadsList() {
     <td>${esc(l.campaign_name||'—')}${l.campaign_count>1?` <span class="muted">(+${l.campaign_count-1})</span>`:''}</td>
     <td>${fmtMoney(l.deal_value)}</td>
     <td class="muted nowrap">${l.last_activity_at?fmt(l.last_activity_at):'—'}</td>
-    <td><button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();openLeadDetail('${esc(l.lead_number)}')">View</button></td>
+    <td class="nowrap">
+      <button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();openLeadDetail('${esc(l.lead_number)}')">View</button>
+      <button class="btn danger" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();deleteLead('${esc(l.lead_number)}')">Delete</button>
+    </td>
   </tr>`).join('');
   renderLeadsBulkBar();
 }
@@ -2031,6 +2069,31 @@ function closeLeadDetail() {
   if(leadDetailCtx.bodyId === 'leadDetailBody') leadDetailCtx = { leadNumber: null, bodyId: 'leadDetailBody', statusId: 'leadDetailStatus' };
   document.getElementById('leadDetailPanel').classList.add('hidden');
   document.getElementById('leadDetailBody').innerHTML = '';
+}
+
+async function deleteLead(leadNumber) {
+  const sure = confirm(
+    'Permanently delete lead '+leadNumber+'?\n\n' +
+    'This removes the lead, every campaign membership it has, and any reply/quote drafts on those.\n\n' +
+    'This cannot be undone — there is no undo.'
+  );
+  if(!sure) return;
+  const r = await fetch('/leads/'+encodeURIComponent(leadNumber), {method:'DELETE'});
+  const d = await r.json();
+  if(!r.ok) { alert(d.detail||'Failed to delete lead.'); return; }
+  if(leadDetailCtx.leadNumber === leadNumber) {
+    if(leadDetailCtx.bodyId === 'dashDrillDetailWrap') {
+      document.getElementById('dashDrillDetailWrap').innerHTML = '';
+      leadDetailCtx = { leadNumber: null, bodyId: 'leadDetailBody', statusId: 'leadDetailStatus' };
+    } else {
+      closeLeadDetail();
+    }
+  }
+  if(currentTab === 'leads') loadLeadsList();
+  if(currentTab === 'dashboard') {
+    loadDashboard();
+    if(!document.getElementById('dashDrillPanel').classList.contains('hidden')) refreshDashDrillCards();
+  }
 }
 
 async function refreshLeadDetail() {
@@ -2288,7 +2351,7 @@ function renderLeadTimeline(d) {
   const outcomeBadge = d.won ? '<span class="pill p-valid">Won</span>' : d.lost ? '<span class="pill p-invalid">Lost</span>' : `<span class="pill p-neutral">${esc(d.overall_status)}</span>`;
 
   let html = `<div class="panel" style="background:var(--paper);box-shadow:none;margin-bottom:16px;">
-    <div class="panel-head"><h2 class="mono">${esc(d.lead_number)}</h2>${outcomeBadge}</div>
+    <div class="panel-head"><h2 class="mono">${esc(d.lead_number)}</h2>${outcomeBadge}<button class="btn danger" style="margin-left:auto;padding:5px 12px;font-size:12px;" onclick="deleteLead('${esc(d.lead_number)}')">Delete lead…</button></div>
     <div class="grid g4">
       <div class="stat"><div class="n" style="font-size:16px;">${esc(name)}</div><div class="lbl">Name</div></div>
       <div class="stat"><div class="n mono" style="font-size:13px;">${esc(p.email||'—')}</div><div class="lbl">Email</div></div>
@@ -2969,6 +3032,52 @@ function barSegs(c) {
 // ══════════════════════════════════════════════════════
 // ADMIN — OBJ-015, OBJ-016
 // ══════════════════════════════════════════════════════
+function enterAdminTab() {
+  if(adminPassword) {
+    // Already unlocked this session.
+    document.getElementById('adminGate').classList.add('hidden');
+    document.getElementById('adminContent').classList.remove('hidden');
+    loadEmailStatus(); loadSuppression();
+    return;
+  }
+  document.getElementById('adminGate').classList.remove('hidden');
+  document.getElementById('adminContent').classList.add('hidden');
+  document.getElementById('adminGatePassword').value = '';
+  setS('adminGateStatus', '');
+}
+
+async function tryAdminUnlock() {
+  if(MODE!=='server') return setS('adminGateStatus', 'Requires server mode.', true);
+  const pw = document.getElementById('adminGatePassword').value;
+  if(!pw) return setS('adminGateStatus', 'Enter the admin password.', true);
+  const r = await fetch('/admin/verify-password', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pw})});
+  if(!r.ok) { setS('adminGateStatus', 'Incorrect password.', true); return; }
+  adminPassword = pw;
+  document.getElementById('adminGatePassword').value = '';
+  enterAdminTab();
+}
+document.getElementById('adminGateUnlockBtn').addEventListener('click', tryAdminUnlock);
+document.getElementById('adminGatePassword').addEventListener('keydown', e => { if(e.key==='Enter') tryAdminUnlock(); });
+
+document.getElementById('resetAllDataBtn').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('resetAllDataStatus', 'Requires server mode.', true);
+  const sure = confirm(
+    'Permanently clear ALL lead, campaign, import, send/reply, and suppression data?\n\n' +
+    'This cannot be undone. Gmail configuration, the daily send limit, the Knowledge Base ' +
+    'Q&A entries, and the stock catalog will be kept.\n\n' +
+    'Type OK to continue, then confirm your admin password on the next prompt.'
+  );
+  if(!sure) return;
+  const pw = prompt('Re-enter the admin password to confirm this reset:');
+  if(!pw) return;
+  setS('resetAllDataStatus', 'Resetting…');
+  const r = await fetch('/admin/reset-all-data', {method:'POST', headers:{'X-Admin-Password':pw}});
+  const d = await r.json();
+  if(!r.ok) return setS('resetAllDataStatus', d.detail||'Failed — check the password and try again.', true);
+  setS('resetAllDataStatus', 'All data cleared. Reloading…');
+  setTimeout(() => location.reload(), 1200);
+});
+
 async function loadEmailStatus() {
   if(MODE!=='server') { set('es_c','N/A (demo)'); set('es_sent','—'); set('es_i','—'); set('es_lp','—'); set('es_rf','—'); document.getElementById('emailSourceBadge').innerHTML=''; return; }
   try {
@@ -2994,7 +3103,7 @@ async function loadEmailStatus() {
 
 document.getElementById('pollNow').addEventListener('click', async () => {
   if(MODE!=='server') return setS('supStatus','Poll requires server mode.',true);
-  const r=await fetch('/email/poll-now',{method:'POST'}); const d=await r.json();
+  const r=await adminFetch('/email/poll-now',{method:'POST'}); const d=await r.json();
   document.getElementById('es_err').textContent='Poll complete — '+d.replies_found+' reply(ies) found.';
   loadEmailStatus();
 });
@@ -3002,7 +3111,7 @@ document.getElementById('pollNow').addEventListener('click', async () => {
 document.getElementById('emailTestBtn').addEventListener('click', async () => {
   if(MODE!=='server') return setS('gmailConfigStatus','Requires server mode.',true);
   setS('gmailConfigStatus','Testing…');
-  const r=await fetch('/email/test-connection',{method:'POST'});
+  const r=await adminFetch('/email/test-connection',{method:'POST'});
   const d=await r.json();
   setS('gmailConfigStatus', d.message||d.detail||'', !r.ok);
 });
@@ -3011,7 +3120,7 @@ document.getElementById('dailyLimitSaveBtn').addEventListener('click', async () 
   if(MODE!=='server') return setS('dailyLimitStatus','Requires server mode.',true);
   const limit = parseInt(document.getElementById('dailyLimitInput').value, 10);
   if(!limit || limit <= 0) return setS('dailyLimitStatus','Enter a positive number.', true);
-  const r = await fetch('/email/daily-send-limit', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit})});
+  const r = await adminFetch('/email/daily-send-limit', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({limit})});
   const d = await r.json();
   if(!r.ok) return setS('dailyLimitStatus', d.detail||'Failed to save', true);
   setS('dailyLimitStatus', 'Saved — up to '+limit+' real sends per day.');
@@ -3030,7 +3139,7 @@ document.getElementById('gmailSaveBtn').addEventListener('click', async () => {
   const gmail_address = document.getElementById('gmailAddressInput').value.trim();
   const app_password = document.getElementById('gmailAppPasswordInput').value.trim();
   if(!gmail_address || !app_password) return setS('gmailConfigStatus','Enter both the Gmail address and the app password.',true);
-  const r = await fetch('/email/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gmail_address,app_password})});
+  const r = await adminFetch('/email/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({gmail_address,app_password})});
   const d = await r.json();
   if(!r.ok) return setS('gmailConfigStatus', d.detail||'Failed to save', true);
   document.getElementById('gmailAppPasswordInput').value='';
@@ -3041,7 +3150,7 @@ document.getElementById('gmailSaveBtn').addEventListener('click', async () => {
 
 document.getElementById('gmailClearBtn').addEventListener('click', async () => {
   if(MODE!=='server') return setS('gmailConfigStatus','Requires server mode.',true);
-  const r = await fetch('/email/config',{method:'DELETE'});
+  const r = await adminFetch('/email/config',{method:'DELETE'});
   const d = await r.json();
   if(!r.ok) return setS('gmailConfigStatus', d.detail||'Failed to disconnect', true);
   document.getElementById('gmailAppPasswordInput').value='';
@@ -3052,7 +3161,7 @@ document.getElementById('gmailClearBtn').addEventListener('click', async () => {
 
 async function loadSuppression() {
   if(MODE!=='server') { document.getElementById('supEmpty').classList.remove('hidden'); document.getElementById('supBody').innerHTML=''; return; }
-  const r=await fetch('/admin/suppressed'); const rows=await r.json();
+  const r=await adminFetch('/admin/suppressed'); const rows=await r.json();
   const b=document.getElementById('supBody'), e=document.getElementById('supEmpty');
   if(!rows.length){e.classList.remove('hidden');b.innerHTML='';return;}
   e.classList.add('hidden');
@@ -3064,7 +3173,7 @@ document.getElementById('supAdd').addEventListener('click', async () => {
   const reason=document.getElementById('supReason').value.trim()||null;
   if(!email) return setS('supStatus','Enter an email.',true);
   if(MODE!=='server') return setS('supStatus','Suppression management requires server mode.',true);
-  const r=await fetch('/admin/suppressed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,reason})});
+  const r=await adminFetch('/admin/suppressed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,reason})});
   const d=await r.json();
   if(!r.ok) return setS('supStatus',d.detail||'Failed',true);
   setS('supStatus','Suppressed '+d.email+'.');
@@ -3073,7 +3182,7 @@ document.getElementById('supAdd').addEventListener('click', async () => {
 });
 
 async function removeSup(email) {
-  const r=await fetch('/admin/suppressed/'+encodeURIComponent(email),{method:'DELETE'});
+  const r=await adminFetch('/admin/suppressed/'+encodeURIComponent(email),{method:'DELETE'});
   const d=await r.json();
   if(!r.ok) return setS('supStatus',d.detail||'Failed',true);
   setS('supStatus','Removed '+email+'.'); loadSuppression();

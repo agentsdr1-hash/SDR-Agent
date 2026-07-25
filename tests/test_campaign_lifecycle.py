@@ -9,6 +9,7 @@ than failed) is covered separately in test_daily_send_limit.py via an
 isolated subprocess probe, since it needs a mocked send_email() that a
 real HTTP call to a live server can't provide from outside.
 """
+from conftest import ADMIN_HEADERS
 
 
 def _create_campaign(server, name="Test Campaign"):
@@ -128,7 +129,7 @@ def test_simulate_opt_out_reply_suppresses_email(server):
     prospect = server.get(f"/campaigns/{cid}/prospects").json()[0]
     assert prospect["status"] == "Suppressed"
 
-    suppressed = server.get("/admin/suppressed").json()
+    suppressed = server.get("/admin/suppressed", headers=ADMIN_HEADERS).json()
     assert any(s["email"] == "optout@example.com" for s in suppressed)
 
 

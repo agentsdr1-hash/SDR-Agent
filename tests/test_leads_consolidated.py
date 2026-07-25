@@ -3,6 +3,7 @@ GET /leads -- the cross-campaign consolidated view -- plus its filters,
 bulk actions, and the rule-based lead score / quote-readiness math that
 feed the Leads tab's Score column and the Quote Document.
 """
+from conftest import ADMIN_HEADERS
 
 FULL_CHECKLIST = {
     "materials": "Flat bars", "sku_spec": "FB-50x5", "quantity": "50 tons",
@@ -137,5 +138,5 @@ def test_bulk_suppress(server):
     assert r.status_code == 200
     assert r.json()["succeeded"] == 3
 
-    suppressed = {s["email"] for s in server.get("/admin/suppressed").json()}
+    suppressed = {s["email"] for s in server.get("/admin/suppressed", headers=ADMIN_HEADERS).json()}
     assert set(emails).issubset(suppressed)

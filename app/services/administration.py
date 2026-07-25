@@ -66,3 +66,42 @@ def detect_opt_out(text: str) -> bool:
     real-world replies -- this catches the common explicit phrasings."""
     lower = (text or "").lower()
     return any(kw in lower for kw in OPT_OUT_KEYWORDS)
+
+
+# Deleted in dependency order (children before the tables they reference)
+# so foreign keys never block a row from clearing. Deliberately NOT
+# cleared: kb_entries and stock_catalog (business content, not test lead
+# data -- re-entering the steel gratings Q&A or re-importing the product
+# catalog after every reset would be needless busywork) and app_settings
+# (Gmail credentials, daily send limit -- configuration, not lead data;
+# losing Gmail config on every reset would be actively harmful before a
+# go-live). audit_log IS cleared even though it's not "lead data" per se
+# -- its rows reference the very leads/campaigns/sends being wiped, so
+# keeping old entries around after their subjects are gone would just be
+# confusing orphaned history, not a useful record.
+RESET_TABLES = [
+    "reply_drafts",
+    "campaign_prospects",
+    "campaigns",
+    "prospects_raw",
+    "import_batches",
+    "suppressed_emails",
+    "customers",
+    "audit_log",
+]
+
+
+def reset_all_data():
+    """Wipe every table of lead/campaign/outreach data -- e.g. clearing
+    out test data before a production go-live so it never mixes with
+    real leads. Permanent, not a soft-delete: there is no undo. Gmail
+    configuration, the daily send limit, the KB Q&A entries, and the
+    stock catalog are preserved -- see RESET_TABLES' comment for why."""
+    with get_conn() as conn:
+        for table in RESET_TABLES:
+            conn.execute(f"DELETE FROM {table}")
+    # Logged after the audit_log wipe above (own connection, so it lands
+    # as the first row of a clean log) -- a permanent marker that this
+    # happened, when, even though everything it could have cross-referenced
+    # is now gone.
+    log_event("data_reset", None, None, "All lead/campaign/outreach data cleared via Admin reset")
