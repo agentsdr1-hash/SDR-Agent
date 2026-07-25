@@ -1,12 +1,15 @@
 # Render's free plan doesn't support persistent disks (that's a paid-tier
-# feature) -- the `disk:` block below only actually persists data on a
-# paid instance type. If you're using Postgres/Supabase (DATABASE_URL,
-# see .env.example and the README's "Using Postgres / Supabase" section),
-# you don't need a disk at all: data lives in the database, not on this
-# service's filesystem, so the free plan's ephemeral disk is no longer a
-# problem. In that case, delete the `disk:` block and set DATABASE_URL
-# below (as a Render dashboard secret -- sync: false means it's never
-# stored in this file) instead of APEX_DB_PATH.
+# feature) -- a `disk:` block here would silently do nothing on this plan,
+# and every redeploy would reset a SQLite file on it back to empty. This
+# service now runs on DATABASE_URL (Postgres/Supabase, see .env.example
+# and the README's "Using Postgres / Supabase" section) instead: data
+# lives in that database, not on this service's filesystem, so the free
+# plan's ephemeral disk is no longer a problem, and there's no `disk:`
+# block to accidentally rely on.
+#
+# DATABASE_URL itself must be set as a Render dashboard secret (Settings
+# -> Environment) -- sync: false below means it's intentionally never
+# stored in this file.
 services:
   - type: web
     name: apex-pilot
@@ -14,11 +17,5 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     envVars:
-      - key: APEX_DB_PATH
-        value: /srv/data/apex_pilot.db
       - key: DATABASE_URL
         sync: false
-    disk:
-      name: apex-data
-      mountPath: /srv/data
-      sizeGB: 1
