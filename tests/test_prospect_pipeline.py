@@ -85,6 +85,66 @@ def test_edit_prospect_fixes_invalid_row_and_sets_qualification_fields(server):
     assert fixed["qualification_status"] == "Qualified"
 
 
+def test_reimporting_the_same_validated_file_marks_rows_duplicate(server):
+    # Simulates a user uploading the same list 3 times (a real support
+    # report: "we loaded file 3 times, showing so many records" and the
+    # Dashboard funnel counting the same 2 people as Valid on every pass).
+    # Only the first, already-validated pass should count as Valid --
+    # later passes must catch the repeat even though nothing in the first
+    # pass was ever added to a campaign or sent (that's a separate check,
+    # _get_contacted_emails, which this scenario doesn't reach). Uses its
+    # own emails (not CSV_ROWS/Jane/Jill) since this module's server/DB is
+    # shared across the whole file and earlier tests already imported those.
+    reimport_csv = (
+        "First Name,Last Name,Email,Company,Phone\n"
+        "Amir,Hassan,amir.hassan@reimport.example,Reimport Co,\n"
+        "No,Email,,Missing Co,\n"                                 # Invalid: no email
+        "Amir,Hassan,amir.hassan@reimport.example,Reimport Co,\n" # Duplicate of row 1
+        "Sara,Ali,sara.ali@reimport.example,Reimport Co,\n"       # Valid
+    )
+
+    def _upload_reimport():
+        return server.session.post(
+            server.base_url + "/prospects/import",
+            files={"file": ("reimport.csv", reimport_csv, "text/csv")},
+        )
+
+    r = _upload_reimport()
+    batch_1 = r.json()["batch_id"]
+    summary_1 = server.post(f"/prospects/validate/{batch_1}").json()
+    assert summary_1["valid"] == 2       # Amir + Sara
+    assert summary_1["duplicate"] == 1   # Amir's second row, within this same batch
+
+    r = _upload_reimport()
+    batch_2 = r.json()["batch_id"]
+    summary_2 = server.post(f"/prospects/validate/{batch_2}").json()
+    assert summary_2["valid"] == 0       # Amir and Sara both already imported in batch_1
+    assert summary_2["duplicate"] == 3   # Amir x2 + Sara, all duplicates of batch_1 (or each other)
+
+    r = _upload_reimport()
+    batch_3 = r.json()["batch_id"]
+    summary_3 = server.post(f"/prospects/validate/{batch_3}").json()
+    assert summary_3["valid"] == 0
+    assert summary_3["duplicate"] == 3
+
+    # Each re-imported row still gets its own immutable lead number (it's
+    # a real row in prospects_raw, just flagged) -- but its validation
+    # note points back at the original so it's identifiable, not silently
+    # counted as a fresh lead.
+    rows_2 = server.get(f"/prospects/{batch_2}").json()
+    sara_dup = next(r for r in rows_2 if r["email"] == "sara.ali@reimport.example")
+    assert sara_dup["status"] == "Duplicate"
+    assert "Already imported earlier as" in sara_dup["validation_notes"]
+
+    # Confirm per-batch outcomes directly rather than the site-wide funnel,
+    # since this module's DB is shared across the whole file and earlier
+    # tests contribute their own rows to it.
+    for batch_id, expected_valid, expected_dup in [(batch_1, 2, 1), (batch_2, 0, 3), (batch_3, 0, 3)]:
+        rows = server.get(f"/prospects/{batch_id}").json()
+        assert sum(1 for r in rows if r["status"] == "Valid") == expected_valid
+        assert sum(1 for r in rows if r["status"] == "Duplicate") == expected_dup
+
+
 def test_existing_customer_is_classified_not_valid(server):
     # jsmith@acmecorp.com is one of the two customers db.py seeds by
     # default on a fresh DB (init_db(seed_customers=True)) -- re-importing

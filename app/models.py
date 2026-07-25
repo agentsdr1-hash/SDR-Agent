@@ -121,6 +121,10 @@ class BulkSuppressInput(BaseModel):
     reason: Optional[str] = None
 
 
+class BulkDeleteInput(BaseModel):
+    prospect_ids: list[int]
+
+
 class SendResult(BaseModel):
     campaign_id: int
     attempted: int
