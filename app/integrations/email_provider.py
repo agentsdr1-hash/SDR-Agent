@@ -128,11 +128,11 @@ def sent_today_count() -> int:
     also stamps sent_at despite never touching Gmail; the audit log is the
     only place real and simulated sends are actually distinguished
     (email_sent vs email_sent_simulated)."""
-    from app.db import get_conn
+    from app.db import get_conn, IS_POSTGRES
+    today_clause = "timestamp::timestamptz::date = CURRENT_DATE" if IS_POSTGRES else "date(timestamp) = date('now')"
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) c FROM audit_log WHERE event_type IN ('email_sent', 'reply_sent') "
-            "AND date(timestamp) = date('now')"
+            f"SELECT COUNT(*) c FROM audit_log WHERE event_type IN ('email_sent', 'reply_sent') AND {today_clause}"
         ).fetchone()
     return row["c"]
 

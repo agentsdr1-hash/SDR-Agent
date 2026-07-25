@@ -31,9 +31,9 @@ One file per feature area, matching the app's own service boundaries:
 
 ## How it's built
 
-**Real server, real HTTP, real SQLite file** -- not FastAPI's in-process
+**Real server, real HTTP, real database** -- not FastAPI's in-process
 TestClient. `tests/conftest.py`'s `server` fixture launches an actual
-`uvicorn` subprocess against a fresh, throwaway SQLite file (one per test
+`uvicorn` subprocess against a fresh, throwaway database (one per test
 *module*, not per test or per whole run -- see the fixture's docstring for
 the isolation-vs-speed tradeoff), waits for `/health`, and yields a small
 `APIClient` wrapper (`server.get/.post/.put/.delete`, all returning the
@@ -43,9 +43,31 @@ scratch-DB server, hit it with curl/requests/Playwright) rather than
 introducing a different code path for tests than what's actually deployed.
 
 `server.seed_prospect(...)` / `server.seed_batch(...)` insert directly
-into the SQLite file for fast, deterministic setup when the import
+into the database for fast, deterministic setup when the import
 pipeline itself isn't what's under test. `server.raw_query(sql, params)`
 lets a test inspect DB state the API doesn't expose.
+
+### Running against real Postgres instead of SQLite
+
+By default every test runs against a throwaway SQLite file -- fast, no
+network, no setup. To validate the dual-dialect `app/db.py` layer against
+a real Postgres server instead (local, or Supabase itself), set
+`TEST_DATABASE_URL` to an admin-capable connection (one that can
+`CREATE DATABASE`/`DROP DATABASE` -- e.g. the default `postgres`
+maintenance database):
+
+```bash
+TEST_DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/postgres pytest -v
+```
+
+This creates a fresh `apex_test_<random>` database for each test module
+(same isolation model as the SQLite default) and drops it on teardown,
+terminating any lingering connections first so the drop doesn't hang. Both
+`server`'s HTTP calls and the `seed_*`/`raw_query` helpers work
+identically either way -- test files never need to know or care which
+database is under them. This suite has been run clean (47/47) against a
+real local Postgres 16 instance as part of validating the Supabase
+migration.
 
 ### The "isolated probe" pattern (`_daily_limit_probe.py`, `_kb_probe.py`)
 

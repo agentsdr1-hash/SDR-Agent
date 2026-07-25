@@ -1,18 +1,45 @@
 """
 OBJ-001 / OBJ-002 shared storage layer.
-SQLite for the pilot; swap DATABASE_URL for Postgres in production without
-changing service code (raw SQL kept portable).
+
+SQLite by default (APEX_DB_PATH); set DATABASE_URL to a Postgres URI
+(e.g. a Supabase connection string) to use that instead -- no other code
+in this app changes. Every service/router file writes plain `?`-style
+parameterized SQL; PGConnWrapper below translates that to Postgres's
+`%s` style and makes rows dict-like the same way sqlite3.Row already is,
+so app/services/* and app/routers/* never need to know which database
+they're talking to. Local dev and the test suite stay on SQLite (fast,
+no network, no external dependency) -- DATABASE_URL is meant for
+production.
+
+Everything that genuinely differs between the two engines is isolated to
+this file:
+  - the PK phrase in SCHEMA (AUTOINCREMENT vs GENERATED ALWAYS AS IDENTITY)
+  - _ensure_column()'s column-introspection query (PRAGMA vs information_schema)
+  - the customers seed's INSERT OR IGNORE (Postgres: ON CONFLICT DO NOTHING)
+A handful of call sites elsewhere also need RETURNING id (in place of
+.lastrowid, which Postgres cursors don't have) or a dialect-aware date
+comparison -- each is commented at its call site with IS_POSTGRES.
 """
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(os.environ.get("APEX_DB_PATH", Path(__file__).parent / "apex_pilot.db"))
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+IS_POSTGRES = bool(DATABASE_URL)
 
-SCHEMA = """
+if IS_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+else:
+    DB_PATH = Path(os.environ.get("APEX_DB_PATH", Path(__file__).parent / "apex_pilot.db"))
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+_PK = "INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY" if IS_POSTGRES else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+_RAW_SCHEMA = """
 CREATE TABLE IF NOT EXISTS import_batches (
     batch_id TEXT PRIMARY KEY,
     filename TEXT NOT NULL,
@@ -146,6 +173,10 @@ CREATE TABLE IF NOT EXISTS reply_drafts (
 );
 """
 
+# TEXT and REAL are standard SQL types both engines already accept as-is,
+# so the PK phrase is the only thing that actually needs swapping here.
+SCHEMA = _RAW_SCHEMA.replace("INTEGER PRIMARY KEY AUTOINCREMENT", _PK) if IS_POSTGRES else _RAW_SCHEMA
+
 SEED_KB_ENTRIES = [
     ("What certifications do you have?",
      "We're ISO 9001:2015 certified, ensuring consistent quality standards across our full product range.",
@@ -170,11 +201,56 @@ SEED_KB_ENTRIES = [
      "pricing,price,quote,cost,budget"),
 ]
 
+class PGConnWrapper:
+    """Makes a psycopg2 connection look enough like the sqlite3.Connection
+    every service/router file already codes against: `?` placeholders
+    (translated to `%s` here), dict-like rows (via RealDictCursor, same
+    as sqlite3.Row -- both support row["col"] and dict(row)), and
+    .executemany()/.executescript(). Only used when DATABASE_URL is set;
+    the SQLite path below never touches this class."""
+
+    _PLACEHOLDER_RE = re.compile(r"\?")
+
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+
+    def _translate(self, sql: str) -> str:
+        return self._PLACEHOLDER_RE.sub("%s", sql)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(self._translate(sql), params)
+        return cur
+
+    def executemany(self, sql, seq_of_params):
+        cur = self._conn.cursor()
+        cur.executemany(self._translate(sql), seq_of_params)
+        return cur
+
+    def executescript(self, sql):
+        # Postgres's simple-query protocol runs multiple ;-separated
+        # statements from one execute() -- no per-statement looping needed,
+        # confirmed against a real local Postgres 16 before relying on it.
+        cur = self._conn.cursor()
+        cur.execute(sql)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    if IS_POSTGRES:
+        raw = psycopg2.connect(DATABASE_URL)
+        conn = PGConnWrapper(raw)
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
         conn.commit()
@@ -186,7 +262,13 @@ def _ensure_column(conn, table: str, column: str, coltype: str):
     already existed in production -- CREATE TABLE IF NOT EXISTS (above)
     only helps on a fresh DB; an already-deployed one needs the column
     added to it directly. Safe to call every startup."""
-    cols = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if IS_POSTGRES:
+        cols = {row["column_name"] for row in conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ?",
+            (table,),
+        )}
+    else:
+        cols = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
     if column not in cols:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
 
@@ -214,8 +296,13 @@ def init_db(seed_customers: bool = True):
         if seed_customers:
             existing = conn.execute("SELECT COUNT(*) c FROM customers").fetchone()["c"]
             if existing == 0:
+                insert_ignore_sql = (
+                    "INSERT INTO customers (email, company) VALUES (?, ?) ON CONFLICT (email) DO NOTHING"
+                    if IS_POSTGRES else
+                    "INSERT OR IGNORE INTO customers (email, company) VALUES (?, ?)"
+                )
                 conn.executemany(
-                    "INSERT OR IGNORE INTO customers (email, company) VALUES (?, ?)",
+                    insert_ignore_sql,
                     [
                         ("jsmith@acmecorp.com", "Acme Corp"),
                         ("dlee@globex.com", "Globex Inc"),

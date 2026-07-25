@@ -6,7 +6,15 @@ the same things you'd track for a human SDR's performance, applied to APEX.
 """
 from datetime import datetime
 
-from app.db import get_conn
+from app.db import get_conn, IS_POSTGRES
+
+
+def _date_expr(column: str) -> str:
+    """SQL fragment that buckets an ISO8601-text timestamp column down to
+    its calendar date -- SQLite's date() vs a Postgres cast, since these
+    columns are stored as TEXT (datetime.isoformat()) on both engines,
+    not a native timestamp type."""
+    return f"{column}::timestamptz::date" if IS_POSTGRES else f"date({column})"
 
 
 def _parse(ts):
@@ -106,28 +114,28 @@ def get_summary() -> dict:
         avg_response_time_hours = round(sum(response_hours) / len(response_hours), 1) if response_hours else None
 
         sends_by_day_rows = conn.execute(
-            "SELECT date(sent_at) d, COUNT(*) c FROM campaign_prospects WHERE sent_at IS NOT NULL GROUP BY d ORDER BY d"
+            f"SELECT {_date_expr('sent_at')} d, COUNT(*) c FROM campaign_prospects WHERE sent_at IS NOT NULL GROUP BY d ORDER BY d"
         ).fetchall()
-        sends_by_day = [{"date": r["d"], "count": r["c"]} for r in sends_by_day_rows]
+        sends_by_day = [{"date": str(r["d"]), "count": r["c"]} for r in sends_by_day_rows]
 
         # ---- Activity over time (Dashboard chart) -- one row per day that
         # had ANY sent/replied/won event, counts per kind. Sparse by design;
         # the frontend fills gaps and re-buckets into week/month client-side.
         activity_rows = conn.execute(
-            """SELECT d,
+            f"""SELECT d,
                       SUM(CASE WHEN kind = 'sent' THEN 1 ELSE 0 END) sent,
                       SUM(CASE WHEN kind = 'replied' THEN 1 ELSE 0 END) replied,
                       SUM(CASE WHEN kind = 'won' THEN 1 ELSE 0 END) won
                FROM (
-                   SELECT date(sent_at) d, 'sent' kind FROM campaign_prospects WHERE sent_at IS NOT NULL
+                   SELECT {_date_expr('sent_at')} d, 'sent' kind FROM campaign_prospects WHERE sent_at IS NOT NULL
                    UNION ALL
-                   SELECT date(replied_at) d, 'replied' kind FROM campaign_prospects WHERE replied_at IS NOT NULL
+                   SELECT {_date_expr('replied_at')} d, 'replied' kind FROM campaign_prospects WHERE replied_at IS NOT NULL
                    UNION ALL
-                   SELECT date(won_at) d, 'won' kind FROM campaign_prospects WHERE won_at IS NOT NULL
-               )
+                   SELECT {_date_expr('won_at')} d, 'won' kind FROM campaign_prospects WHERE won_at IS NOT NULL
+               ) x
                GROUP BY d ORDER BY d"""
         ).fetchall()
-        activity_by_day = [{"date": r["d"], "sent": r["sent"], "replied": r["replied"], "won": r["won"]} for r in activity_rows]
+        activity_by_day = [{"date": str(r["d"]), "sent": r["sent"], "replied": r["replied"], "won": r["won"]} for r in activity_rows]
 
     return {
         "total_import_batches": total_batches,
