@@ -249,7 +249,12 @@ def check_for_replies(known_emails: set[str]) -> list[dict]:
                 msg = email_lib.message_from_bytes(msg_data[0][1])
                 _, from_email = parseaddr(msg.get("From", ""))
                 if from_email.lower() in known_emails_lower:
-                    body_snippet = _extract_body_text(msg)[:500]
+                    # 8000 chars is a real cap (not "no limit"), just high
+                    # enough that an actual quote-conversation reply -- specs,
+                    # a full paragraph or two -- never gets cut off; this used
+                    # to be 500, which silently chopped real replies well
+                    # before the Lead Detail view could show the full thread.
+                    body_snippet = _extract_body_text(msg)[:8000]
                     replies.append({
                         "from_email": from_email.lower(),
                         "subject": msg.get("Subject", ""),

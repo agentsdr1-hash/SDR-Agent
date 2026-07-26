@@ -2799,14 +2799,21 @@ function replyDraftDrillCard(rd, roundNum, delayText) {
     ? `<span class="pill p-valid">matched</span>`
     : `<span class="pill p-dup">fallback — no strong match</span>`;
   const when = rd.sent_at ? 'sent '+fmt(rd.sent_at) : rd.rejected_at ? 'rejected '+fmt(rd.rejected_at) : rd.approved_at ? 'approved '+fmt(rd.approved_at) : 'drafted '+fmt(rd.created_at);
+  // Two-sided, in order: what they actually wrote (full text, not a
+  // truncated quoted line), then what we sent back -- previously only our
+  // side got the full <pre> treatment and their message was chopped to a
+  // 140-char preview that never expanded, which is why a whole reply chain
+  // read as "only my responses."
   return `<details class="draft" style="margin-bottom:8px;">
     <summary style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
       <span>${roundNum?`<b class="mono">#${roundNum}</b> `:''}${esc(rd.subject)}</span>
       <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">${confBadge}${pill(rd.status)}</span>
     </summary>
-    <div class="day-note" style="margin:8px 0 6px;">In reply to: ${esc(rd.source_reply_subject||'(no subject)')} — "${esc((rd.source_reply_snippet||'').slice(0,140))}${(rd.source_reply_snippet||'').length>140?'…':''}"${delayText?` <span class="muted">(${esc(delayText)})</span>`:''}</div>
-    <div class="day-note" style="margin-bottom:8px;">Matched: ${esc(rd.matched_summary||'—')}</div>
+    <div class="muted" style="margin:8px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Their message${delayText?` <span style="text-transform:none;letter-spacing:0;">(${esc(delayText)})</span>`:''} — "${esc(rd.source_reply_subject||'(no subject)')}"</div>
+    <pre>${esc(rd.source_reply_snippet || '(no message text captured)')}</pre>
+    <div class="muted" style="margin:10px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Our reply</div>
     <pre>${esc(rd.body)}</pre>
+    <div class="day-note" style="margin:6px 0 0;">Matched: ${esc(rd.matched_summary||'—')}</div>
     <div class="muted" style="font-size:11px;margin-top:6px;">${esc(when)}</div>
   </details>`;
 }
