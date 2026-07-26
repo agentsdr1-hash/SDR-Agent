@@ -19,8 +19,11 @@ router = APIRouter(prefix="/reply-drafts", tags=["reply-drafts"])
 
 
 @router.get("", response_model=list[ReplyDraft])
-def list_drafts(status: str | None = None):
-    return list_reply_drafts(status)
+def list_drafts(status: str | None = None, campaign_id: int | None = None):
+    """campaign_id scopes this to one campaign's pending replies -- the
+    Campaigns tab's review panel always passes the currently selected
+    campaign. Omit it for the (currently unused) cross-campaign view."""
+    return list_reply_drafts(status, campaign_id)
 
 
 @router.put("/{draft_id}")

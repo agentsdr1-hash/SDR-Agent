@@ -307,6 +307,7 @@ class KBImportSummary(BaseModel):
 class ReplyDraft(BaseModel):
     id: int
     campaign_prospect_id: int
+    campaign_id: Optional[int] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[str] = None

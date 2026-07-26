@@ -115,6 +115,37 @@ def test_simulate_sent_and_reply_flow(server):
     assert drafts[0]["status"] == "Draft"
 
 
+def test_reply_drafts_can_be_scoped_to_one_campaign(server):
+    # The Campaigns tab's review panel used to show every pending reply
+    # from every campaign regardless of which one was selected -- confusing
+    # since it looked scoped to the campaign in view. campaign_id fixes that.
+    cid1 = _create_campaign(server, "Scope Test A")
+    cid2 = _create_campaign(server, "Scope Test B")
+    pid1, pid2 = server.seed_prospect(), server.seed_prospect()
+    _assign(server, cid1, pid1)
+    _assign(server, cid2, pid2)
+    row1 = server.get(f"/campaigns/{cid1}/prospects").json()[0]["id"]
+    row2 = server.get(f"/campaigns/{cid2}/prospects").json()[0]["id"]
+
+    for cid, row in [(cid1, row1), (cid2, row2)]:
+        server.post(f"/campaigns/{cid}/prospects/{row}/approve")
+        server.post(f"/campaigns/{cid}/prospects/{row}/simulate-sent")
+        server.post(f"/campaigns/{cid}/prospects/{row}/simulate-reply", json={
+            "reply_subject": "Re: hi", "reply_body": "interested", "is_opt_out": False,
+        })
+
+    drafts_a = server.get("/reply-drafts", params={"campaign_id": cid1}).json()
+    drafts_b = server.get("/reply-drafts", params={"campaign_id": cid2}).json()
+    assert len(drafts_a) == 1 and drafts_a[0]["campaign_prospect_id"] == row1
+    assert len(drafts_b) == 1 and drafts_b[0]["campaign_prospect_id"] == row2
+    assert drafts_a[0]["campaign_id"] == cid1
+    assert drafts_b[0]["campaign_id"] == cid2
+
+    # Omitting campaign_id still returns the cross-campaign view.
+    all_drafts = server.get("/reply-drafts").json()
+    assert {d["id"] for d in (drafts_a + drafts_b)}.issubset({d["id"] for d in all_drafts})
+
+
 def test_long_reply_body_is_not_truncated_in_the_lead_timeline(server):
     # Real quote-conversation replies run several paragraphs -- the old
     # 500-char cap on source_reply_snippet silently chopped them, and the
