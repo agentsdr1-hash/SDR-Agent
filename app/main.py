@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from app.db import init_db, close_pool
 from app.routers import prospects, campaigns, reports, email as email_router, admin, audit, dbtables, knowledge_base, reply_drafts, leads
 from app.integrations import email_provider
-from app.services import inbox_monitor
+from app.services import inbox_monitor, followups
 
 logger = logging.getLogger("apex.email_poll")
 
@@ -48,7 +48,14 @@ _poll_task: asyncio.Task | None = None
 async def _email_poll_loop():
     """OBJ-016 background polling. Runs forever at POLL_INTERVAL_MINUTES,
     quietly does nothing each cycle until GMAIL_ADDRESS/GMAIL_APP_PASSWORD
-    are set -- no crash, no noisy retries, just waits for configuration."""
+    are set -- no crash, no noisy retries, just waits for configuration.
+
+    Also drives the automated follow-up cadence (app/services/followups.py)
+    on the same timer -- it's checked every cycle just like replies are,
+    but only ever acts once a lead's day-4/day-8 window has actually
+    passed, so running it every few minutes is harmless. Kept in its own
+    try/except so a follow-up failure never blocks reply polling, or vice
+    versa."""
     while True:
         interval = email_provider.poll_interval_minutes()
         if email_provider.is_configured():
@@ -58,6 +65,12 @@ async def _email_poll_loop():
                     logger.info(f"Email poll: {result.replies_found} new reply(ies) found")
             except Exception as e:
                 logger.warning(f"Email poll failed (will retry next cycle): {e}")
+            try:
+                fresult = followups.send_due_followups()
+                if fresult["sent"]:
+                    logger.info(f"Follow-ups: {fresult['sent']} sent")
+            except Exception as e:
+                logger.warning(f"Follow-up send failed (will retry next cycle): {e}")
         await asyncio.sleep(interval * 60)
 
 

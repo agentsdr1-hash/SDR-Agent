@@ -27,6 +27,7 @@ from app.services.sales_outcomes import (
     request_quote, mark_won, mark_lost, reopen_outcome, update_quote_details,
     draft_quote_summary_email, set_quote_number, OutcomeError,
 )
+from app.services.followups import send_followup_now, FollowUpError
 from app.integrations.email_provider import EmailNotConfiguredError
 
 router = APIRouter(prefix="/campaigns", tags=["OBJ-003"])
@@ -169,6 +170,20 @@ def quote(campaign_id: int, prospect_row_id: int):
         return {"status": "QuoteRequested"}
     except OutcomeError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/send-followup", tags=["OBJ-016"])
+def send_followup(campaign_id: int, prospect_row_id: int):
+    """Sends the next automated follow-up to this one lead right now,
+    skipping the day-4/day-8 wait -- for an SDR who wants to nudge someone
+    immediately instead of waiting for the schedule. Same content/limits
+    as the automated cadence (see app/services/followups.py)."""
+    try:
+        return send_followup_now(campaign_id, prospect_row_id)
+    except FollowUpError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except EmailNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @router.post("/{campaign_id}/prospects/{prospect_row_id}/won", tags=["OBJ-011"])

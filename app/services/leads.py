@@ -122,7 +122,7 @@ def _summarize(memberships: list[dict]) -> dict:
 # most recent timestamp. Used to sort the consolidated list by "most
 # recently active" and to show a single "last activity" column per lead.
 _TS_FIELDS_NEWEST_FIRST = [
-    "lost_at", "won_at", "quote_requested_at", "replied_at", "sent_at", "approved_at", "added_at",
+    "lost_at", "won_at", "quote_requested_at", "replied_at", "last_followup_at", "sent_at", "approved_at", "added_at",
 ]
 
 
@@ -297,6 +297,7 @@ def get_lead_timeline(lead_number: str) -> dict | None:
 
         cp_id_list = [m["id"] for m in memberships]
         reply_drafts_by_cp: dict[int, list[dict]] = {}
+        followups_by_cp: dict[int, list[dict]] = {}
         if cp_id_list:
             ph = ",".join("?" * len(cp_id_list))
             rd_rows = conn.execute(
@@ -305,8 +306,15 @@ def get_lead_timeline(lead_number: str) -> dict | None:
             ).fetchall()
             for rd in rd_rows:
                 reply_drafts_by_cp.setdefault(rd["campaign_prospect_id"], []).append(dict(rd))
+            fu_rows = conn.execute(
+                f"SELECT * FROM campaign_followups WHERE campaign_prospect_id IN ({ph}) ORDER BY follow_up_number",
+                cp_id_list,
+            ).fetchall()
+            for fu in fu_rows:
+                followups_by_cp.setdefault(fu["campaign_prospect_id"], []).append(dict(fu))
         for m in memberships:
             m["reply_drafts"] = reply_drafts_by_cp.get(m["id"], [])
+            m["follow_ups"] = followups_by_cp.get(m["id"], [])
 
         events = list(conn.execute(
             "SELECT * FROM audit_log WHERE entity_type = 'batch' AND entity_id = ? ORDER BY timestamp",

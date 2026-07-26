@@ -824,6 +824,19 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
     </div>
 
     <div class="mt16" style="border-top:1px solid var(--line);padding-top:16px;">
+      <h3 style="margin:0 0 10px;font-size:14px;">Automated follow-ups <span class="obj-tag">day 4 / day 8, auto-send</span></h3>
+      <p class="hint" style="margin:0 0 10px;">Every prospect still on 'Sent' (no reply yet) gets up to 2 automated follow-ups — no approval step, same daily send limit as everything else. A reply at any point cancels the rest.</p>
+      <div class="grid g2">
+        <div class="stat"><div class="n" id="fu_lr">–</div><div class="lbl">Last run</div></div>
+        <div class="stat"><div class="n" id="fu_sc">–</div><div class="lbl">Sent last run</div></div>
+      </div>
+      <div class="status" id="fu_err"></div>
+      <div class="row mt12">
+        <button class="btn sec" id="sendFollowupsNow">Trigger follow-ups now</button>
+      </div>
+    </div>
+
+    <div class="mt16" style="border-top:1px solid var(--line);padding-top:16px;">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
         <h3 style="margin:0;font-size:14px;">Gmail App Password setup</h3>
         <span id="emailSourceBadge"></span>
@@ -1465,8 +1478,23 @@ function serverProspectCard(r, cid) {
     actions += `<button class="btn sec" onclick="serverQuote('${cid}',${r.id})" title="Log a quote request now -- doesn't require a reply first">Log quote</button>`;
   }
   actions += `<button class="btn sec" onclick="openCampHistory('${esc(r.lead_number)}')" title="Full cross-campaign history for this lead">History</button>`;
+  // Automated follow-ups (day 4 / day 8) only ever apply while still
+  // awaiting a first reply -- once Replied/Won/Lost/etc. the cadence has
+  // already stopped on its own. See app/services/followups.py.
+  const followUpCount = r.follow_up_count || 0;
+  if(r.status==='Sent' && followUpCount < 2) {
+    actions += `<button class="btn sec" onclick="serverSendFollowup('${cid}',${r.id})" title="Sends follow-up #${followUpCount+1} now, without waiting for day ${followUpCount===0?4:8}">Send follow-up now (${followUpCount}/2 sent)</button>`;
+  }
+  const followUpNote = followUpCount ? `<span class="day-note">Follow-ups: ${followUpCount}/2${r.last_followup_at?' · last '+fmt(r.last_followup_at):''}</span>` : '';
   const checkbox = r.status==='Queued' ? `<input type="checkbox" class="camp-row-check" data-id="${r.id}" onclick="toggleCampSelect(${r.id}, this.checked)" style="margin-right:10px;"/>` : '';
-  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span></div></div>`;
+  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span>${followUpNote}</div></div>`;
+}
+
+async function serverSendFollowup(cid,rid) {
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+rid+'/send-followup',{method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return alert(d.detail||'Failed to send follow-up');
+  loadServerProspects(cid);
 }
 
 async function openCampHistory(leadNumber) {
@@ -2691,6 +2719,23 @@ function outreachDraftCard(m) {
 // extended to include the message that started it.
 function emailFlowSection(m) {
   let html = outreachDraftCard(m);
+
+  // Automated follow-ups (day 4 / day 8) only ever happen before the
+  // first reply -- a reply cancels the cadence -- so they always sort
+  // chronologically right after the initial send and before any reply
+  // round below.
+  const followUps = m.follow_ups || [];
+  let lastOutboundAt = m.sent_at;
+  if(followUps.length) {
+    html += `<div class="day-note" style="margin:8px 0;">↳ ${followUps.length} automated follow-up${followUps.length>1?'s':''} sent (no reply yet at the time)</div>`;
+    html += followUps.map(fu => {
+      const gap = daysBetween(lastOutboundAt, fu.sent_at);
+      const delayText = gap==null ? null : gap===0 ? 'same day' : gap===1 ? '1 day later' : `${gap} days later`;
+      lastOutboundAt = fu.sent_at;
+      return followUpCard(fu, delayText);
+    }).join('');
+  }
+
   const drafts = m.reply_drafts || [];
   if(drafts.length) {
     // A real quote conversation is rarely one-and-done -- this walks every
@@ -2699,7 +2744,7 @@ function emailFlowSection(m) {
     const lastActivity = m.replied_at || drafts[drafts.length-1].created_at;
     html += `<div class="day-note" style="margin:8px 0;">↳ ${drafts.length} message${drafts.length>1?'s':''} back and forth so far — last activity ${fmt(lastActivity)}</div>`;
     html += drafts.map((rd, i) => {
-      const prevOut = i===0 ? m.sent_at : (drafts[i-1].sent_at || drafts[i-1].approved_at || drafts[i-1].created_at);
+      const prevOut = i===0 ? lastOutboundAt : (drafts[i-1].sent_at || drafts[i-1].approved_at || drafts[i-1].created_at);
       const gap = daysBetween(prevOut, rd.created_at);
       const delayText = gap==null ? null : gap===0 ? 'same day' : gap===1 ? '1 day later' : `${gap} days later`;
       return replyDraftDrillCard(rd, i+1, delayText);
@@ -2708,6 +2753,18 @@ function emailFlowSection(m) {
     html += `<div class="day-note" style="margin:8px 0;">↳ Customer replied: "${esc(m.reply_subject||'(no subject)')}" — ${fmt(m.replied_at)}</div>`;
   }
   return html;
+}
+
+function followUpCard(fu, delayText) {
+  return `<details class="draft" style="margin-bottom:8px;">
+    <summary style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
+      <span><b class="mono">Follow-up #${fu.follow_up_number}</b> ${esc(fu.subject)}</span>
+      <span class="pill p-sent">auto-sent</span>
+    </summary>
+    <div class="day-note" style="margin:8px 0 6px;">Sent automatically — no reply had come in yet${delayText?` <span class="muted">(${esc(delayText)})</span>`:''}</div>
+    <pre>${esc(fu.body)}</pre>
+    <div class="muted" style="font-size:11px;margin-top:6px;">sent ${fmt(fu.sent_at)}</div>
+  </details>`;
 }
 
 async function saveOutreachDraft(cid, cpid) {
@@ -3332,7 +3389,7 @@ document.getElementById('resetAllDataBtn').addEventListener('click', async () =>
 });
 
 async function loadEmailStatus() {
-  if(MODE!=='server') { set('es_c','N/A (demo)'); set('es_sent','—'); set('es_i','—'); set('es_lp','—'); set('es_rf','—'); document.getElementById('emailSourceBadge').innerHTML=''; return; }
+  if(MODE!=='server') { set('es_c','N/A (demo)'); set('es_sent','—'); set('es_i','—'); set('es_lp','—'); set('es_rf','—'); set('fu_lr','—'); set('fu_sc','—'); document.getElementById('emailSourceBadge').innerHTML=''; return; }
   try {
     const r=await fetch('/email/status'); const d=await r.json();
     set('es_c',d.configured?'✓ Yes':'✗ No');
@@ -3343,6 +3400,11 @@ async function loadEmailStatus() {
     const el=document.getElementById('es_err');
     el.textContent=d.last_poll_error?'Last error: '+d.last_poll_error:'';
     el.classList.toggle('err',!!d.last_poll_error);
+    set('fu_lr',d.last_followup_run_at?fmt(d.last_followup_run_at):'—');
+    set('fu_sc',d.last_followup_sent_count??'—');
+    const fuEl=document.getElementById('fu_err');
+    fuEl.textContent=d.last_followup_error?'Last error: '+d.last_followup_error:'';
+    fuEl.classList.toggle('err',!!d.last_followup_error);
     const badgeMap={database:['p-valid','Configured here (database)'],environment:['p-dup','Configured via environment variable'],none:['p-neutral','Not configured']};
     const [cls,label]=badgeMap[d.source]||badgeMap.none;
     document.getElementById('emailSourceBadge').innerHTML=`<span class="pill ${cls}">${label}</span>`;
@@ -3358,6 +3420,15 @@ document.getElementById('pollNow').addEventListener('click', async () => {
   if(MODE!=='server') return setS('supStatus','Poll requires server mode.',true);
   const r=await adminFetch('/email/poll-now',{method:'POST'}); const d=await r.json();
   document.getElementById('es_err').textContent='Poll complete — '+d.replies_found+' reply(ies) found.';
+  loadEmailStatus();
+});
+
+document.getElementById('sendFollowupsNow').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('fu_err','Requires server mode.',true);
+  const r=await adminFetch('/email/send-followups-now',{method:'POST'}); const d=await r.json();
+  if(!r.ok) { setS('fu_err', d.detail||'Failed', true); return; }
+  document.getElementById('fu_err').textContent='Run complete — '+d.sent+' follow-up(s) sent.';
+  document.getElementById('fu_err').classList.remove('err');
   loadEmailStatus();
 });
 

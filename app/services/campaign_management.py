@@ -237,6 +237,7 @@ def list_campaign_prospects(campaign_id: int) -> list[CampaignProspect]:
             """SELECT cp.id, cp.prospect_id, cp.status, cp.subject, cp.body, cp.added_at,
                       cp.approved_at, cp.sent_at, cp.replied_at, cp.reply_subject,
                       cp.quote_requested_at, cp.won_at, cp.lost_at, cp.deal_value, cp.lost_reason,
+                      cp.last_followup_at,
                       pr.first_name, pr.last_name, pr.email, pr.company
                FROM campaign_prospects cp
                JOIN prospects_raw pr ON pr.id = cp.prospect_id
@@ -244,4 +245,14 @@ def list_campaign_prospects(campaign_id: int) -> list[CampaignProspect]:
                ORDER BY cp.added_at""",
             (campaign_id,),
         ).fetchall()
-    return [CampaignProspect(**dict(r), lead_number=lead_number_for(r["prospect_id"])) for r in rows]
+        counts = conn.execute(
+            """SELECT campaign_prospect_id, COUNT(*) c FROM campaign_followups
+               WHERE campaign_prospect_id IN (SELECT id FROM campaign_prospects WHERE campaign_id = ?)
+               GROUP BY campaign_prospect_id""",
+            (campaign_id,),
+        ).fetchall()
+    count_by_cp = {c["campaign_prospect_id"]: c["c"] for c in counts}
+    return [
+        CampaignProspect(**dict(r), lead_number=lead_number_for(r["prospect_id"]), follow_up_count=count_by_cp.get(r["id"], 0))
+        for r in rows
+    ]
