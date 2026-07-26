@@ -1,7 +1,11 @@
 """
-Review queue for smart-reply drafts. A draft only leaves this server
-after a human approves it here -- approval sends via Gmail immediately
-and fails with 503 if not configured, same pattern as outbound sends.
+Review queue for smart-reply drafts. Approving here just flips the
+status to Approved -- it never touches Gmail. Actual sending happens
+from the campaign's "Send all approved" action
+(POST /campaigns/{id}/send), alongside that campaign's fresh outreach,
+so every real send goes through one chokepoint (suppression-list check,
+daily-pacing cap) instead of a reply having its own separate
+immediate-send path.
 """
 from fastapi import APIRouter, HTTPException
 
@@ -9,11 +13,10 @@ from app.models import ReplyDraft, ReplyDraftUpdate
 from app.services.reply_drafts import (
     list_reply_drafts,
     update_reply_draft,
-    approve_and_send_reply_draft,
+    approve_reply_draft,
     reject_reply_draft,
     ReplyDraftError,
 )
-from app.integrations.email_provider import EmailNotConfiguredError, EmailSendError
 
 router = APIRouter(prefix="/reply-drafts", tags=["reply-drafts"])
 
@@ -37,16 +40,11 @@ def edit_draft(draft_id: int, payload: ReplyDraftUpdate):
 
 @router.post("/{draft_id}/approve")
 def approve_draft(draft_id: int):
-    """Approves AND sends in one step -- there's no meaningful 'approved but
-    not sent' state for a reply the way there is for a fresh campaign send,
-    since a reply draft only exists once, for one recipient."""
+    """Marks the draft Approved -- queues it for the campaign's next 'Send
+    all approved' batch rather than sending immediately."""
     try:
-        approve_and_send_reply_draft(draft_id)
-        return {"status": "Sent"}
-    except EmailNotConfiguredError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except EmailSendError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        approve_reply_draft(draft_id)
+        return {"status": "Approved"}
     except ReplyDraftError as e:
         raise HTTPException(status_code=422, detail=str(e))
 

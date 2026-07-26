@@ -115,6 +115,59 @@ def test_simulate_sent_and_reply_flow(server):
     assert drafts[0]["status"] == "Draft"
 
 
+def test_approving_a_reply_draft_only_flips_status_does_not_send(server):
+    # Approving used to send the reply immediately (its own path, separate
+    # from the campaign's "Send all approved" batch) -- which meant a
+    # reply could go out without the suppression-list check or
+    # daily-pacing cap that batch already applies to fresh outreach.
+    # Approving now just queues it; nothing leaves this server, so this
+    # succeeds even with Gmail unconfigured (the live-server fixture never
+    # configures it).
+    cid = _create_campaign(server, "Approve Only Test")
+    pid = server.seed_prospect()
+    _assign(server, cid, pid)
+    row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-sent")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", json={"reply_body": "interested"})
+
+    draft_id = server.get("/reply-drafts").json()[0]["id"]
+    r = server.post(f"/reply-drafts/{draft_id}/approve")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "Approved"
+
+    drafts = server.get("/reply-drafts", params={"status": "Approved"}).json()
+    approved = next(d for d in drafts if d["id"] == draft_id)
+    assert approved["sent_at"] is None
+    assert approved["approved_at"] is not None
+
+    # No longer shows up in the Draft queue.
+    assert not any(d["id"] == draft_id for d in server.get("/reply-drafts", params={"status": "Draft"}).json())
+
+
+def test_send_all_approved_requires_gmail_for_approved_reply_drafts_too(server):
+    # The campaign's "Send all approved" batch is now the only place a
+    # reply draft actually sends from -- it must fail the same safe way
+    # fresh outreach does when Gmail isn't configured, not silently do
+    # nothing or send anyway.
+    cid = _create_campaign(server, "Send Gate Reply Test")
+    pid = server.seed_prospect()
+    _assign(server, cid, pid)
+    row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-sent")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", json={"reply_body": "interested"})
+    draft_id = server.get("/reply-drafts").json()[0]["id"]
+    server.post(f"/reply-drafts/{draft_id}/approve")
+
+    r = server.post(f"/campaigns/{cid}/send")
+    assert r.status_code == 503
+
+    # Left Approved, not silently marked Sent or dropped.
+    approved = next(d for d in server.get("/reply-drafts", params={"status": "Approved"}).json() if d["id"] == draft_id)
+    assert approved["sent_at"] is None
+
+
 def test_reply_drafts_can_be_scoped_to_one_campaign(server):
     # The Campaigns tab's review panel used to show every pending reply
     # from every campaign regardless of which one was selected -- confusing

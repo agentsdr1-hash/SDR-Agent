@@ -12,8 +12,9 @@ back and forth over several emails, sometimes weeks apart), so a lead
 isn't "done" the moment they reply once -- AWAITING_REPLY_STATUSES below
 covers both 'Sent' (cold email out, nothing back yet) and 'Replied'
 (they've engaged at least once, still listening for the next message).
-Sending our follow-up back to them (approve_and_send_reply_draft) doesn't
-need to touch campaign_prospects.status at all: 'Replied' already means
+Sending our reply back to them (via the campaign's send_approved batch,
+once the draft is approved) doesn't need to touch campaign_prospects.status
+at all: 'Replied' already means
 "still an open conversation" here, so the very next inbound message is
 caught the same way the first one was, and get_lead_timeline()'s
 memberships[].reply_drafts already carries the full sequence for display.
