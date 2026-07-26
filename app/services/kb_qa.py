@@ -192,7 +192,14 @@ def compose_smart_reply(first_name: str | None, company: str | None, reply_text:
 def create_reply_draft(campaign_prospect_id: int, first_name: str | None, company: str | None,
                         reply_subject: str | None, reply_text: str) -> int:
     """Generate and store a smart-reply draft for a real or simulated inbound
-    reply. Returns the new reply_drafts.id."""
+    reply. Returns the new reply_drafts.id.
+
+    source_reply_snippet stores the customer's actual message essentially in
+    full (capped at 8000 chars, matching email_provider.check_for_replies'
+    cap on the inbound side) -- this is the record of what they actually
+    said, not just enough text to eyeball a one-line preview. The Lead
+    Detail view renders it in full alongside our reply, not as a truncated
+    quoted line."""
     draft = compose_smart_reply(first_name, company, reply_text)
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
@@ -202,7 +209,7 @@ def create_reply_draft(campaign_prospect_id: int, first_name: str | None, compan
                 source_reply_subject, source_reply_snippet, created_at)
                VALUES (?, ?, ?, 'Draft', ?, ?, ?, ?, ?) RETURNING id""",
             (campaign_prospect_id, draft["subject"], draft["body"], draft["confidence"],
-             draft["matched_summary"], reply_subject, (reply_text or "")[:500], now),
+             draft["matched_summary"], reply_subject, (reply_text or "")[:8000], now),
         )
         draft_id = cur.fetchone()["id"]
     log_event("reply_draft_created", "reply_draft", str(draft_id),

@@ -115,6 +115,33 @@ def test_simulate_sent_and_reply_flow(server):
     assert drafts[0]["status"] == "Draft"
 
 
+def test_long_reply_body_is_not_truncated_in_the_lead_timeline(server):
+    # Real quote-conversation replies run several paragraphs -- the old
+    # 500-char cap on source_reply_snippet silently chopped them, and the
+    # lead timeline was reported as showing "only my responses" as a
+    # result. This locks in that a long reply survives intact end to end.
+    cid = _create_campaign(server, "Long Reply Test")
+    pid = server.seed_prospect()
+    _assign(server, cid, pid)
+    row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-sent")
+
+    long_body = "We need the following specs confirmed before we can proceed. " * 20  # well over 500 chars
+    assert len(long_body) > 500
+    r = server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", json={
+        "reply_subject": "Re: specs", "reply_body": long_body, "is_opt_out": False,
+    })
+    assert r.status_code == 200
+
+    prospect = server.get(f"/campaigns/{cid}/prospects").json()[0]
+    lead_number = prospect["lead_number"]
+    detail = server.get(f"/leads/{lead_number}").json()
+    reply_drafts = detail["memberships"][0]["reply_drafts"]
+    assert len(reply_drafts) == 1
+    assert reply_drafts[0]["source_reply_snippet"] == long_body
+
+
 def test_simulate_reply_can_fire_a_second_round_after_the_first(server):
     # This industry runs on multi-round back-and-forth -- a prospect who
     # already replied once should still be reachable for a second (and
