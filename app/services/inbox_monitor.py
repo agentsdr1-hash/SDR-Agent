@@ -1,10 +1,22 @@
 """
 OBJ-016 Inbox monitoring.
 
-Polls Gmail for unread messages from anyone we've sent to and are still
-awaiting a reply from, and flips their campaign_prospects status to
-'Replied'. This is the "receive" half of email integration -- pairs with
+Polls Gmail for unread messages from anyone we've sent to and haven't
+closed out (Won/Lost/Suppressed/Rejected), and flips their
+campaign_prospects status to 'Replied' -- creating a fresh reply draft
+each time. This is the "receive" half of email integration -- pairs with
 approval_and_delivery.send_approved() for the "send" half.
+
+This industry runs on multi-round back-and-forth (quote requirements go
+back and forth over several emails, sometimes weeks apart), so a lead
+isn't "done" the moment they reply once -- AWAITING_REPLY_STATUSES below
+covers both 'Sent' (cold email out, nothing back yet) and 'Replied'
+(they've engaged at least once, still listening for the next message).
+Sending our follow-up back to them (approve_and_send_reply_draft) doesn't
+need to touch campaign_prospects.status at all: 'Replied' already means
+"still an open conversation" here, so the very next inbound message is
+caught the same way the first one was, and get_lead_timeline()'s
+memberships[].reply_drafts already carries the full sequence for display.
 
 Called on a timer from main.py's background task, and also exposed as a
 manual POST /email/poll-now endpoint for testing without waiting.
@@ -17,6 +29,13 @@ from app.models import PollResult
 from app.services.administration import detect_opt_out, add_to_suppression_list
 from app.services.audit import log_event
 from app.services import kb_qa
+
+# Both keep the inbox poller listening: a fresh 'Sent' cold email awaiting
+# its first reply, and an already-'Replied' conversation that's still
+# open (any later inbound message updates replied_at/reply_subject to the
+# newest one and creates another reply draft -- see module docstring).
+AWAITING_REPLY_STATUSES = ("Sent", "Replied")
+_STATUS_PLACEHOLDERS = ",".join("?" * len(AWAITING_REPLY_STATUSES))
 
 # in-memory status, reset on restart -- fine for a pilot; move to a DB table
 # if you need poll history to survive restarts
@@ -47,10 +66,11 @@ def poll_once() -> PollResult:
 
     with get_conn() as conn:
         awaiting = conn.execute(
-            """SELECT cp.id, pr.email, pr.first_name, pr.company
+            f"""SELECT cp.id, pr.email, pr.first_name, pr.company
                FROM campaign_prospects cp
                JOIN prospects_raw pr ON pr.id = cp.prospect_id
-               WHERE cp.status = 'Sent'"""
+               WHERE cp.status IN ({_STATUS_PLACEHOLDERS})""",
+            AWAITING_REPLY_STATUSES,
         ).fetchall()
 
     email_to_row_ids = {}
@@ -81,17 +101,17 @@ def poll_once() -> PollResult:
                 for row_id in row_ids:
                     if is_opt_out:
                         conn.execute(
-                            """UPDATE campaign_prospects
+                            f"""UPDATE campaign_prospects
                                SET status = 'Suppressed', replied_at = ?, reply_subject = ?
-                               WHERE id = ? AND status = 'Sent'""",
-                            (reply["received_at"], reply["subject"], row_id),
+                               WHERE id = ? AND status IN ({_STATUS_PLACEHOLDERS})""",
+                            (reply["received_at"], reply["subject"], row_id, *AWAITING_REPLY_STATUSES),
                         )
                     else:
                         conn.execute(
-                            """UPDATE campaign_prospects
+                            f"""UPDATE campaign_prospects
                                SET status = 'Replied', replied_at = ?, reply_subject = ?
-                               WHERE id = ? AND status = 'Sent'""",
-                            (reply["received_at"], reply["subject"], row_id),
+                               WHERE id = ? AND status IN ({_STATUS_PLACEHOLDERS})""",
+                            (reply["received_at"], reply["subject"], row_id, *AWAITING_REPLY_STATUSES),
                         )
                 if is_opt_out:
                     add_to_suppression_list(reply["from_email"], reason="Opt-out detected in reply", source="auto-detected")

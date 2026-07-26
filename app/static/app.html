@@ -2691,11 +2691,21 @@ function outreachDraftCard(m) {
 // extended to include the message that started it.
 function emailFlowSection(m) {
   let html = outreachDraftCard(m);
-  if(m.replied_at) {
+  const drafts = m.reply_drafts || [];
+  if(drafts.length) {
+    // A real quote conversation is rarely one-and-done -- this walks every
+    // round (their message in, our response out) in order, with a "N days
+    // later" gap so a delayed follow-up reads as a delay, not a mystery.
+    const lastActivity = m.replied_at || drafts[drafts.length-1].created_at;
+    html += `<div class="day-note" style="margin:8px 0;">↳ ${drafts.length} message${drafts.length>1?'s':''} back and forth so far — last activity ${fmt(lastActivity)}</div>`;
+    html += drafts.map((rd, i) => {
+      const prevOut = i===0 ? m.sent_at : (drafts[i-1].sent_at || drafts[i-1].approved_at || drafts[i-1].created_at);
+      const gap = daysBetween(prevOut, rd.created_at);
+      const delayText = gap==null ? null : gap===0 ? 'same day' : gap===1 ? '1 day later' : `${gap} days later`;
+      return replyDraftDrillCard(rd, i+1, delayText);
+    }).join('');
+  } else if(m.replied_at) {
     html += `<div class="day-note" style="margin:8px 0;">↳ Customer replied: "${esc(m.reply_subject||'(no subject)')}" — ${fmt(m.replied_at)}</div>`;
-  }
-  if(m.reply_drafts && m.reply_drafts.length) {
-    html += m.reply_drafts.map(replyDraftDrillCard).join('');
   }
   return html;
 }
@@ -2725,7 +2735,7 @@ async function rejectOutreachDraft(cid, cpid) {
   refreshLeadDetail();
 }
 
-function replyDraftDrillCard(rd) {
+function replyDraftDrillCard(rd, roundNum, delayText) {
   const confBadge = rd.confidence==='quote_summary'
     ? `<span class="pill p-quote">quote summary</span>`
     : rd.confidence==='matched'
@@ -2734,10 +2744,10 @@ function replyDraftDrillCard(rd) {
   const when = rd.sent_at ? 'sent '+fmt(rd.sent_at) : rd.rejected_at ? 'rejected '+fmt(rd.rejected_at) : rd.approved_at ? 'approved '+fmt(rd.approved_at) : 'drafted '+fmt(rd.created_at);
   return `<details class="draft" style="margin-bottom:8px;">
     <summary style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
-      <span>${esc(rd.subject)}</span>
+      <span>${roundNum?`<b class="mono">#${roundNum}</b> `:''}${esc(rd.subject)}</span>
       <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">${confBadge}${pill(rd.status)}</span>
     </summary>
-    <div class="day-note" style="margin:8px 0 6px;">In reply to: ${esc(rd.source_reply_subject||'(no subject)')} — "${esc((rd.source_reply_snippet||'').slice(0,140))}${(rd.source_reply_snippet||'').length>140?'…':''}"</div>
+    <div class="day-note" style="margin:8px 0 6px;">In reply to: ${esc(rd.source_reply_subject||'(no subject)')} — "${esc((rd.source_reply_snippet||'').slice(0,140))}${(rd.source_reply_snippet||'').length>140?'…':''}"${delayText?` <span class="muted">(${esc(delayText)})</span>`:''}</div>
     <div class="day-note" style="margin-bottom:8px;">Matched: ${esc(rd.matched_summary||'—')}</div>
     <pre>${esc(rd.body)}</pre>
     <div class="muted" style="font-size:11px;margin-top:6px;">${esc(when)}</div>
@@ -3440,6 +3450,7 @@ function setS(id,m,e){const el=document.getElementById(id);if(!el)return;el.text
 // 24h) everywhere, rather than relying on the viewing browser's locale.
 function fmt(ts){try{return new Date(ts).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch(e){return ts;}}
 function fmtDate(ts){try{return new Date(ts).toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});}catch(e){return ts;}}
+function daysBetween(a,b){ if(!a||!b) return null; const ms=new Date(b)-new Date(a); return isNaN(ms)?null:Math.max(0,Math.round(ms/86400000)); }
 function fmtMoney(v, currency){ if(v==null) return '—'; return (currency||'AED')+' '+Number(v).toLocaleString('en-AE'); }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function pill(s){
