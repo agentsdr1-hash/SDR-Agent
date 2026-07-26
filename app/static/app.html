@@ -1390,11 +1390,26 @@ document.getElementById('assignBtn').addEventListener('click', async () => {
 function syncReviewSelect() {
   const sel = document.getElementById('reviewSelect');
   if(MODE==='server') {
-    fetch('/campaigns').then(r=>r.json()).then(camps => {
+    Promise.all([
+      fetch('/campaigns').then(r=>r.json()),
+      fetch('/reply-drafts?status=Draft').then(r=>r.json()),
+    ]).then(([camps, allDrafts]) => {
+      // Pending-reply counts per campaign, shown right in the dropdown --
+      // otherwise the only way to know a campaign has something waiting is
+      // to select it and look, one at a time.
+      const pendingByCampaign = {};
+      allDrafts.forEach(d => { pendingByCampaign[d.campaign_id] = (pendingByCampaign[d.campaign_id]||0) + 1; });
+      campaignNamesById = {};
+      camps.forEach(c => { campaignNamesById[c.id] = c.name; });
+      const optionsHtml = camps.map(c => {
+        const n = pendingByCampaign[c.id] || 0;
+        return `<option value="${c.id}">${esc(c.name)}${n?` (${n} pending)`:''}</option>`;
+      }).join('');
       sel.innerHTML = camps.length
-        ? camps.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')
+        ? `<option value="">All campaigns${allDrafts.length?` (${allDrafts.length} pending)`:''}</option>` + optionsHtml
         : '<option value="">No campaigns yet</option>';
       if(camps.length) loadServerProspects(camps[0].id);
+      else loadReplyDrafts();
     });
   } else {
     sel.innerHTML = campaigns.length
@@ -1412,6 +1427,7 @@ document.getElementById('reviewRefresh').addEventListener('click', syncReviewSel
 document.getElementById('sendAllBtn').addEventListener('click', async () => {
   if(MODE==='server') {
     const cid = document.getElementById('reviewSelect').value;
+    if(!cid) return setS('reviewStatus','Select a specific campaign first -- "All campaigns" is a view, sending is per-campaign.', true);
     setS('reviewStatus','Sending all approved…');
     const r = await fetch('/campaigns/'+cid+'/send', {method:'POST'});
     const d = await r.json();
@@ -1447,8 +1463,19 @@ document.getElementById('advDayBtn').addEventListener('click', () => {
 
 let campCurrentCid = null;
 let campSelectedIds = new Set();
+let campaignNamesById = {};
 
 async function loadServerProspects(cid) {
+  if(!cid) {
+    // "All campaigns" -- there's no single prospects grid that makes sense
+    // across campaigns (bulk actions, sends, etc. are all per-campaign), so
+    // this just clears it and shows the aggregated reply queue instead.
+    campCurrentCid = null;
+    campSelectedIds = new Set();
+    document.getElementById('pProspects').classList.add('hidden');
+    loadReplyDrafts();
+    return;
+  }
   const r = await fetch('/campaigns/'+cid+'/prospects');
   const rows = await r.json();
   if(!r.ok) return;
@@ -1567,27 +1594,36 @@ async function serverSimulateReply(cid,rid,isOptOut) {
 async function loadReplyDrafts() {
   const list = document.getElementById('rdList'), empty = document.getElementById('rdEmpty');
   if(MODE!=='server') { list.innerHTML=''; set('rdCount','0'); empty.textContent='Requires server mode.'; empty.classList.remove('hidden'); return; }
-  if(!campCurrentCid) { list.innerHTML=''; set('rdCount','0'); set('rdCampaignName','—'); empty.textContent='Select a campaign above to see its pending replies.'; empty.classList.remove('hidden'); return; }
   const sel = document.getElementById('reviewSelect');
-  const campaignName = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '—';
+  const hasCampaigns = Array.from(sel.options).some(o => o.value !== '');
+  if(!hasCampaigns) { list.innerHTML=''; set('rdCount','0'); set('rdCampaignName','—'); empty.textContent='Create a campaign above to start reviewing replies.'; empty.classList.remove('hidden'); return; }
+  // campCurrentCid is null when "All campaigns" is explicitly selected --
+  // that's a real, valid choice (not "nothing selected yet"), so it fetches
+  // the unscoped cross-campaign queue instead of prompting to pick one.
+  const scoped = !!campCurrentCid;
+  const campaignName = scoped
+    ? (sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text.replace(/\s*\(\d+ pending\)$/,'') : '—')
+    : 'All campaigns';
   set('rdCampaignName', campaignName);
   try {
-    const drafts = await (await fetch('/reply-drafts?status=Draft&campaign_id='+campCurrentCid)).json();
+    const url = '/reply-drafts?status=Draft' + (scoped ? '&campaign_id='+campCurrentCid : '');
+    const drafts = await (await fetch(url)).json();
     set('rdCount', drafts.length);
-    if(!drafts.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now for this campaign.'; empty.classList.remove('hidden'); return; }
+    if(!drafts.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now'+(scoped?' for this campaign.':'.'); empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
-    list.innerHTML = drafts.map(replyDraftCard).join('');
+    list.innerHTML = drafts.map(d => replyDraftCard(d, !scoped)).join('');
     document.querySelectorAll('#rdList textarea.ebody').forEach(autoGrow);
   } catch(e) { /* leave whatever was showing */ }
 }
 
-function replyDraftCard(d) {
+function replyDraftCard(d, showCampaignTag) {
   const name = [d.first_name,d.last_name].filter(Boolean).join(' ')||'—';
   const confBadge = d.confidence==='matched'
     ? `<span class="pill p-valid">matched</span>`
     : `<span class="pill p-dup">fallback — no strong match</span>`;
+  const campaignTag = showCampaignTag ? `<span class="pill p-neutral">${esc(campaignNamesById[d.campaign_id]||'Campaign #'+d.campaign_id)}</span>` : '';
   return `<div class="email-card">
-    <div class="ehead"><div class="who">${esc(name)}<span>${esc(d.email||'')} · ${esc(d.company||'—')}</span></div>${confBadge}</div>
+    <div class="ehead"><div class="who">${esc(name)}<span>${esc(d.email||'')} · ${esc(d.company||'—')}</span></div>${campaignTag}${confBadge}</div>
     <div class="muted" style="margin:2px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Their message — "${esc(d.source_reply_subject||'(no subject)')}"</div>
     <pre style="margin:0 0 8px;">${esc(d.source_reply_snippet || '(no message text captured)')}</pre>
     <div class="day-note" style="margin-bottom:8px;">Matched: ${esc(d.matched_summary||'—')}</div>
@@ -2806,23 +2842,57 @@ function replyDraftDrillCard(rd, roundNum, delayText) {
     ? `<span class="pill p-valid">matched</span>`
     : `<span class="pill p-dup">fallback — no strong match</span>`;
   const when = rd.sent_at ? 'sent '+fmt(rd.sent_at) : rd.rejected_at ? 'rejected '+fmt(rd.rejected_at) : rd.approved_at ? 'approved '+fmt(rd.approved_at) : 'drafted '+fmt(rd.created_at);
+  const isDraft = rd.status === 'Draft';
+  // A pending draft is editable and actionable right here -- approve &
+  // send, save edits, or reject -- so acting on a reply never requires
+  // leaving the lead to go find the right campaign in the Campaigns tab.
+  // Anything already sent/rejected stays a plain read-only body.
+  const ourReply = isDraft ? `
+    <input type="text" id="rd-subj-${rd.id}" value="${esc(rd.subject)}" style="font-weight:600;margin-bottom:8px;"/>
+    <textarea id="rd-body-${rd.id}" oninput="autoGrow(this)" style="min-height:120px;">${esc(rd.body)}</textarea>
+    <div class="row mt12">
+      <button class="btn ok" onclick="leadApproveReplyDraft(${rd.id})">Approve &amp; send</button>
+      <button class="btn sec" onclick="leadSaveReplyDraft(${rd.id})">Save edits</button>
+      <button class="btn reject" onclick="leadRejectReplyDraft(${rd.id})">Reject</button>
+    </div>` : `<pre>${esc(rd.body)}</pre>`;
   // Two-sided, in order: what they actually wrote (full text, not a
   // truncated quoted line), then what we sent back -- previously only our
   // side got the full <pre> treatment and their message was chopped to a
   // 140-char preview that never expanded, which is why a whole reply chain
   // read as "only my responses."
-  return `<details class="draft" style="margin-bottom:8px;">
+  return `<details class="draft" ${isDraft?'open':''} style="margin-bottom:8px;">
     <summary style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
       <span>${roundNum?`<b class="mono">#${roundNum}</b> `:''}${esc(rd.subject)}</span>
       <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">${confBadge}${pill(rd.status)}</span>
     </summary>
     <div class="muted" style="margin:8px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Their message${delayText?` <span style="text-transform:none;letter-spacing:0;">(${esc(delayText)})</span>`:''} — "${esc(rd.source_reply_subject||'(no subject)')}"</div>
     <pre>${esc(rd.source_reply_snippet || '(no message text captured)')}</pre>
-    <div class="muted" style="margin:10px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Our reply</div>
-    <pre>${esc(rd.body)}</pre>
+    <div class="muted" style="margin:10px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Our reply${isDraft?' (edit before sending)':''}</div>
+    ${ourReply}
     <div class="day-note" style="margin:6px 0 0;">Matched: ${esc(rd.matched_summary||'—')}</div>
     <div class="muted" style="font-size:11px;margin-top:6px;">${esc(when)}</div>
   </details>`;
+}
+
+async function leadSaveReplyDraft(id) {
+  const subject = document.getElementById('rd-subj-'+id).value;
+  const body = document.getElementById('rd-body-'+id).value;
+  const r = await fetch('/reply-drafts/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({subject, body})});
+  const d = await r.json();
+  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to save', true);
+  setS(leadDetailCtx.statusId, 'Reply draft updated.');
+  refreshLeadDetail();
+}
+async function leadApproveReplyDraft(id) {
+  const r = await fetch('/reply-drafts/'+id+'/approve', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to send', true);
+  setS(leadDetailCtx.statusId, 'Reply sent.');
+  refreshLeadDetail();
+}
+async function leadRejectReplyDraft(id) {
+  await fetch('/reply-drafts/'+id+'/reject', {method:'POST'});
+  refreshLeadDetail();
 }
 
 // ══════════════════════════════════════════════════════
