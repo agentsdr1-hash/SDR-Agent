@@ -40,6 +40,33 @@ def lead_number_for(prospect_id: int) -> str:
     return f"{LEAD_PREFIX}-{prospect_id:06d}"
 
 
+def _same_company_peers(conn, company: str, exclude_prospect_id: int) -> list[dict]:
+    """Every OTHER campaign membership -- any prospect, any campaign, not
+    just this lead's own -- whose company matches (trimmed, case-
+    insensitive), excluding Rejected rows. Same reasoning as
+    campaign_management._same_company_peers_by_cp_id: three different
+    contacts at one company each getting cold-pitched separately reads as
+    spam, so this is surfaced for a human to notice, not auto-blocked."""
+    company = (company or "").strip().lower()
+    if not company:
+        return []
+    rows = conn.execute(
+        """SELECT cp.id AS cp_id, cp.prospect_id, cp.status, c.name AS campaign_name,
+                  pr.first_name, pr.last_name
+           FROM campaign_prospects cp
+           JOIN prospects_raw pr ON pr.id = cp.prospect_id
+           JOIN campaigns c ON c.id = cp.campaign_id
+           WHERE LOWER(TRIM(pr.company)) = ? AND cp.status != 'Rejected' AND pr.id != ?""",
+        (company, exclude_prospect_id),
+    ).fetchall()
+    return [
+        {"cp_id": r["cp_id"], "lead_number": lead_number_for(r["prospect_id"]),
+         "name": " ".join(x for x in [r["first_name"], r["last_name"]] if x) or "—",
+         "campaign_name": r["campaign_name"], "status": r["status"]}
+        for r in rows
+    ]
+
+
 def parse_lead_number(lead_number: str) -> int | None:
     # hyphen optional on input so old-format numbers (L000123, from before
     # the L-000123 format) still resolve -- lead_number_for() above always
@@ -338,6 +365,8 @@ def get_lead_timeline(lead_number: str) -> dict | None:
             (prospect_id,),
         ).fetchall()]
 
+        same_company_peers = _same_company_peers(conn, prospect["company"], prospect_id)
+
     summary = _summarize(memberships)
     latest = memberships[-1] if memberships else None
     readiness = quote_readiness(latest)
@@ -346,6 +375,7 @@ def get_lead_timeline(lead_number: str) -> dict | None:
         "prospect": dict(prospect),
         "notes": notes,
         "memberships": memberships,
+        "same_company_peers": same_company_peers,
         "timeline_events": events,
         "lead_score": compute_lead_score(summary["overall_status"], prospect["lead_source"], prospect["linkedin_url"], readiness["pct"]),
         "quote_readiness": readiness,

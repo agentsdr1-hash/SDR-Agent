@@ -1578,7 +1578,18 @@ function serverProspectCard(r, cid) {
   }
   const followUpNote = followUpCount ? `<span class="day-note">Follow-ups: ${followUpCount}/2${r.last_followup_at?' · last '+fmt(r.last_followup_at):''}</span>` : '';
   const checkbox = r.status==='Queued' ? `<input type="checkbox" class="camp-row-check" data-id="${r.id}" onclick="toggleCampSelect(${r.id}, this.checked)" style="margin-right:10px;"/>` : '';
-  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span>${followUpNote}</div></div>`;
+  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div>${sameCompanyWarning(r.same_company_peers)}<div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span>${followUpNote}</div></div>`;
+}
+
+// A company gets cold-pitched once, not once per contact -- three
+// different people at the same company each getting a separate,
+// unrelated outreach email reads as spam even though every individual
+// send looks fine in isolation. Visibility only: nothing here blocks an
+// approve or send, it just makes the overlap impossible to miss.
+function sameCompanyWarning(peers) {
+  if (!peers || !peers.length) return '';
+  const names = peers.map(p => `${esc(p.name)} — ${esc(p.lead_number)} (${esc(p.campaign_name)}, ${esc(p.status)})`).join('; ');
+  return `<div class="day-note" style="color:var(--dup);margin-bottom:8px;">⚠ Same company also queued/contacted: ${names}</div>`;
 }
 
 async function serverSendFollowup(cid,rid) {
@@ -2757,6 +2768,7 @@ function renderLeadTimeline(d) {
       <div class="stat"><div class="n" style="color:var(--valid)">${fmtMoney(d.total_won_value||0)}</div><div class="lbl">Total won value</div></div>
     </div>
     <p class="hint" style="margin-top:12px;">Imported ${fmt(p.batch_imported_at)} from "${esc(p.batch_filename||'—')}" · validation: ${pill(p.status)}${p.validation_notes?' — '+esc(p.validation_notes):''}</p>
+    ${sameCompanyWarning(d.same_company_peers)}
   </div>`;
 
   html += editLeadSection(p);

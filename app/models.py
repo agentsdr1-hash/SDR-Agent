@@ -121,6 +121,7 @@ class CampaignProspect(BaseModel):
     lost_reason: Optional[str] = None
     follow_up_count: int = 0
     last_followup_at: Optional[str] = None
+    same_company_peers: list[dict] = []
 
 
 class FollowUpRecord(BaseModel):

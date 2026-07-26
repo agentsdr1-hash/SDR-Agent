@@ -231,6 +231,57 @@ def assign_prospect_to_campaign(campaign_id: int, prospect_id: int) -> dict:
     return {"status": "Queued", "campaign_id": campaign_id, "prospect_id": prospect_id}
 
 
+def _same_company_peers_by_cp_id(conn, rows) -> dict[int, list[dict]]:
+    """For each row, every OTHER campaign_prospects row -- in ANY campaign,
+    not just this one -- whose prospect shares the same company (trimmed,
+    case-insensitive), excluding Rejected rows (a dead end, not something
+    that's actually going to send). Matched on company name alone since
+    that's all a CSV import reliably gives us; two prospects at "Acme LLC"
+    and "Acme L.L.C." won't be caught, but exact-name variants (the common
+    case: three different contacts pasted from the same company website)
+    will.
+
+    Multiple contacts at one company aren't necessarily a mistake -- but
+    silently cold-pitching three of them from three different campaigns
+    with three unrelated messages reads as spam to the recipient. This
+    is visibility, not a block: nothing here stops an approve or send,
+    it just makes the overlap impossible to miss before doing either."""
+    companies = {row["company"].strip().lower() for row in rows if row["company"] and row["company"].strip()}
+    if not companies:
+        return {}
+    ph = ",".join("?" * len(companies))
+    all_rows = conn.execute(
+        f"""SELECT cp.id AS cp_id, cp.prospect_id, cp.status, c.name AS campaign_name,
+                   pr.first_name, pr.last_name, pr.company
+            FROM campaign_prospects cp
+            JOIN prospects_raw pr ON pr.id = cp.prospect_id
+            JOIN campaigns c ON c.id = cp.campaign_id
+            WHERE LOWER(TRIM(pr.company)) IN ({ph}) AND cp.status != 'Rejected'""",
+        list(companies),
+    ).fetchall()
+
+    by_company: dict[str, list[dict]] = {}
+    for r in all_rows:
+        key = r["company"].strip().lower()
+        by_company.setdefault(key, []).append({
+            "cp_id": r["cp_id"],
+            "lead_number": lead_number_for(r["prospect_id"]),
+            "name": " ".join(x for x in [r["first_name"], r["last_name"]] if x) or "—",
+            "campaign_name": r["campaign_name"],
+            "status": r["status"],
+        })
+
+    result: dict[int, list[dict]] = {}
+    for row in rows:
+        if not row["company"] or not row["company"].strip():
+            continue
+        key = row["company"].strip().lower()
+        peers = [p for p in by_company.get(key, []) if p["cp_id"] != row["id"]]
+        if peers:
+            result[row["id"]] = peers
+    return result
+
+
 def list_campaign_prospects(campaign_id: int) -> list[CampaignProspect]:
     with get_conn() as conn:
         rows = conn.execute(
@@ -251,8 +302,10 @@ def list_campaign_prospects(campaign_id: int) -> list[CampaignProspect]:
                GROUP BY campaign_prospect_id""",
             (campaign_id,),
         ).fetchall()
+        same_company = _same_company_peers_by_cp_id(conn, rows)
     count_by_cp = {c["campaign_prospect_id"]: c["c"] for c in counts}
     return [
-        CampaignProspect(**dict(r), lead_number=lead_number_for(r["prospect_id"]), follow_up_count=count_by_cp.get(r["id"], 0))
+        CampaignProspect(**dict(r), lead_number=lead_number_for(r["prospect_id"]), follow_up_count=count_by_cp.get(r["id"], 0),
+                          same_company_peers=same_company.get(r["id"], []))
         for r in rows
     ]

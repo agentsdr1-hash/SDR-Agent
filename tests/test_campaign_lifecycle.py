@@ -168,6 +168,74 @@ def test_send_all_approved_requires_gmail_for_approved_reply_drafts_too(server):
     assert approved["sent_at"] is None
 
 
+def test_same_company_peers_surfaced_across_campaigns(server):
+    # Three different contacts at the same company, assigned into two
+    # different campaigns -- cold-pitching all three separately reads as
+    # spam even though each individual assign/approve looks fine alone.
+    # This is visibility, not a block: nothing here stops the assign.
+    cid1 = _create_campaign(server, "Same Co Campaign A")
+    cid2 = _create_campaign(server, "Same Co Campaign B")
+    p1 = server.seed_prospect(first_name="Alice", last_name="A", company="Acme Steel")
+    p2 = server.seed_prospect(first_name="Bob", last_name="B", company="Acme Steel")
+    p3 = server.seed_prospect(first_name="Carl", last_name="C", company="  ACME STEEL  ")  # case/whitespace variant
+    unrelated = server.seed_prospect(first_name="Dana", last_name="D", company="Totally Different Co")
+
+    _assign(server, cid1, p1)
+    _assign(server, cid1, p2)
+    _assign(server, cid2, p3)
+    _assign(server, cid1, unrelated)
+
+    prospects_a = server.get(f"/campaigns/{cid1}/prospects").json()
+    row_p1 = next(r for r in prospects_a if r["prospect_id"] == p1)
+    row_p2 = next(r for r in prospects_a if r["prospect_id"] == p2)
+    row_unrelated = next(r for r in prospects_a if r["prospect_id"] == unrelated)
+
+    # p1 sees both p2 (same campaign) and p3 (other campaign, case/whitespace variant).
+    peer_names = {p["name"] for p in row_p1["same_company_peers"]}
+    assert peer_names == {"Bob B", "Carl C"}
+
+    peer_names_p2 = {p["name"] for p in row_p2["same_company_peers"]}
+    assert peer_names_p2 == {"Alice A", "Carl C"}
+
+    # Unrelated company gets no warning.
+    assert row_unrelated["same_company_peers"] == []
+
+
+def test_same_company_peers_excludes_rejected_and_self(server):
+    cid = _create_campaign(server, "Same Co Rejected Test")
+    p1 = server.seed_prospect(first_name="Ann", last_name="A", company="Beta Corp")
+    p2 = server.seed_prospect(first_name="Ben", last_name="B", company="Beta Corp")
+    _assign(server, cid, p1)
+    _assign(server, cid, p2)
+    prospects = server.get(f"/campaigns/{cid}/prospects").json()
+    row1 = next(r for r in prospects if r["prospect_id"] == p1)
+    row2 = next(r for r in prospects if r["prospect_id"] == p2)
+    assert len(row1["same_company_peers"]) == 1
+    assert row1["same_company_peers"][0]["name"] == "Ben B"
+
+    server.post(f"/campaigns/{cid}/prospects/{row2['id']}/reject")
+
+    prospects = server.get(f"/campaigns/{cid}/prospects").json()
+    row1 = next(r for r in prospects if r["prospect_id"] == p1)
+    # Rejected peer no longer counts -- it's a dead end, not something
+    # that's actually going to send.
+    assert row1["same_company_peers"] == []
+
+
+def test_lead_detail_shows_same_company_peers(server):
+    cid = _create_campaign(server, "Lead Detail Same Co")
+    p1 = server.seed_prospect(first_name="Eve", last_name="E", company="Gamma LLC")
+    p2 = server.seed_prospect(first_name="Fay", last_name="F", company="Gamma LLC")
+    _assign(server, cid, p1)
+    _assign(server, cid, p2)
+    lead_number = server.get("/leads").json()
+    lead1 = next(l for l in lead_number if l["prospect_id"] == p1)
+
+    detail = server.get(f"/leads/{lead1['lead_number']}").json()
+    assert len(detail["same_company_peers"]) == 1
+    assert detail["same_company_peers"][0]["name"] == "Fay F"
+
+
 def test_reply_drafts_can_be_scoped_to_one_campaign(server):
     # The Campaigns tab's review panel used to show every pending reply
     # from every campaign regardless of which one was selected -- confusing
