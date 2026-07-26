@@ -119,6 +119,24 @@ class CampaignProspect(BaseModel):
     lost_at: Optional[str] = None
     deal_value: Optional[float] = None
     lost_reason: Optional[str] = None
+    follow_up_count: int = 0
+    last_followup_at: Optional[str] = None
+
+
+class FollowUpRecord(BaseModel):
+    id: int
+    campaign_prospect_id: int
+    follow_up_number: int
+    subject: str
+    body: str
+    sent_at: str
+
+
+class FollowUpResult(BaseModel):
+    checked_at: str
+    sent: int
+    skipped_daily_limit: int
+    errors: list[str] = []
 
 
 class DraftUpdate(BaseModel):
@@ -170,6 +188,9 @@ class EmailStatus(BaseModel):
     last_poll_at: Optional[str] = None
     last_poll_replies_found: Optional[int] = None
     last_poll_error: Optional[str] = None
+    last_followup_run_at: Optional[str] = None
+    last_followup_sent_count: Optional[int] = None
+    last_followup_error: Optional[str] = None
 
 
 class EmailConfigInput(BaseModel):

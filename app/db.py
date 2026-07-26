@@ -137,10 +137,22 @@ CREATE TABLE IF NOT EXISTS campaign_prospects (
     payment_terms TEXT,              -- Quote Readiness Checklist: payment terms
     packaging_requirements TEXT,     -- Quote Readiness Checklist: packaging requirements
     quote_number TEXT,               -- real ERP-issued quote number, entered by a human once sales creates it
+    last_followup_at TEXT,           -- most recent automated follow-up send -- denormalized for "last activity" sorting; full history is in campaign_followups
     FOREIGN KEY (campaign_id) REFERENCES campaigns(id),
     FOREIGN KEY (prospect_id) REFERENCES prospects_raw(id),
     UNIQUE (campaign_id, prospect_id)
 );
+
+CREATE TABLE IF NOT EXISTS campaign_followups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_prospect_id INTEGER NOT NULL,
+    follow_up_number INTEGER NOT NULL,  -- 1 or 2, see app/services/followups.py
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
+    sent_at TEXT NOT NULL,
+    FOREIGN KEY (campaign_prospect_id) REFERENCES campaign_prospects(id)
+);
+CREATE INDEX IF NOT EXISTS idx_campaign_followups_cp ON campaign_followups(campaign_prospect_id);
 
 CREATE TABLE IF NOT EXISTS suppressed_emails (
     email TEXT PRIMARY KEY,
@@ -337,6 +349,7 @@ def init_db(seed_customers: bool = True):
         _ensure_column(conn, "campaign_prospects", "payment_terms", "TEXT")
         _ensure_column(conn, "campaign_prospects", "packaging_requirements", "TEXT")
         _ensure_column(conn, "campaign_prospects", "quote_number", "TEXT")
+        _ensure_column(conn, "campaign_prospects", "last_followup_at", "TEXT")
         _ensure_column(conn, "prospects_raw", "lead_source", "TEXT")
         _ensure_column(conn, "prospects_raw", "linkedin_url", "TEXT")
         _ensure_column(conn, "prospects_raw", "next_action", "TEXT")

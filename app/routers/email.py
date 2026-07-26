@@ -6,9 +6,9 @@ plus Gmail App Password configuration from the Admin tab (OBJ-015 console).
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.integrations import email_provider
-from app.services import inbox_monitor
+from app.services import inbox_monitor, followups
 from app.services.admin_auth import require_admin_password
-from app.models import EmailStatus, PollResult, EmailConfigInput, DailySendLimitInput
+from app.models import EmailStatus, PollResult, EmailConfigInput, DailySendLimitInput, FollowUpResult
 
 router = APIRouter(prefix="/email", tags=["OBJ-016"])
 
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/email", tags=["OBJ-016"])
 @router.get("/status", response_model=EmailStatus)
 def status():
     poll_status = inbox_monitor.get_status()
+    followup_status = followups.get_status()
     return EmailStatus(
         configured=email_provider.is_configured(),
         gmail_address=email_provider.configured_address(),
@@ -31,6 +32,9 @@ def status():
         last_poll_at=poll_status["last_poll_at"],
         last_poll_replies_found=poll_status["last_poll_replies_found"],
         last_poll_error=poll_status["last_poll_error"],
+        last_followup_run_at=followup_status["last_followup_run_at"],
+        last_followup_sent_count=followup_status["last_followup_sent_count"],
+        last_followup_error=followup_status["last_followup_error"],
     )
 
 
@@ -49,6 +53,16 @@ def poll_now():
     """Trigger a reply check immediately instead of waiting for the timer --
     useful for testing that a real reply gets picked up."""
     return inbox_monitor.poll_once()
+
+
+@router.post("/send-followups-now", response_model=FollowUpResult, dependencies=[Depends(require_admin_password)])
+def send_followups_now():
+    """Trigger the automated follow-up cadence immediately instead of
+    waiting for the timer -- sends every follow-up that's actually due
+    right now (day 4 / day 8 since the original send), skips anything not
+    due yet. Useful for testing, or to not wait for the next background
+    cycle after raising the daily send limit."""
+    return followups.send_due_followups()
 
 
 @router.put("/config", response_model=EmailStatus, dependencies=[Depends(require_admin_password)])
