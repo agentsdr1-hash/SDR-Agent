@@ -76,22 +76,39 @@ def reject(campaign_id: int, prospect_row_id: int):
 
 
 def send_approved(campaign_id: int) -> SendResult:
-    """Actually send every Approved prospect in this campaign via Gmail.
+    """Actually send every Approved prospect (fresh outreach) AND every
+    Approved reply draft in this campaign via Gmail -- one action, one
+    chokepoint. Reply drafts used to have their own separate
+    immediate-send path (approving one sent it on the spot), which meant
+    a reply could go out without the suppression-list check or
+    daily-pacing cap this batch send already applies to outreach.
+    Routing both through here closes that gap: approving a reply now
+    just queues it (reply_drafts.approve_reply_draft), and it only
+    actually sends from this same batch action as everything else.
+
     Raises EmailNotConfiguredError immediately (before touching anything) if
     credentials aren't set, so a half-sent batch never happens because of
     missing config."""
     email_provider.require_configured()  # fail fast, before sending any
 
     with get_conn() as conn:
-        rows = conn.execute(
+        outreach_rows = conn.execute(
             """SELECT cp.id, cp.subject, cp.body, pr.email
                FROM campaign_prospects cp
                JOIN prospects_raw pr ON pr.id = cp.prospect_id
                WHERE cp.campaign_id = ? AND cp.status = 'Approved'""",
             (campaign_id,),
         ).fetchall()
+        reply_rows = conn.execute(
+            """SELECT rd.id, rd.subject, rd.body, pr.email
+               FROM reply_drafts rd
+               JOIN campaign_prospects cp ON cp.id = rd.campaign_prospect_id
+               JOIN prospects_raw pr ON pr.id = cp.prospect_id
+               WHERE cp.campaign_id = ? AND rd.status = 'Approved'""",
+            (campaign_id,),
+        ).fetchall()
 
-    attempted = len(rows)
+    attempted = len(outreach_rows) + len(reply_rows)
     sent = 0
     failed = 0
     suppressed = 0
@@ -104,7 +121,36 @@ def send_approved(campaign_id: int) -> SendResult:
     # to be re-approved.
     remaining = email_provider.remaining_sends_today()
 
-    for row in rows:
+    # Replies first: a prospect already mid-conversation and waiting on an
+    # answer is more time-sensitive than someone not yet contacted, so if
+    # the daily cap is tight, replies get first claim on it.
+    for row in reply_rows:
+        if is_suppressed(row["email"]):
+            with get_conn() as conn:
+                conn.execute("UPDATE reply_drafts SET status = 'Suppressed' WHERE id = ?", (row["id"],))
+            suppressed += 1
+            errors.append(f"{row['email']}: skipped — on suppression list, not sent")
+            log_event("send_blocked_suppressed", "reply_draft", str(row["id"]), f"{row['email']} is on suppression list")
+            continue
+        if remaining <= 0:
+            skipped_daily_limit += 1
+            continue
+        try:
+            email_provider.send_email(row["email"], row["subject"], row["body"])
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE reply_drafts SET status = 'Sent', sent_at = ? WHERE id = ?",
+                    (now, row["id"]),
+                )
+            sent += 1
+            remaining -= 1
+            log_event("reply_sent", "reply_draft", str(row["id"]), f"Sent to {row['email']}")
+        except email_provider.EmailSendError as e:
+            failed += 1
+            errors.append(f"{row['email']}: {e}")
+            log_event("reply_send_failed", "reply_draft", str(row["id"]), f"{row['email']}: {e}")
+
+    for row in outreach_rows:
         if is_suppressed(row["email"]):
             with get_conn() as conn:
                 conn.execute(

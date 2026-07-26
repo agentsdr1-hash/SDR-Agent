@@ -1,14 +1,18 @@
 """
 Review queue for smart-reply drafts (app/services/kb_qa.py generates
-them). Same approve/reject/send shape as outbound drafts in
-approval_and_delivery.py -- a draft only ever leaves this server after a
-human approves it, and approval only succeeds if Gmail is actually
-configured. Nothing here pretends to send.
+them). Same Draft -> Approved -> Sent shape as outbound campaign drafts
+in approval_and_delivery.py: approving here only flips the status, it
+never touches Gmail. Sending is a separate, deliberate step -- the
+campaign's "Send all approved" batch (approval_and_delivery.send_approved())
+picks up Approved reply drafts alongside fresh outreach. Approving used
+to send immediately, on its own path that skipped the suppression-list
+check and daily-pacing cap the campaign batch send already had --
+routing every real send through that one chokepoint instead closes that
+gap.
 """
 from datetime import datetime, timezone
 
 from app.db import get_conn
-from app.integrations import email_provider
 from app.services.audit import log_event
 
 VALID_FOR_APPROVE = {"Draft"}
@@ -45,20 +49,6 @@ def list_reply_drafts(status: str | None = None, campaign_id: int | None = None)
     return [dict(r) for r in rows]
 
 
-def _get_status(conn, draft_id: int) -> tuple[str, str, str | None]:
-    row = conn.execute(
-        """SELECT rd.status, pr.email
-           FROM reply_drafts rd
-           JOIN campaign_prospects cp ON cp.id = rd.campaign_prospect_id
-           JOIN prospects_raw pr ON pr.id = cp.prospect_id
-           WHERE rd.id = ?""",
-        (draft_id,),
-    ).fetchone()
-    if not row:
-        raise ReplyDraftError("Reply draft not found")
-    return row["status"], row["email"], row
-
-
 def update_reply_draft(draft_id: int, subject: str, body: str):
     with get_conn() as conn:
         row = conn.execute("SELECT status FROM reply_drafts WHERE id = ?", (draft_id,)).fetchone()
@@ -83,35 +73,19 @@ def reject_reply_draft(draft_id: int):
     log_event("reply_draft_rejected", "reply_draft", str(draft_id), None)
 
 
-def approve_and_send_reply_draft(draft_id: int):
-    """Sends the approved reply via Gmail. Raises EmailNotConfiguredError
-    (before touching anything) if credentials aren't set."""
-    email_provider.require_configured()
-
+def approve_reply_draft(draft_id: int):
+    """Flips a reply draft to Approved -- does not touch Gmail. Actual
+    sending happens later, in a batch, from
+    approval_and_delivery.send_approved() (the campaign's "Send all
+    approved" action), alongside that campaign's fresh outreach."""
     with get_conn() as conn:
-        row = conn.execute(
-            """SELECT rd.status, rd.subject, rd.body, pr.email
-               FROM reply_drafts rd
-               JOIN campaign_prospects cp ON cp.id = rd.campaign_prospect_id
-               JOIN prospects_raw pr ON pr.id = cp.prospect_id
-               WHERE rd.id = ?""",
-            (draft_id,),
-        ).fetchone()
+        row = conn.execute("SELECT status FROM reply_drafts WHERE id = ?", (draft_id,)).fetchone()
         if not row:
             raise ReplyDraftError("Reply draft not found")
         if row["status"] not in VALID_FOR_APPROVE:
             raise ReplyDraftError(f"Cannot approve from status '{row['status']}'")
-
-    now = datetime.now(timezone.utc).isoformat()
-    try:
-        email_provider.send_email(row["email"], row["subject"], row["body"])
-    except email_provider.EmailSendError as e:
-        log_event("reply_send_failed", "reply_draft", str(draft_id), f"{row['email']}: {e}")
-        raise
-
-    with get_conn() as conn:
         conn.execute(
-            "UPDATE reply_drafts SET status = 'Sent', approved_at = ?, sent_at = ? WHERE id = ?",
-            (now, now, draft_id),
+            "UPDATE reply_drafts SET status = 'Approved', approved_at = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), draft_id),
         )
-    log_event("reply_sent", "reply_draft", str(draft_id), f"Sent to {row['email']}")
+    log_event("reply_draft_approved", "reply_draft", str(draft_id), None)

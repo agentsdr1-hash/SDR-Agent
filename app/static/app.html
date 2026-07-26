@@ -1660,12 +1660,22 @@ async function loadReplyDrafts() {
     : 'All campaigns';
   set('rdCampaignName', campaignName);
   try {
-    const url = '/reply-drafts?status=Draft' + (scoped ? '&campaign_id='+campCurrentCid : '');
-    const drafts = await (await fetch(url)).json();
+    const scopeParam = scoped ? '&campaign_id='+campCurrentCid : '';
+    // Approved replies are fetched too -- they're done being reviewed, but
+    // still worth seeing here (read-only) so approving one doesn't just
+    // make it vanish with no confirmation of where it went: it's waiting
+    // on this campaign's "Send all approved" above, same as fresh outreach.
+    const [drafts, approved] = await Promise.all([
+      fetch('/reply-drafts?status=Draft'+scopeParam).then(r=>r.json()),
+      fetch('/reply-drafts?status=Approved'+scopeParam).then(r=>r.json()),
+    ]);
     set('rdCount', drafts.length);
-    if(!drafts.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now'+(scoped?' for this campaign.':'.'); empty.classList.remove('hidden'); return; }
+    if(!drafts.length && !approved.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now'+(scoped?' for this campaign.':'.'); empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
-    list.innerHTML = drafts.map(d => replyDraftCard(d, !scoped)).join('');
+    const approvedHtml = approved.length
+      ? `<p class="hint" style="margin:16px 0 8px;">${approved.length} approved, awaiting send:</p>` + approved.map(d => approvedReplyDraftCard(d, !scoped)).join('')
+      : '';
+    list.innerHTML = drafts.map(d => replyDraftCard(d, !scoped)).join('') + approvedHtml;
     document.querySelectorAll('#rdList textarea.ebody').forEach(autoGrow);
   } catch(e) { /* leave whatever was showing */ }
 }
@@ -1684,11 +1694,25 @@ function replyDraftCard(d, showCampaignTag) {
     <div class="muted" style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Our reply (edit before sending)</div>
     <input class="edit-subject" id="rd-subj-${d.id}" value="${esc(d.subject)}"/>
     <textarea class="ebody" id="rd-body-${d.id}" oninput="autoGrow(this)">${esc(d.body)}</textarea>
+    <p class="hint" style="margin:4px 0 8px;">Approving queues this for "Send all approved" above -- it doesn't send on its own.</p>
     <div class="eactions">
-      <button class="btn ok" onclick="approveReplyDraft(${d.id})">Approve &amp; send</button>
+      <button class="btn ok" onclick="approveReplyDraft(${d.id})">Approve</button>
       <button class="btn sec" onclick="saveReplyDraft(${d.id})">Save edits</button>
       <button class="btn reject" onclick="rejectReplyDraft(${d.id})">Reject</button>
     </div>
+  </div>`;
+}
+
+// Read-only card for a reply draft that's Approved but not yet sent -- no
+// edit/approve/reject controls, since the only thing left to do is the
+// same "Send all approved" batch action that sends fresh outreach.
+function approvedReplyDraftCard(d, showCampaignTag) {
+  const name = [d.first_name,d.last_name].filter(Boolean).join(' ')||'—';
+  const campaignTag = showCampaignTag ? `<span class="pill p-neutral">${esc(campaignNamesById[d.campaign_id]||'Campaign #'+d.campaign_id)}</span>` : '';
+  return `<div class="email-card">
+    <div class="ehead"><div class="who">${esc(name)}<span>${esc(d.email||'')} · ${esc(d.company||'—')}</span></div>${campaignTag}<span class="pill p-approved">Approved — sends with next batch</span></div>
+    <div class="muted" style="margin:2px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">${esc(d.subject)}</div>
+    <div class="ebody">${esc(d.body)}</div>
   </div>`;
 }
 
@@ -1704,8 +1728,8 @@ async function saveReplyDraft(id) {
 async function approveReplyDraft(id) {
   const r = await fetch('/reply-drafts/'+id+'/approve', {method:'POST'});
   const d = await r.json();
-  if(!r.ok) return setS('reviewStatus', d.detail||'Failed to send', true);
-  setS('reviewStatus', 'Reply sent.');
+  if(!r.ok) return setS('reviewStatus', d.detail||'Failed to approve', true);
+  setS('reviewStatus', 'Reply approved -- click "Send all approved" above to actually send it.');
   loadReplyDrafts();
 }
 
@@ -2894,8 +2918,9 @@ function threadComposeBox(rd) {
     <div class="thread-meta"><b>AKEIS</b> — draft reply <span class="pill p-quote">pending your review</span> ${confBadge}</div>
     <input type="text" id="rd-subj-${rd.id}" value="${esc(rd.subject)}" style="font-weight:600;margin-bottom:8px;"/>
     <textarea id="rd-body-${rd.id}" oninput="autoGrow(this)" style="min-height:110px;">${esc(rd.body)}</textarea>
+    <p class="hint" style="margin:4px 0 8px;">Approving queues this for the campaign's next "Send all approved" -- it doesn't send on its own.</p>
     <div class="row mt12">
-      <button class="btn ok" onclick="leadApproveReplyDraft(${rd.id},${rd.campaign_prospect_id})">Approve &amp; send</button>
+      <button class="btn ok" onclick="leadApproveReplyDraft(${rd.id},${rd.campaign_prospect_id})">Approve</button>
       <button class="btn sec" onclick="leadSaveReplyDraft(${rd.id},${rd.campaign_prospect_id})">Save edits</button>
       <button class="btn reject" onclick="leadRejectReplyDraft(${rd.id},${rd.campaign_prospect_id})">Reject</button>
     </div>
@@ -2986,10 +3011,10 @@ async function leadSaveReplyDraft(id, cpid) {
 async function leadApproveReplyDraft(id, cpid) {
   const r = await fetch('/reply-drafts/'+id+'/approve', {method:'POST'});
   const d = await r.json();
-  if(!r.ok) return setS('emailThreadStatus', d.detail||'Failed to send', true);
+  if(!r.ok) return setS('emailThreadStatus', d.detail||'Failed to approve', true);
   await refreshLeadDetail();
   if(cpid) renderEmailThreadModalBody(cpid);
-  setS('emailThreadStatus', 'Reply sent.');
+  setS('emailThreadStatus', 'Reply approved -- it\'ll go out with this campaign\'s next "Send all approved" (Campaigns tab).');
 }
 async function leadRejectReplyDraft(id, cpid) {
   await fetch('/reply-drafts/'+id+'/reject', {method:'POST'});
