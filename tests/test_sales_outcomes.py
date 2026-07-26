@@ -27,20 +27,42 @@ def _replied_prospect(server, campaign_name):
     return cid, row_id
 
 
-def test_request_quote_requires_replied_status(server):
-    cid = server.post("/campaigns", json={"name": "Quote Gate Test"}).json()["id"]
+def test_request_quote_allowed_from_queued_approved_sent_or_replied(server):
+    # A quote request doesn't require any email exchange first -- a phone
+    # call or walk-in can jump straight from Queued to QuoteRequested, not
+    # just after a reply. Covers all four pre-quote statuses.
+    for status_to_reach, expect_ok in [("Queued", True), ("Approved", True), ("Sent", True), ("Replied", True)]:
+        cid = server.post("/campaigns", json={"name": f"Quote Gate {status_to_reach}"}).json()["id"]
+        pid = server.seed_prospect()
+        server.post(f"/campaigns/{cid}/assign-prospect/{pid}")
+        row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+        if status_to_reach in ("Approved", "Sent", "Replied"):
+            server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+        if status_to_reach in ("Sent", "Replied"):
+            server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-sent")
+        if status_to_reach == "Replied":
+            server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", json={"reply_body": "interested"})
+
+        r = server.post(f"/campaigns/{cid}/prospects/{row_id}/request-quote")
+        assert r.status_code == 200, f"{status_to_reach}: {r.text}"
+        prospect = server.get(f"/campaigns/{cid}/prospects").json()[0]
+        assert prospect["status"] == "QuoteRequested"
+
+
+def test_request_quote_rejected_from_dead_end_or_already_quoted_statuses(server):
+    cid = server.post("/campaigns", json={"name": "Quote Gate Rejected"}).json()["id"]
     pid = server.seed_prospect()
     server.post(f"/campaigns/{cid}/assign-prospect/{pid}")
     row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/reject")
 
     r = server.post(f"/campaigns/{cid}/prospects/{row_id}/request-quote")
-    assert r.status_code == 422  # still Queued, not Replied
+    assert r.status_code == 422  # Rejected is a dead end
 
-    cid2, row_id2 = _replied_prospect(server, "Quote Gate Test 2")
+    cid2, row_id2 = _replied_prospect(server, "Quote Gate Rejected 2")
+    server.post(f"/campaigns/{cid2}/prospects/{row_id2}/request-quote")
     r = server.post(f"/campaigns/{cid2}/prospects/{row_id2}/request-quote")
-    assert r.status_code == 200
-    prospect = server.get(f"/campaigns/{cid2}/prospects").json()[0]
-    assert prospect["status"] == "QuoteRequested"
+    assert r.status_code == 422  # already QuoteRequested
 
 
 def test_full_checklist_round_trips(server):

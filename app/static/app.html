@@ -467,6 +467,15 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
     </div>
     <div id="emailCards"></div>
   </div>
+
+  <div class="panel hidden" id="campHistPanel">
+    <div class="panel-head">
+      <h2>Full history</h2>
+      <button class="btn sec" style="font-size:12px;padding:6px 12px;margin-left:auto;" onclick="closeCampHistory()">✕ Close</button>
+    </div>
+    <div class="status" id="campHistStatus"></div>
+    <div id="campHistDetailWrap"></div>
+  </div>
 </div>
 
 <!-- ══════════════ LEADS ══════════════ -->
@@ -503,6 +512,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
           <option value="ever_replied">Ever replied</option>
           <option value="ever_quoted">Ever quote-requested</option>
           <option value="quote_ready">Quote-ready (checklist complete)</option>
+          <option value="follow_up_due">Follow-ups due (today or overdue)</option>
         </optgroup>
       </select>
     </div>
@@ -519,7 +529,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
     <div class="tbl-wrap scrollx mt12">
       <table><thead><tr>
         <th style="width:32px;"><input type="checkbox" id="leadsSelectAll"/></th>
-        <th>Lead #</th><th>Name</th><th>Company</th><th>Email</th><th class="nowrap">Score</th><th class="nowrap">Validation</th><th>Status</th><th>Campaign</th><th>Deal value</th><th class="nowrap">Last activity</th><th></th>
+        <th>Lead #</th><th>Name</th><th>Company</th><th>Email</th><th class="nowrap">Score</th><th class="nowrap">Validation</th><th>Status</th><th>Next action</th><th>Campaign</th><th>Deal value</th><th class="nowrap">Last activity</th><th></th>
       </tr></thead><tbody id="leadsListBody"></tbody></table>
     </div>
     <div class="empty hidden" id="leadsListEmpty">No leads match.</div>
@@ -692,11 +702,12 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 
   <div class="panel">
     <div class="panel-head"><h2>SDR performance</h2><span class="obj-tag">activity metrics</span></div>
-    <div class="grid g4">
+    <div class="grid g5">
       <div class="stat clickable" onclick="dashDrill('ever_sent','Emails sent')"><div class="n" style="color:var(--sky)" id="sp_s">–</div><div class="lbl">Emails sent</div></div>
       <div class="stat clickable" onclick="dashDrill('ever_replied','Replied leads')"><div class="n" style="color:var(--indigo)" id="sp_r">–</div><div class="lbl">Replies received</div></div>
       <div class="stat"><div class="n" id="sp_rr">–</div><div class="lbl">Response rate</div></div>
       <div class="stat clickable" onclick="dashDrill('ever_replied','Replied leads')"><div class="n" id="sp_ar">–</div><div class="lbl">Avg. reply time</div></div>
+      <div class="stat clickable" onclick="dashDrill('follow_up_due','Follow-ups due')"><div class="n" style="color:var(--invalid)" id="sp_fud">–</div><div class="lbl">Follow-ups due</div></div>
     </div>
   </div>
 
@@ -1444,12 +1455,31 @@ function serverProspectCard(r, cid) {
   if(r.status==='Queued') actions = `<button class="btn ok" onclick="serverApprove('${cid}',${r.id})">Approve</button><button class="btn reject" onclick="serverReject('${cid}',${r.id})">Reject</button>`;
   else if(r.status==='Approved') actions = `<button class="btn sec" onclick="serverSimulateSent('${cid}',${r.id})" title="Flips to Sent without touching Gmail -- for testing the funnel before real credentials exist">Simulate send (test)</button>`;
   else if(r.status==='Sent') actions = `<button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},false)" title="Mimics a real detected reply, without an actual inbox">Simulate reply (test)</button><button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},true)" title="Mimics a reply containing opt-out language">Simulate opt-out (test)</button>`;
-  else if(r.status==='Replied') actions = `<button class="btn sec" onclick="serverQuote('${cid}',${r.id})">Log quote</button>`;
   else if(r.status==='QuoteRequested') actions = `<button class="btn ok" onclick="serverWon('${cid}',${r.id})">Mark Won</button><button class="btn reject" onclick="serverLost('${cid}',${r.id})">Mark Lost</button>`;
   else if(r.status==='Won') actions = `<button class="btn sec" onclick="serverWon('${cid}',${r.id})">Edit amount</button><button class="btn sec" onclick="serverReopen('${cid}',${r.id})">Reopen</button>`;
   else if(r.status==='Lost') actions = `<button class="btn sec" onclick="serverLost('${cid}',${r.id})">Edit reason</button><button class="btn sec" onclick="serverReopen('${cid}',${r.id})">Reopen</button>`;
+  // A quote can be logged at any point before the deal closes, not just
+  // after a reply -- a phone call or walk-in doesn't need a fake "Replied"
+  // step first. See VALID_FOR_QUOTE in sales_outcomes.py.
+  if(['Queued','Approved','Sent','Replied'].includes(r.status)) {
+    actions += `<button class="btn sec" onclick="serverQuote('${cid}',${r.id})" title="Log a quote request now -- doesn't require a reply first">Log quote</button>`;
+  }
+  actions += `<button class="btn sec" onclick="openCampHistory('${esc(r.lead_number)}')" title="Full cross-campaign history for this lead">History</button>`;
   const checkbox = r.status==='Queued' ? `<input type="checkbox" class="camp-row-check" data-id="${r.id}" onclick="toggleCampSelect(${r.id}, this.checked)" style="margin-right:10px;"/>` : '';
   return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div><div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span></div></div>`;
+}
+
+async function openCampHistory(leadNumber) {
+  const panel = document.getElementById('campHistPanel');
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({behavior:'smooth', block:'start'});
+  await openLeadDetail(leadNumber, 'campHistDetailWrap', 'campHistStatus');
+}
+
+function closeCampHistory() {
+  document.getElementById('campHistPanel').classList.add('hidden');
+  document.getElementById('campHistDetailWrap').innerHTML = '';
+  if(leadDetailCtx.bodyId === 'campHistDetailWrap') leadDetailCtx = { leadNumber: null, bodyId: 'leadDetailBody', statusId: 'leadDetailStatus' };
 }
 
 function toggleCampSelect(id, checked) {
@@ -1880,7 +1910,7 @@ let leadsListRequestSeq = 0;
 // showing it, and openLeadDetail() clears the other container so their
 // (identically-id'd) inner controls, like #leadAssignCampaign, never
 // collide.
-const LEAD_DETAIL_BODY_IDS = ['leadDetailBody', 'dashDrillDetailWrap'];
+const LEAD_DETAIL_BODY_IDS = ['leadDetailBody', 'dashDrillDetailWrap', 'campHistDetailWrap'];
 let leadDetailCtx = { leadNumber: null, bodyId: 'leadDetailBody', statusId: 'leadDetailStatus' };
 // Full payload of the currently-open lead, kept around so the Quote
 // Document modal (a separate DOM root, opened on top of whichever
@@ -1905,7 +1935,7 @@ const LEAD_FILTER_KIND = {
   'Rejected': 'status', 'Sent': 'status', 'Replied': 'status', 'Suppressed': 'status',
   'QuoteRequested': 'status', 'Won': 'status', 'Lost': 'status',
   'ever_sent': 'ever_sent', 'ever_replied': 'ever_replied', 'ever_quoted': 'ever_quoted',
-  'quote_ready': 'quote_ready',
+  'quote_ready': 'quote_ready', 'follow_up_due': 'follow_up_due',
 };
 function leadsParamsFor(optionValue) {
   const params = new URLSearchParams();
@@ -2013,6 +2043,7 @@ async function loadLeadsList() {
     <td>${scorePill(l.lead_score)}</td>
     <td class="nowrap">${pill(l.validation_status)}${l.validation_notes?`<div class="muted" style="font-size:10.5px;margin-top:2px;max-width:160px;white-space:normal;">${esc(l.validation_notes)}</div>`:''}</td>
     <td>${pill(l.status)}</td>
+    <td>${nextActionCell(l)}</td>
     <td>${esc(l.campaign_name||'—')}${l.campaign_count>1?` <span class="muted">(+${l.campaign_count-1})</span>`:''}</td>
     <td>${fmtMoney(l.deal_value)}</td>
     <td class="muted nowrap">${l.last_activity_at?fmt(l.last_activity_at):'—'}</td>
@@ -2218,6 +2249,7 @@ async function saveLeadEdit(prospectId) {
     linkedin_url: document.getElementById('leadEditLinkedin').value.trim(),
     qualification_status: document.getElementById('leadEditQualStatus').value,
     next_action: document.getElementById('leadEditNextAction').value.trim(),
+    next_action_due: document.getElementById('leadEditNextActionDue').value,
   };
   const r = await fetch('/prospects/'+prospectId, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
   const d = await r.json();
@@ -2275,7 +2307,9 @@ async function refreshLeadDetail() {
 }
 
 function membershipActions(m) {
-  if(m.status==='Replied') return `<button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadRequestQuote(${m.campaign_id},${m.id})">Request quote</button>`;
+  // A quote can be requested at any point before the deal closes, not
+  // just after a reply -- see VALID_FOR_QUOTE in sales_outcomes.py.
+  if(['Queued','Approved','Sent','Replied'].includes(m.status)) return `<button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadRequestQuote(${m.campaign_id},${m.id})" title="Doesn't require a reply first">Request quote</button>`;
   if(m.status==='QuoteRequested') return `<button class="btn ok" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadMarkWon(${m.campaign_id},${m.id})">Mark Won</button><button class="btn reject" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadMarkLost(${m.campaign_id},${m.id})">Mark Lost</button>`;
   if(m.status==='Won') return `<button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadMarkWon(${m.campaign_id},${m.id})">Edit amount</button><button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadReopen(${m.campaign_id},${m.id})">Reopen</button>`;
   if(m.status==='Lost') return `<button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadMarkLost(${m.campaign_id},${m.id})">Edit reason</button><button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadReopen(${m.campaign_id},${m.id})">Reopen</button>`;
@@ -2501,6 +2535,7 @@ function editLeadSection(p) {
       </div>
       <div class="row mt12">
         <input type="text" id="leadEditNextAction" placeholder="Next action, e.g. Call back Friday" value="${esc(p.next_action||'')}"/>
+        <input type="date" id="leadEditNextActionDue" style="max-width:170px;" value="${esc(p.next_action_due||'')}" title="When this next action is due"/>
       </div>
       <div class="row mt12">
         <button class="btn" onclick="saveLeadEdit(${p.id})">Save</button>
@@ -2515,6 +2550,39 @@ function editLeadSection(p) {
     </div>`;
   }
   return html;
+}
+
+function notesSection(d) {
+  const notes = d.notes || [];
+  const list = notes.length
+    ? notes.map(n => `<div class="mt12" style="padding:10px 12px;border:1px solid var(--line-soft);border-radius:8px;">
+        <div class="muted">${fmt(n.created_at)}</div>
+        <div style="font-size:13px;white-space:pre-wrap;margin-top:3px;">${esc(n.note)}</div>
+      </div>`).join('')
+    : `<div class="empty">No notes yet — add what was discussed and what's next.</div>`;
+  return `<div class="panel" style="background:var(--paper);box-shadow:none;margin-bottom:16px;">
+    <div class="panel-head"><h2>Notes</h2></div>
+    <div class="row">
+      <textarea id="leadNoteInput" placeholder="Add a note — what was discussed, what's next…"></textarea>
+    </div>
+    <div class="row mt12">
+      <button class="btn ok" onclick="saveLeadNote('${esc(d.lead_number)}')">Add note</button>
+      <span class="status" id="leadNoteStatus"></span>
+    </div>
+    ${list}
+  </div>`;
+}
+
+async function saveLeadNote(leadNumber) {
+  const input = document.getElementById('leadNoteInput');
+  const note = input.value.trim();
+  if(!note) return;
+  const r = await fetch('/leads/'+encodeURIComponent(leadNumber)+'/notes', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({note}),
+  });
+  const d = await r.json();
+  if(!r.ok) return setS('leadNoteStatus', d.detail||'Failed to save note', true);
+  refreshLeadDetail();
 }
 
 function renderLeadTimeline(d) {
@@ -2534,6 +2602,7 @@ function renderLeadTimeline(d) {
   </div>`;
 
   html += editLeadSection(p);
+  html += notesSection(d);
 
   if(d.memberships.length) {
     html += `<div class="tbl-wrap scrollx"><table><thead><tr>
@@ -2683,8 +2752,10 @@ let dashSummaryData = null;
 async function loadDashboard() {
   if(MODE==='server') {
     try {
-      const [sr,ar] = await Promise.all([fetch('/reports/summary'), fetch('/audit/events?limit=30')]);
+      const [sr,ar,fudr] = await Promise.all([fetch('/reports/summary'), fetch('/audit/events?limit=30'), fetch('/leads?follow_up_due=true')]);
       const d=await sr.json(), audit=await ar.json();
+      const fud = await fudr.json();
+      set('sp_fud', Array.isArray(fud) ? fud.length : '–');
       dashSummaryData = d;
       const s=d.prospect_status_counts;
       set('dV',s.Valid); set('dI',s.Invalid); set('dD',s.Duplicate); set('dE',s['Existing Customer']); set('dAC',s['Already Contacted']); set('dT',d.total_prospects);
@@ -3382,6 +3453,15 @@ function pill(s){
 function scorePill(score) {
   const cls = score>=65 ? 'p-valid' : score>=30 ? 'p-quote' : 'p-neutral';
   return `<span class="pill ${cls}">${score}</span>`;
+}
+function nextActionCell(l) {
+  if(!l.next_action && !l.next_action_due) return '<span class="muted">—</span>';
+  const today = new Date().toISOString().slice(0,10);
+  const overdue = l.next_action_due && l.next_action_due <= today;
+  const dueHtml = l.next_action_due
+    ? `<div style="font-size:10.5px;margin-top:2px;${overdue?'color:var(--invalid);font-weight:600;':'color:var(--muted);'}">Due ${fmtDate(l.next_action_due)}${overdue?' — overdue':''}</div>`
+    : '';
+  return `<div style="max-width:160px;white-space:normal;font-size:12px;">${esc(l.next_action||'—')}</div>${dueHtml}`;
 }
 
 // Boot — start on Import tab
