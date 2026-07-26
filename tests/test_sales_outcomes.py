@@ -149,7 +149,10 @@ def test_draft_quote_summary_creates_reviewable_draft(server):
     assert draft["confidence"] == "quote_summary"
     assert "Flat bars" in draft["body"]
     assert "FOB" in draft["body"]
-    assert draft["subject"].startswith("Quote request summary")
+    # Reuses the thread's own subject (the simulated reply's, here) rather
+    # than inventing an unrelated one -- keeps the recap in the same inbox
+    # thread instead of landing as a new, disconnected-looking email.
+    assert draft["subject"] == "Re: Quick question"
 
     # Nothing was actually sent -- still just a draft awaiting human approval.
     assert draft["sent_at"] is None

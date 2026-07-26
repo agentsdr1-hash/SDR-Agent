@@ -24,13 +24,28 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.services.kb_qa import _specs_given
+from app.services.kb_qa import _specs_given, reply_subject_for
 
 REPO_ROOT = Path(__file__).parent.parent
 PROBE = Path(__file__).parent / "_kb_probe.py"
 
 
 # ---- pure-function tests (no DB, no server) --------------------------
+def test_reply_subject_for_reuses_the_original_subject():
+    assert reply_subject_for("Steel inquiry") == "Re: Steel inquiry"
+
+
+def test_reply_subject_for_does_not_double_prefix():
+    assert reply_subject_for("Re: Steel inquiry") == "Re: Steel inquiry"
+    assert reply_subject_for("RE: Steel inquiry") == "RE: Steel inquiry"  # case preserved, not re-wrapped
+
+
+def test_reply_subject_for_falls_back_when_theres_nothing_to_reuse():
+    assert reply_subject_for(None) == "Re: your inquiry"
+    assert reply_subject_for("") == "Re: your inquiry"
+    assert reply_subject_for("   ") == "Re: your inquiry"
+
+
 def test_specs_given_detects_grade():
     assert _specs_given("Grade A please") == {"grade": True, "size": False, "quantity": False}
 
@@ -113,3 +128,25 @@ def test_simulate_reply_creates_draft_using_the_spec_aware_closing(server):
     drafts = server.get("/reply-drafts").json()
     draft = next(d for d in drafts if d["campaign_prospect_id"] == row_id)
     assert "that's everything we need" in draft["body"].lower()
+
+
+def test_reply_draft_subject_reuses_the_incoming_reply_subject(server):
+    # Previously every smart-reply draft got the same hardcoded "Re: your
+    # question" regardless of what the customer's email actually said --
+    # broke inbox threading and read as a non-sequitur. The draft's
+    # subject should track the real conversation instead.
+    cid = server.post("/campaigns", json={"name": "Subject Reuse Test"}).json()["id"]
+    pid = server.seed_prospect()
+    server.post(f"/campaigns/{cid}/assign-prospect/{pid}")
+    row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-sent")
+
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", json={
+        "reply_subject": "RE: AKEIS Steel Supply -- quote for Acme", "reply_body": "interested",
+    })
+
+    drafts = server.get("/reply-drafts").json()
+    draft = next(d for d in drafts if d["campaign_prospect_id"] == row_id)
+    assert draft["subject"] == "RE: AKEIS Steel Supply -- quote for Acme"
+    assert draft["subject"] != "Re: your question"
