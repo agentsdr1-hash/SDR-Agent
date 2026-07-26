@@ -157,7 +157,11 @@ tbody tr.row-click{cursor:pointer;}
 .email-card .who{font-family:var(--display);font-weight:600;font-size:13.5px;}
 .email-card .who span{display:block;font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400;margin-top:2px;}
 .email-card .ebody{font-size:13px;white-space:pre-wrap;line-height:1.65;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:12px;}
-textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
+/* Sized to match the read-only .ebody div above (the "prospects box"),
+   not an arbitrary fixed floor -- a short reply used to render in a
+   180px-tall empty box that looked broken next to the compact prospect
+   cards it sits beside. autoGrow() still expands it for longer replies. */
+textarea.ebody{min-height:90px;overflow:hidden;resize:none;}
 
 /* Lead document cards -- a quote/slip feel for the Dashboard drill-down:
    a letterhead-style header band, a dashed tear line, a key/value body
@@ -1675,7 +1679,7 @@ function replyDraftCard(d, showCampaignTag) {
   return `<div class="email-card">
     <div class="ehead"><div class="who">${esc(name)}<span>${esc(d.email||'')} · ${esc(d.company||'—')}</span></div>${campaignTag}${confBadge}</div>
     <div class="muted" style="margin:2px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Their message — "${esc(d.source_reply_subject||'(no subject)')}"</div>
-    <pre style="margin:0 0 8px;">${esc(d.source_reply_snippet || '(no message text captured)')}</pre>
+    <div class="ebody">${esc(d.source_reply_snippet || '(no message text captured)')}</div>
     <div class="day-note" style="margin-bottom:8px;">Matched: ${esc(d.matched_summary||'—')}</div>
     <div class="muted" style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Our reply (edit before sending)</div>
     <input class="edit-subject" id="rd-subj-${d.id}" value="${esc(d.subject)}"/>
@@ -2930,7 +2934,7 @@ function emailThreadHTML(d, m) {
     return gapHtml + theirs + ours;
   }).join('');
 
-  return `<div class="panel-head" style="margin-bottom:6px;"><h2>Email thread — ${esc(d.lead_number)}</h2></div>
+  return `<div class="panel-head" style="margin-bottom:6px;"><h2>Email thread — ${esc(d.lead_number)}</h2><span class="pill p-neutral">${esc(m.campaign_name||'—')}</span></div>
     <p class="hint" style="margin:0 0 4px;">${esc([p.first_name,p.last_name].filter(Boolean).join(' ')||'—')} · ${esc(p.email||'—')} · ${esc(p.company||'—')}</p>
     <div class="thread-wrap">${body}</div>
     <div class="status" id="emailThreadStatus" style="margin-top:10px;"></div>`;
