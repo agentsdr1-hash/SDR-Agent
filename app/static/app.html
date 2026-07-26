@@ -443,8 +443,8 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
   </div>
 
   <div class="panel" id="replyDraftsPanel">
-    <div class="panel-head"><h2>Reply drafts awaiting review (<span id="rdCount">0</span>)</h2><button class="btn sec" style="font-size:12px;padding:5px 12px;margin-left:auto;" onclick="loadReplyDrafts()">↻ Refresh</button><span class="obj-tag">smart-reply, rule-based</span></div>
-    <p class="hint" style="margin:0 0 10px;">Generated automatically whenever a prospect replies (real Gmail poll, or the Simulate reply buttons below) — matched against the Q&amp;A knowledge base and stock catalog. Review before sending; nothing here goes out on its own.</p>
+    <div class="panel-head"><h2>Reply drafts awaiting review — <span id="rdCampaignName">—</span> (<span id="rdCount">0</span>)</h2><button class="btn sec" style="font-size:12px;padding:5px 12px;margin-left:auto;" onclick="loadReplyDrafts()">↻ Refresh</button><span class="obj-tag">smart-reply, rule-based</span></div>
+    <p class="hint" style="margin:0 0 10px;">Generated automatically whenever a prospect replies (real Gmail poll, or the Simulate reply buttons below) — matched against the Q&amp;A knowledge base and stock catalog. Review before sending; nothing here goes out on its own. Scoped to the campaign selected above — a lead's full reply history across every campaign is in the Leads tab.</p>
     <div id="rdList"></div>
     <div class="empty hidden" id="rdEmpty">No reply drafts waiting on you right now.</div>
   </div>
@@ -1017,7 +1017,7 @@ function go(name) {
   });
   document.getElementById('mainTabs').classList.remove('open');
   if(name==='dashboard') loadDashboard();
-  if(name==='campaigns') { syncReviewSelect(); loadReplyDrafts(); }
+  if(name==='campaigns') { syncReviewSelect(); }
   if(name==='leads') loadLeadsList();
   if(name==='admin') { enterAdminTab(); }
   if(name==='import') syncCampSelect();
@@ -1460,6 +1460,7 @@ async function loadServerProspects(cid) {
   document.getElementById('pProspects').classList.remove('hidden');
   document.getElementById('emailCards').innerHTML = rows.map(r => serverProspectCard(r, cid)).join('');
   renderCampBulkBar();
+  loadReplyDrafts();
 }
 
 function serverProspectCard(r, cid) {
@@ -1566,10 +1567,14 @@ async function serverSimulateReply(cid,rid,isOptOut) {
 async function loadReplyDrafts() {
   const list = document.getElementById('rdList'), empty = document.getElementById('rdEmpty');
   if(MODE!=='server') { list.innerHTML=''; set('rdCount','0'); empty.textContent='Requires server mode.'; empty.classList.remove('hidden'); return; }
+  if(!campCurrentCid) { list.innerHTML=''; set('rdCount','0'); set('rdCampaignName','—'); empty.textContent='Select a campaign above to see its pending replies.'; empty.classList.remove('hidden'); return; }
+  const sel = document.getElementById('reviewSelect');
+  const campaignName = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '—';
+  set('rdCampaignName', campaignName);
   try {
-    const drafts = await (await fetch('/reply-drafts?status=Draft')).json();
+    const drafts = await (await fetch('/reply-drafts?status=Draft&campaign_id='+campCurrentCid)).json();
     set('rdCount', drafts.length);
-    if(!drafts.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now.'; empty.classList.remove('hidden'); return; }
+    if(!drafts.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now for this campaign.'; empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
     list.innerHTML = drafts.map(replyDraftCard).join('');
     document.querySelectorAll('#rdList textarea.ebody').forEach(autoGrow);
@@ -1583,8 +1588,10 @@ function replyDraftCard(d) {
     : `<span class="pill p-dup">fallback — no strong match</span>`;
   return `<div class="email-card">
     <div class="ehead"><div class="who">${esc(name)}<span>${esc(d.email||'')} · ${esc(d.company||'—')}</span></div>${confBadge}</div>
-    <div class="day-note" style="margin-bottom:6px;">In reply to: ${esc(d.source_reply_subject||'(no subject)')} — "${esc((d.source_reply_snippet||'').slice(0,140))}${(d.source_reply_snippet||'').length>140?'…':''}"</div>
+    <div class="muted" style="margin:2px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Their message — "${esc(d.source_reply_subject||'(no subject)')}"</div>
+    <pre style="margin:0 0 8px;">${esc(d.source_reply_snippet || '(no message text captured)')}</pre>
     <div class="day-note" style="margin-bottom:8px;">Matched: ${esc(d.matched_summary||'—')}</div>
+    <div class="muted" style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Our reply (edit before sending)</div>
     <input class="edit-subject" id="rd-subj-${d.id}" value="${esc(d.subject)}"/>
     <textarea class="ebody" id="rd-body-${d.id}" oninput="autoGrow(this)">${esc(d.body)}</textarea>
     <div class="eactions">

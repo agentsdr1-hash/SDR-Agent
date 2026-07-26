@@ -19,15 +19,26 @@ class ReplyDraftError(Exception):
     pass
 
 
-def list_reply_drafts(status: str | None = None) -> list[dict]:
-    query = """SELECT rd.*, pr.first_name, pr.last_name, pr.email, pr.company
+def list_reply_drafts(status: str | None = None, campaign_id: int | None = None) -> list[dict]:
+    """campaign_id scopes the review queue to one campaign -- e.g. the
+    Campaigns tab's "Reply drafts awaiting review" panel, which otherwise
+    showed every pending reply from every campaign regardless of which one
+    was selected. Omit it for the cross-campaign view (not currently used
+    anywhere, but kept as the default since a lead's full reply history is
+    already surfaced per-lead in the Leads tab)."""
+    query = """SELECT rd.*, pr.first_name, pr.last_name, pr.email, pr.company, cp.campaign_id
                FROM reply_drafts rd
                JOIN campaign_prospects cp ON cp.id = rd.campaign_prospect_id
                JOIN prospects_raw pr ON pr.id = cp.prospect_id"""
-    params = []
+    conditions, params = [], []
     if status:
-        query += " WHERE rd.status = ?"
+        conditions.append("rd.status = ?")
         params.append(status)
+    if campaign_id is not None:
+        conditions.append("cp.campaign_id = ?")
+        params.append(campaign_id)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY rd.created_at DESC"
     with get_conn() as conn:
         rows = conn.execute(query, params).fetchall()
