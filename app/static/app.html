@@ -530,7 +530,7 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
 
   <div class="panel">
     <div class="panel-head"><h2>All leads</h2><span class="obj-tag">consolidated · every campaign</span></div>
-    <p class="hint" style="margin:0 0 10px;">Every prospect that's a real, actionable lead gets an immutable Lead # the moment it's imported — this is every one of them, across every campaign, in one place (not scoped to a single campaign or import batch like the tables on the Campaigns and Dashboard tabs). Rows that failed validation, are duplicates of an earlier import, are already customers, or were already contacted never appear here — they're still recorded and counted on the Dashboard funnel, just not shown as leads. Search by name, email, company, or Lead #, then click a row to open its full lifecycle and manage its status — including reopening or editing a Won/Lost outcome. Check rows for bulk actions, or use Export to download the current view.</p>
+    <p class="hint" style="margin:0 0 10px;">Every lead, across every campaign, in one place. Click a row to open its full history and manage its status.</p>
     <div class="row">
       <input type="text" id="leadsSearch" placeholder="Search name, email, company, or Lead # (e.g. L-000001)"/>
       <select id="leadsStatusFilter" style="max-width:240px;">
@@ -2784,9 +2784,9 @@ function renderLeadTimeline(d) {
   }
 
   if(d.memberships.length) {
-    html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">EMAIL FLOW — outreach → reply → response</div>` +
+    html += `<div class="mt16"><div class="hint" style="margin-bottom:6px;">EMAIL FLOW — outreach → reply → response → outcome</div>` +
       d.memberships.map(m =>
-        `<div style="margin-bottom:14px;">${d.memberships.length>1?`<div class="muted" style="font-size:11.5px;margin-bottom:4px;">${esc(m.campaign_name)}</div>`:''}${emailFlowSection(m)}</div>`
+        `<div style="margin-bottom:14px;">${d.memberships.length>1?`<div class="muted" style="font-size:11.5px;margin-bottom:4px;">${esc(m.campaign_name)}</div>`:''}${emailFlowSection(m)}${membershipOutcomeLine(m)}</div>`
       ).join('') + `</div>`;
   }
 
@@ -2866,6 +2866,22 @@ function emailFlowSection(m) {
       <span class="muted" style="font-size:11.5px;">last activity ${fmt(lastActivity)}</span>
     </div>
     <button class="btn sky" style="padding:6px 14px;font-size:12px;" onclick="openEmailThreadModal(${m.id})">Open email thread</button>
+  </div>`;
+}
+
+// The email flow shows the back-and-forth, but not where it landed --
+// Won/Lost/Quote Requested lived only in the status table above, easy to
+// miss when scanning the flow itself. This surfaces that end state right
+// under it once the conversation has actually reached one.
+const OUTCOME_LABELS = {QuoteRequested: 'Quote requested', Won: 'Won', Lost: 'Lost', Suppressed: 'Suppressed (opted out)', Rejected: 'Rejected'};
+function membershipOutcomeLine(m) {
+  if (!OUTCOME_LABELS[m.status]) return '';
+  let detail = '';
+  if (m.status === 'Won' && m.deal_value) detail = ` — ${fmtMoney(m.deal_value)}`;
+  else if (m.status === 'Lost' && m.lost_reason) detail = ` — ${esc(m.lost_reason)}`;
+  return `<div class="row" style="margin-top:8px;align-items:center;gap:8px;">
+    <span class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Outcome</span>
+    ${pill(m.status)}<span class="muted" style="font-size:12px;">${detail}</span>
   </div>`;
 }
 
