@@ -14,6 +14,7 @@ from app.models import SendResult
 from app.services.administration import is_suppressed, add_to_suppression_list
 from app.services.audit import log_event
 from app.services import kb_qa
+from app.services.inbox_monitor import AWAITING_REPLY_STATUSES
 
 VALID_TRANSITIONS_TO_APPROVE = {"Queued"}
 VALID_TRANSITIONS_TO_REJECT = {"Queued"}
@@ -173,16 +174,19 @@ def simulate_sent(campaign_id: int, prospect_row_id: int):
 
 def simulate_reply(campaign_id: int, prospect_row_id: int, reply_subject: str | None, is_opt_out: bool, reply_body: str | None = None):
     """QA/testing only -- mimics what the real inbox poller (inbox_monitor.py)
-    would do on a matching reply, without an actual inbox: flips a Sent
-    prospect to Replied (or Suppressed, if simulating an opt-out), stamping
-    the same fields a real detected reply would, and -- for a non-opt-out
-    reply -- generates a smart-reply draft from reply_body exactly like a
-    real detected reply would, so the KB/stock matching can be tested
-    without Gmail."""
+    would do on a matching reply, without an actual inbox: flips a
+    Sent-or-Replied prospect to Replied (or Suppressed, if simulating an
+    opt-out), stamping the same fields a real detected reply would, and --
+    for a non-opt-out reply -- generates a smart-reply draft from
+    reply_body exactly like a real detected reply would, so the KB/stock
+    matching, and multi-round back-and-forth, can be tested without Gmail.
+    Mirrors AWAITING_REPLY_STATUSES so a lead that already replied once
+    can still "reply again" here, the same way a real second inbound
+    email would be caught by inbox_monitor.poll_once()."""
     with get_conn() as conn:
         status = _get_status(conn, campaign_id, prospect_row_id)
-        if status != "Sent":
-            raise ApprovalError(f"Can only simulate a reply from status 'Sent' (current: '{status}')")
+        if status not in AWAITING_REPLY_STATUSES:
+            raise ApprovalError(f"Can only simulate a reply from status 'Sent' or 'Replied' (current: '{status}')")
         now = datetime.now(timezone.utc).isoformat()
         subject = reply_subject or ("Please unsubscribe" if is_opt_out else "Re: Quick question")
         new_status = "Suppressed" if is_opt_out else "Replied"

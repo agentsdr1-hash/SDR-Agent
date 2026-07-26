@@ -115,6 +115,40 @@ def test_simulate_sent_and_reply_flow(server):
     assert drafts[0]["status"] == "Draft"
 
 
+def test_simulate_reply_can_fire_a_second_round_after_the_first(server):
+    # This industry runs on multi-round back-and-forth -- a prospect who
+    # already replied once should still be reachable for a second (and
+    # third) round, not frozen at "Replied" forever. See
+    # AWAITING_REPLY_STATUSES in inbox_monitor.py.
+    cid = _create_campaign(server, "Second Round Test")
+    pid = server.seed_prospect()
+    _assign(server, cid, pid)
+    row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-sent")
+
+    r = server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", json={
+        "reply_subject": "Re: hello", "reply_body": "What sizes do you carry?", "is_opt_out": False,
+    })
+    assert r.status_code == 200
+    assert server.get(f"/campaigns/{cid}/prospects").json()[0]["status"] == "Replied"
+
+    # A second reply from the same still-Replied prospect is not rejected --
+    # the row stays open for the next inbound message.
+    r = server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", json={
+        "reply_subject": "Re: Re: hello", "reply_body": "Also need 20 tons of flat bars", "is_opt_out": False,
+    })
+    assert r.status_code == 200, r.text
+
+    prospect = server.get(f"/campaigns/{cid}/prospects").json()[0]
+    assert prospect["status"] == "Replied"
+    assert prospect["reply_subject"] == "Re: Re: hello"  # updated to the latest round
+
+    drafts = server.get("/reply-drafts").json()
+    matching = [d for d in drafts if d["campaign_prospect_id"] == row_id]
+    assert len(matching) == 2  # one reply draft per round
+
+
 def test_simulate_opt_out_reply_suppresses_email(server):
     cid = _create_campaign(server, "Opt Out Test")
     pid = server.seed_prospect(email="optout@example.com")
@@ -131,6 +165,11 @@ def test_simulate_opt_out_reply_suppresses_email(server):
 
     suppressed = server.get("/admin/suppressed", headers=ADMIN_HEADERS).json()
     assert any(s["email"] == "optout@example.com" for s in suppressed)
+
+    # Unlike Replied, Suppressed is a real dead end -- no further "reply"
+    # is accepted for this row.
+    r = server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", json={"reply_body": "wait, don't unsubscribe me"})
+    assert r.status_code == 422
 
 
 def test_real_send_refuses_without_gmail_configured(server):
