@@ -126,11 +126,30 @@ def _specs_given(text: str) -> dict:
 # ══════════════════════════════════════════════════════
 # Smart reply drafting
 # ══════════════════════════════════════════════════════
-def compose_smart_reply(first_name: str | None, company: str | None, reply_text: str) -> dict:
+def reply_subject_for(original_subject: str | None) -> str:
+    """Keeps the customer's own email thread intact -- reuses (a
+    normalized) 'Re: <subject>' instead of inventing an unrelated subject
+    on every response, which breaks threading in their inbox and reads as
+    a non-sequitur ("why did the subject change again?"). Never
+    double-prefixes a subject that's already 'Re: ...'."""
+    subject = (original_subject or "").strip()
+    if not subject:
+        return "Re: your inquiry"
+    if re.match(r"^re:\s*", subject, re.IGNORECASE):
+        return subject
+    return f"Re: {subject}"
+
+
+def compose_smart_reply(first_name: str | None, company: str | None, reply_text: str,
+                         reply_subject: str | None = None) -> dict:
     """Rule-based reply composer -- matches reply_text against KB entries
     and stock-catalog product families, then assembles a short human-ish
     reply. Returns confidence + a plain-English note of what matched so a
     reviewer can sanity-check it before approving.
+
+    reply_subject is the subject of the message being replied to (real
+    inbound reply, or simulated) -- see reply_subject_for() for why the
+    response subject is derived from it rather than a fixed string.
 
     The closing line adapts to how much the customer already gave us
     (grade/size/quantity, detected via _specs_given): full specs -> push
@@ -182,7 +201,7 @@ def compose_smart_reply(first_name: str | None, company: str | None, reply_text:
     matched_summary = "; ".join(summary_parts) if summary_parts else "No strong match -- generic holding reply, review before sending"
 
     return {
-        "subject": "Re: your question",
+        "subject": reply_subject_for(reply_subject),
         "body": "\n".join(lines),
         "confidence": confidence,
         "matched_summary": matched_summary,
@@ -200,7 +219,7 @@ def create_reply_draft(campaign_prospect_id: int, first_name: str | None, compan
     said, not just enough text to eyeball a one-line preview. The Lead
     Detail view renders it in full alongside our reply, not as a truncated
     quoted line."""
-    draft = compose_smart_reply(first_name, company, reply_text)
+    draft = compose_smart_reply(first_name, company, reply_text, reply_subject)
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         cur = conn.execute(

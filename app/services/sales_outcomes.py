@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from app.db import get_conn
 from app.services.audit import log_event
 from app.services.leads import QUOTE_CHECKLIST_FIELDS
+from app.services.kb_qa import reply_subject_for
 
 # A quote can be logged from any point before the deal itself closes --
 # not just after a reply. A real quote request often arrives with no email
@@ -168,7 +169,11 @@ def draft_quote_summary_email(campaign_id: int, prospect_row_id: int) -> int:
             "\n\nLet us know if anything needs adjusting, and we'll follow up with a formal quote shortly.\n\n"
             "Best regards"
         )
-        subject = f"Quote request summary -- {row['company'] or greeting_name}"
+        # Reuses the thread's own subject (latest reply if there's been
+        # one, otherwise the original outreach) rather than a made-up
+        # "Quote request summary" line -- keeps this reply in the same
+        # inbox thread instead of landing as an unrelated new email.
+        subject = reply_subject_for(row["reply_subject"] or row["subject"])
 
         now = datetime.now(timezone.utc).isoformat()
         cur = conn.execute(
