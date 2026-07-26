@@ -7,8 +7,11 @@ app/services/leads.py for the design rationale.
 from fastapi import APIRouter, HTTPException
 
 from app.db import get_conn
-from app.models import BulkAssignInput, BulkSuppressInput, BulkDeleteInput, BulkActionResult
-from app.services.leads import get_lead_timeline, list_leads, lead_number_for, parse_lead_number, delete_lead
+from app.models import BulkAssignInput, BulkSuppressInput, BulkDeleteInput, BulkActionResult, NoteCreate, LeadNote
+from app.services.leads import (
+    get_lead_timeline, list_leads, lead_number_for, parse_lead_number, delete_lead,
+    add_note, list_notes,
+)
 from app.services.campaign_management import assign_prospect_to_campaign, CampaignError
 from app.services.administration import add_to_suppression_list, AdminError
 
@@ -19,16 +22,17 @@ router = APIRouter(prefix="/leads", tags=["leads"])
 def leads_list(search: str | None = None, status: str | None = None,
                validation_status: str | None = None, ever_sent: bool | None = None,
                ever_replied: bool | None = None, ever_quoted: bool | None = None,
-               quote_ready: bool | None = None):
+               quote_ready: bool | None = None, follow_up_due: bool | None = None):
     """Consolidated, cross-campaign lead list for the Leads tab -- every
     prospect, one row each, optionally filtered by status (current campaign
     status), validation_status (Valid/Invalid/etc.), ever_sent/ever_replied/
     ever_quoted (matches the Dashboard's SDR-performance/value-captured
     counts), quote_ready (every Quote Readiness Checklist field filled in),
-    or a free-text search across name/email/company/lead number."""
+    follow_up_due (next_action_due today or earlier), or a free-text search
+    across name/email/company/lead number."""
     return list_leads(search=search, status=status, validation_status=validation_status,
                        ever_sent=ever_sent, ever_replied=ever_replied, ever_quoted=ever_quoted,
-                       quote_ready=quote_ready)
+                       quote_ready=quote_ready, follow_up_due=follow_up_due)
 
 
 @router.post("/bulk-assign", response_model=BulkActionResult)
@@ -96,6 +100,36 @@ def lead_timeline(lead_number: str):
     if result is None:
         raise HTTPException(status_code=404, detail=f"No lead found for '{lead_number}'")
     return result
+
+
+@router.post("/{lead_number}/notes", response_model=LeadNote)
+def add_note_endpoint(lead_number: str, payload: NoteCreate):
+    """Append one timestamped note to this lead's history -- separate from
+    next_action (the single current task); see add_note()'s docstring."""
+    prospect_id = parse_lead_number(lead_number)
+    if prospect_id is None:
+        raise HTTPException(status_code=404, detail=f"'{lead_number}' is not a valid lead number")
+    try:
+        return add_note(prospect_id, payload.note)
+    except ValueError as e:
+        # add_note() raises ValueError both for "no such lead" and for
+        # empty note text -- disambiguate on message so the former still
+        # maps to 404 (matches delete_lead_endpoint's convention) while an
+        # empty note is a 422 (bad input on an otherwise-valid lead).
+        detail = str(e)
+        status = 404 if "not found" in detail else 422
+        raise HTTPException(status_code=status, detail=detail)
+
+
+@router.get("/{lead_number}/notes", response_model=list[LeadNote])
+def list_notes_endpoint(lead_number: str):
+    prospect_id = parse_lead_number(lead_number)
+    if prospect_id is None:
+        raise HTTPException(status_code=404, detail=f"'{lead_number}' is not a valid lead number")
+    try:
+        return list_notes(prospect_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.delete("/{lead_number}")

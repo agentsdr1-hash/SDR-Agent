@@ -3,6 +3,8 @@ GET /leads -- the cross-campaign consolidated view -- plus its filters,
 bulk actions, and the rule-based lead score / quote-readiness math that
 feed the Leads tab's Score column and the Quote Document.
 """
+from datetime import date, timedelta
+
 from conftest import ADMIN_HEADERS
 
 FULL_CHECKLIST = {
@@ -112,6 +114,40 @@ def test_quote_readiness_and_quote_ready_filter(server):
 
     ready_leads = server.get("/leads", params={"quote_ready": "true"}).json()
     assert any(l["prospect_id"] == pid for l in ready_leads)
+
+
+def _seed_with_due(server, due):
+    pid = server.seed_prospect()
+    r = server.put(f"/prospects/{pid}", json={
+        "first_name": "Jane", "last_name": "Doe", "email": f"followup{pid}@example.com", "company": "Acme",
+        "phone": "", "next_action": "Follow up", "next_action_due": due,
+    })
+    assert r.status_code == 200, r.text
+    return pid
+
+
+def test_next_action_due_round_trips_through_edit_and_leads_list(server):
+    pid = _seed_with_due(server, "2026-08-01")
+    lead = next(l for l in server.get("/leads").json() if l["prospect_id"] == pid)
+    assert lead["next_action"] == "Follow up"
+    assert lead["next_action_due"] == "2026-08-01"
+
+
+def test_follow_up_due_filter_matches_only_today_or_earlier(server):
+    today = date.today().isoformat()
+    past = (date.today() - timedelta(days=3)).isoformat()
+    future = (date.today() + timedelta(days=30)).isoformat()
+
+    overdue_id = _seed_with_due(server, past)
+    due_today_id = _seed_with_due(server, today)
+    future_id = _seed_with_due(server, future)
+    no_due_id = server.seed_prospect()
+
+    due_ids = {l["prospect_id"] for l in server.get("/leads", params={"follow_up_due": "true"}).json()}
+    assert overdue_id in due_ids
+    assert due_today_id in due_ids
+    assert future_id not in due_ids
+    assert no_due_id not in due_ids
 
 
 def test_bulk_assign(server):

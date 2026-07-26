@@ -16,6 +16,7 @@ and the audit trail, so "was this lead a win, a loss, what's it worth"
 is answerable from one lookup instead of hunting across tables.
 """
 import re
+from datetime import datetime, timezone
 
 from app.db import get_conn
 from app.services.audit import log_event
@@ -135,7 +136,7 @@ def _latest_timestamp(m: dict) -> str | None:
 def list_leads(search: str | None = None, status: str | None = None,
                validation_status: str | None = None, ever_sent: bool | None = None,
                ever_replied: bool | None = None, ever_quoted: bool | None = None,
-               quote_ready: bool | None = None) -> list[dict]:
+               quote_ready: bool | None = None, follow_up_due: bool | None = None) -> list[dict]:
     """Every prospect across every campaign (and prospects not yet in any
     campaign), one row per lead, for the consolidated Leads tab -- as
     opposed to get_lead_timeline()'s single-lead full-detail view, or the
@@ -160,14 +161,16 @@ def list_leads(search: str | None = None, status: str | None = None,
     and value-captured stats, which count sent_at/replied_at/
     quote_requested_at IS NOT NULL -- a superset of "status is currently
     X", since those timestamps persist after the status moves on (e.g. a
-    Won deal still has sent_at and replied_at set). All four filters (like
-    the rest of this function) look only at each lead's latest campaign
-    membership, consistent with the rest of the Leads tab."""
+    Won deal still has sent_at and replied_at set). follow_up_due looks at
+    next_action_due directly on prospects_raw, not a campaign membership.
+    All four campaign-based filters (like the rest of this function) look
+    only at each lead's latest campaign membership, consistent with the
+    rest of the Leads tab."""
     with get_conn() as conn:
         status_ph = ",".join("?" * len(NON_LEAD_STATUSES))
         prospects = [dict(r) for r in conn.execute(
             f"SELECT id, first_name, last_name, email, company, phone, status AS validation_status, "
-            f"validation_notes, lead_source, linkedin_url, next_action, qualification_status "
+            f"validation_notes, lead_source, linkedin_url, next_action, next_action_due, qualification_status "
             f"FROM prospects_raw WHERE status NOT IN ({status_ph}) ORDER BY id DESC",
             NON_LEAD_STATUSES,
         ).fetchall()]
@@ -205,6 +208,7 @@ def list_leads(search: str | None = None, status: str | None = None,
             "lead_source": p["lead_source"],
             "linkedin_url": p["linkedin_url"],
             "next_action": p["next_action"],
+            "next_action_due": p["next_action_due"],
             "qualification_status": p["qualification_status"],
             "campaign_count": len(memberships),
             "campaign_id": latest["campaign_id"] if latest else None,
@@ -239,6 +243,9 @@ def list_leads(search: str | None = None, status: str | None = None,
         leads = [l for l in leads if l["_quote_requested_at"]]
     if quote_ready:
         leads = [l for l in leads if l["quote_readiness"]["ready"]]
+    if follow_up_due:
+        today = datetime.now(timezone.utc).date().isoformat()
+        leads = [l for l in leads if l["next_action_due"] and l["next_action_due"] <= today]
     if search:
         s = search.strip().lower()
         leads = [
@@ -318,18 +325,57 @@ def get_lead_timeline(lead_number: str) -> dict | None:
             ).fetchall()
         events = sorted([dict(e) for e in events], key=lambda e: e["timestamp"])
 
+        notes = [dict(n) for n in conn.execute(
+            "SELECT * FROM lead_notes WHERE prospect_id = ? ORDER BY created_at DESC",
+            (prospect_id,),
+        ).fetchall()]
+
     summary = _summarize(memberships)
     latest = memberships[-1] if memberships else None
     readiness = quote_readiness(latest)
     return {
         "lead_number": lead_number_for(prospect_id),
         "prospect": dict(prospect),
+        "notes": notes,
         "memberships": memberships,
         "timeline_events": events,
         "lead_score": compute_lead_score(summary["overall_status"], prospect["lead_source"], prospect["linkedin_url"], readiness["pct"]),
         "quote_readiness": readiness,
         **summary,
     }
+
+
+def add_note(prospect_id: int, note: str) -> dict:
+    """Append one timestamped note to a lead's history -- distinct from
+    next_action, which is the single current task (with its own due date),
+    not a log. Notes are never edited or deleted in place; the record of
+    what was said/tried stays intact, same reasoning as audit_log."""
+    note = (note or "").strip()
+    if not note:
+        raise ValueError("Note text can't be empty")
+    with get_conn() as conn:
+        if not conn.execute("SELECT 1 FROM prospects_raw WHERE id = ?", (prospect_id,)).fetchone():
+            raise ValueError(f"Lead {lead_number_for(prospect_id)} not found")
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "INSERT INTO lead_notes (prospect_id, note, created_at) VALUES (?, ?, ?)",
+            (prospect_id, note, now),
+        )
+        new_note = conn.execute(
+            "SELECT * FROM lead_notes WHERE prospect_id = ? ORDER BY id DESC LIMIT 1", (prospect_id,)
+        ).fetchone()
+    log_event("lead_note_added", "prospect", str(prospect_id), note[:200])
+    return dict(new_note)
+
+
+def list_notes(prospect_id: int) -> list[dict]:
+    with get_conn() as conn:
+        if not conn.execute("SELECT 1 FROM prospects_raw WHERE id = ?", (prospect_id,)).fetchone():
+            raise ValueError(f"Lead {lead_number_for(prospect_id)} not found")
+        rows = conn.execute(
+            "SELECT * FROM lead_notes WHERE prospect_id = ? ORDER BY created_at DESC", (prospect_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def delete_lead(prospect_id: int) -> dict:
@@ -358,6 +404,7 @@ def delete_lead(prospect_id: int) -> dict:
             placeholders = ",".join("?" * len(cp_ids))
             conn.execute(f"DELETE FROM reply_drafts WHERE campaign_prospect_id IN ({placeholders})", cp_ids)
             conn.execute("DELETE FROM campaign_prospects WHERE prospect_id = ?", (prospect_id,))
+        conn.execute("DELETE FROM lead_notes WHERE prospect_id = ?", (prospect_id,))
         conn.execute("DELETE FROM prospects_raw WHERE id = ?", (prospect_id,))
 
     lead_number = lead_number_for(prospect_id)

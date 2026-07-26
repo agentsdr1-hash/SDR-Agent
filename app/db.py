@@ -77,10 +77,20 @@ CREATE TABLE IF NOT EXISTS prospects_raw (
     validation_notes TEXT,
     lead_source TEXT,                -- Website/Trade Show/Referral
     linkedin_url TEXT,
-    next_action TEXT,                -- free text -- what the SDR should do next
+    next_action TEXT,                -- free text -- the current single active task
+    next_action_due TEXT,            -- ISO date (YYYY-MM-DD) that task is due -- drives the follow-ups-due queue
     qualification_status TEXT,       -- New/Contacted/Qualified/Unqualified/Nurturing
     FOREIGN KEY (batch_id) REFERENCES import_batches(batch_id)
 );
+
+CREATE TABLE IF NOT EXISTS lead_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prospect_id INTEGER NOT NULL,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (prospect_id) REFERENCES prospects_raw(id)
+);
+CREATE INDEX IF NOT EXISTS idx_lead_notes_prospect ON lead_notes(prospect_id);
 
 CREATE TABLE IF NOT EXISTS customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -330,6 +340,7 @@ def init_db(seed_customers: bool = True):
         _ensure_column(conn, "prospects_raw", "lead_source", "TEXT")
         _ensure_column(conn, "prospects_raw", "linkedin_url", "TEXT")
         _ensure_column(conn, "prospects_raw", "next_action", "TEXT")
+        _ensure_column(conn, "prospects_raw", "next_action_due", "TEXT")
         _ensure_column(conn, "prospects_raw", "qualification_status", "TEXT")
         if seed_customers:
             # Gated on a persistent flag (app_settings), not just "table is

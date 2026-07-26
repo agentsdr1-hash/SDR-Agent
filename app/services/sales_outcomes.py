@@ -22,7 +22,15 @@ from app.db import get_conn
 from app.services.audit import log_event
 from app.services.leads import QUOTE_CHECKLIST_FIELDS
 
-VALID_FOR_QUOTE = {"Replied"}
+# A quote can be logged from any point before the deal itself closes --
+# not just after a reply. A real quote request often arrives with no email
+# exchange at all (a phone call, a walk-in, a reply to somebody else's
+# email chain), and forcing that through a fake "Replied" step first would
+# corrupt the reply-rate numbers just to satisfy a funnel order that isn't
+# actually how the business works. Rejected/Suppressed/QuoteRequested/Won/
+# Lost are excluded: the first two are dead ends for this campaign
+# membership, and the rest already have (or had) a quote logged.
+VALID_FOR_QUOTE = {"Queued", "Approved", "Sent", "Replied"}
 VALID_FOR_OUTCOME = {"QuoteRequested", "Won", "Lost"}
 REOPENABLE_FROM = {"Won", "Lost"}
 
@@ -45,7 +53,7 @@ def request_quote(campaign_id: int, prospect_row_id: int):
     with get_conn() as conn:
         status = _get_status(conn, campaign_id, prospect_row_id)
         if status not in VALID_FOR_QUOTE:
-            raise OutcomeError(f"Can only request a quote from status 'Replied' (current: '{status}')")
+            raise OutcomeError(f"Can't request a quote from status '{status}' -- the deal is already closed or this row is a dead end")
         conn.execute(
             "UPDATE campaign_prospects SET status = 'QuoteRequested', quote_requested_at = ? WHERE id = ?",
             (datetime.now(timezone.utc).isoformat(), prospect_row_id),

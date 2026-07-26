@@ -35,6 +35,7 @@ class ProspectRecord(BaseModel):
     lead_source: Optional[str] = None
     linkedin_url: Optional[str] = None
     next_action: Optional[str] = None
+    next_action_due: Optional[str] = None  # ISO date (YYYY-MM-DD)
     qualification_status: Optional[str] = None
 
 
@@ -47,7 +48,19 @@ class ProspectEdit(BaseModel):
     lead_source: str = ""
     linkedin_url: str = ""
     next_action: str = ""
+    next_action_due: str = ""
     qualification_status: str = ""
+
+
+class LeadNote(BaseModel):
+    id: int
+    prospect_id: int
+    note: str
+    created_at: str
+
+
+class NoteCreate(BaseModel):
+    note: str
 
 
 class ValidationSummary(BaseModel):
