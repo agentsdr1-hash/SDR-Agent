@@ -217,6 +217,21 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 .modal-close{position:absolute;top:14px;right:14px;background:var(--paper);border:1px solid var(--line);width:30px;height:30px;border-radius:8px;font-size:16px;cursor:pointer;color:var(--muted);line-height:1;display:flex;align-items:center;justify-content:center;}
 .qd-trigger{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:var(--paper);}
 .qd-trigger-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+
+/* Email thread modal -- a chat-style read of the whole conversation
+   (initial send, automated follow-ups, every reply round) instead of a
+   stack of nested <details> blocks in monospace <pre> tags, which read
+   like a server log rather than correspondence with a person. */
+.thread-wrap{display:flex;flex-direction:column;gap:14px;max-height:62vh;overflow-y:auto;padding:6px 4px;}
+.thread-msg{max-width:82%;border-radius:14px;padding:12px 15px;}
+.thread-msg.them{align-self:flex-start;background:var(--line-soft);border-bottom-left-radius:4px;}
+.thread-msg.us{align-self:flex-end;background:var(--blue-soft);border-bottom-left-radius:14px;border-bottom-right-radius:4px;}
+.thread-msg.auto{align-self:center;background:var(--paper);border:1px dashed var(--line);max-width:70%;}
+.thread-meta{font-size:10.5px;color:var(--muted);margin-bottom:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.thread-subject{font-weight:600;font-size:12.5px;margin-bottom:4px;color:var(--ink);}
+.thread-body{font-size:13px;line-height:1.55;white-space:pre-wrap;word-wrap:break-word;color:var(--ink);}
+.thread-gap{align-self:center;font-size:10.5px;color:var(--muted);background:var(--paper);border:1px solid var(--line-soft);border-radius:20px;padding:3px 12px;}
+.thread-compose{align-self:stretch;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#fff;}
 @media print{
   body *{visibility:hidden;}
   .quote-document.print-target,.quote-document.print-target *{visibility:visible;}
@@ -429,6 +444,18 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 <!-- ══════════════ CAMPAIGNS ══════════════ -->
 <div class="view" id="vCampaigns">
   <div class="page-title">Campaign Review</div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Overview — all campaigns</h2><span class="obj-tag">at a glance</span></div>
+    <div class="grid g6">
+      <div class="stat"><div class="n" id="ov_campaigns">–</div><div class="lbl">Campaigns</div></div>
+      <div class="stat"><div class="n" id="ov_queued">–</div><div class="lbl">Queued</div></div>
+      <div class="stat"><div class="n" style="color:var(--sky)" id="ov_sent">–</div><div class="lbl">Sent — awaiting reply</div></div>
+      <div class="stat"><div class="n" style="color:var(--indigo)" id="ov_replied">–</div><div class="lbl">Replied</div></div>
+      <div class="stat"><div class="n" style="color:var(--valid)" id="ov_won">–</div><div class="lbl">Won</div></div>
+      <div class="stat clickable" onclick="selectAllCampaignsView()" title="Switch the campaign selector below to 'All campaigns'"><div class="n" style="color:var(--dup)" id="ov_pending">–</div><div class="lbl">Reply drafts pending</div></div>
+    </div>
+  </div>
 
   <div class="panel">
     <div class="panel-head"><h2>Select campaign</h2><span class="obj-tag">OBJ-005 · OBJ-006 · OBJ-007</span></div>
@@ -949,6 +976,7 @@ textarea.ebody{min-height:180px;overflow:hidden;resize:none;}
 </div><!-- /page -->
 
 <div id="quoteModalRoot" class="modal-overlay hidden"></div>
+<div id="emailThreadModalRoot" class="modal-overlay hidden"></div>
 
 <script>
 // ══════════════════════════════════════════════════════
@@ -1393,7 +1421,8 @@ function syncReviewSelect() {
     Promise.all([
       fetch('/campaigns').then(r=>r.json()),
       fetch('/reply-drafts?status=Draft').then(r=>r.json()),
-    ]).then(([camps, allDrafts]) => {
+      fetch('/reports/summary').then(r=>r.json()),
+    ]).then(([camps, allDrafts, summary]) => {
       // Pending-reply counts per campaign, shown right in the dropdown --
       // otherwise the only way to know a campaign has something waiting is
       // to select it and look, one at a time.
@@ -1408,6 +1437,21 @@ function syncReviewSelect() {
       sel.innerHTML = camps.length
         ? `<option value="">All campaigns${allDrafts.length?` (${allDrafts.length} pending)`:''}</option>` + optionsHtml
         : '<option value="">No campaigns yet</option>';
+
+      // Top-level overview tiles -- sums across every campaign, so there's
+      // a glance-able answer to "how are things going" before drilling
+      // into any one campaign via the dropdown below.
+      const totals = (summary.campaigns||[]).reduce((acc,c) => {
+        acc.queued += c.queued; acc.sent += c.sent; acc.replied += c.replied; acc.won += c.won;
+        return acc;
+      }, {queued:0, sent:0, replied:0, won:0});
+      set('ov_campaigns', camps.length);
+      set('ov_queued', totals.queued);
+      set('ov_sent', totals.sent);
+      set('ov_replied', totals.replied);
+      set('ov_won', totals.won);
+      set('ov_pending', allDrafts.length);
+
       if(camps.length) loadServerProspects(camps[0].id);
       else loadReplyDrafts();
     });
@@ -1423,6 +1467,12 @@ document.getElementById('reviewSelect').addEventListener('change', e => {
   else { selectedCampId=Number(e.target.value); renderEmailCards(); }
 });
 document.getElementById('reviewRefresh').addEventListener('click', syncReviewSelect);
+
+function selectAllCampaignsView() {
+  const sel = document.getElementById('reviewSelect');
+  sel.value = '';
+  loadServerProspects('');
+}
 
 document.getElementById('sendAllBtn').addEventListener('click', async () => {
   if(MODE==='server') {
@@ -2755,59 +2805,31 @@ function outreachDraftCard(m) {
   </details>`;
 }
 
-// One membership's full email chain, chronologically: the cold outreach
-// draft, the customer's reply (if any), and every response drafted back
-// to them (smart-reply or quote-summary) -- the "document style" read of
-// a lead's conversation the Leads tab already did well for replies, now
-// extended to include the message that started it.
+// One membership's full email chain: the cold outreach draft stays inline
+// (editable while Queued, tied to the campaign's batch-send action), and
+// everything after the first send -- automated follow-ups, every reply
+// round -- opens in a chat-style modal instead of a stack of nested
+// <details> blocks in monospace <pre> tags, which read like a server log
+// rather than correspondence with a person.
 function emailFlowSection(m) {
-  let html = outreachDraftCard(m);
+  const html = outreachDraftCard(m);
+  if(!m.sent_at) return html; // nothing sent yet -- no thread to show
 
-  // Automated follow-ups (day 4 / day 8) only ever happen before the
-  // first reply -- a reply cancels the cadence -- so they always sort
-  // chronologically right after the initial send and before any reply
-  // round below.
   const followUps = m.follow_ups || [];
-  let lastOutboundAt = m.sent_at;
-  if(followUps.length) {
-    html += `<div class="day-note" style="margin:8px 0;">↳ ${followUps.length} automated follow-up${followUps.length>1?'s':''} sent (no reply yet at the time)</div>`;
-    html += followUps.map(fu => {
-      const gap = daysBetween(lastOutboundAt, fu.sent_at);
-      const delayText = gap==null ? null : gap===0 ? 'same day' : gap===1 ? '1 day later' : `${gap} days later`;
-      lastOutboundAt = fu.sent_at;
-      return followUpCard(fu, delayText);
-    }).join('');
-  }
-
   const drafts = m.reply_drafts || [];
-  if(drafts.length) {
-    // A real quote conversation is rarely one-and-done -- this walks every
-    // round (their message in, our response out) in order, with a "N days
-    // later" gap so a delayed follow-up reads as a delay, not a mystery.
-    const lastActivity = m.replied_at || drafts[drafts.length-1].created_at;
-    html += `<div class="day-note" style="margin:8px 0;">↳ ${drafts.length} message${drafts.length>1?'s':''} back and forth so far — last activity ${fmt(lastActivity)}</div>`;
-    html += drafts.map((rd, i) => {
-      const prevOut = i===0 ? lastOutboundAt : (drafts[i-1].sent_at || drafts[i-1].approved_at || drafts[i-1].created_at);
-      const gap = daysBetween(prevOut, rd.created_at);
-      const delayText = gap==null ? null : gap===0 ? 'same day' : gap===1 ? '1 day later' : `${gap} days later`;
-      return replyDraftDrillCard(rd, i+1, delayText);
-    }).join('');
-  } else if(m.replied_at) {
-    html += `<div class="day-note" style="margin:8px 0;">↳ Customer replied: "${esc(m.reply_subject||'(no subject)')}" — ${fmt(m.replied_at)}</div>`;
-  }
-  return html;
-}
+  const pendingDraft = drafts.find(d => d.status === 'Draft');
+  const lastActivity = m.replied_at || (followUps.length ? followUps[followUps.length-1].sent_at : m.sent_at);
+  const messageCount = 1 + followUps.length + drafts.length + drafts.filter(d => d.status !== 'Draft').length;
 
-function followUpCard(fu, delayText) {
-  return `<details class="draft" style="margin-bottom:8px;">
-    <summary style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
-      <span><b class="mono">Follow-up #${fu.follow_up_number}</b> ${esc(fu.subject)}</span>
-      <span class="pill p-sent">auto-sent</span>
-    </summary>
-    <div class="day-note" style="margin:8px 0 6px;">Sent automatically — no reply had come in yet${delayText?` <span class="muted">(${esc(delayText)})</span>`:''}</div>
-    <pre>${esc(fu.body)}</pre>
-    <div class="muted" style="font-size:11px;margin-top:6px;">sent ${fmt(fu.sent_at)}</div>
-  </details>`;
+  return html + `<div class="qd-trigger" style="margin-top:10px;">
+    <div class="qd-trigger-left">
+      <b style="font-size:12.5px;">Email thread</b>
+      <span class="pill p-neutral">${messageCount} message${messageCount!==1?'s':''}</span>
+      ${pendingDraft ? '<span class="pill p-quote">reply pending your review</span>' : ''}
+      <span class="muted" style="font-size:11.5px;">last activity ${fmt(lastActivity)}</span>
+    </div>
+    <button class="btn sky" style="padding:6px 14px;font-size:12px;" onclick="openEmailThreadModal(${m.id})">Open email thread</button>
+  </div>`;
 }
 
 async function saveOutreachDraft(cid, cpid) {
@@ -2835,64 +2857,141 @@ async function rejectOutreachDraft(cid, cpid) {
   refreshLeadDetail();
 }
 
-function replyDraftDrillCard(rd, roundNum, delayText) {
+// ══════════════════════════════════════════════════════
+// EMAIL THREAD MODAL — chat-style read of one membership's whole
+// conversation (initial send, automated follow-ups, every reply round),
+// opened from the compact trigger in emailFlowSection() above. Follow-ups
+// only ever happen before the first reply (a reply cancels the cadence --
+// see AWAITING_REPLY_STATUSES in inbox_monitor.py), so merging everything
+// into one chronological list and sorting by timestamp is enough to get
+// the right order without special-casing.
+// ══════════════════════════════════════════════════════
+function threadBubble(side, sender, subject, body, when, badge) {
+  return `<div class="thread-msg ${side}">
+    <div class="thread-meta"><b>${esc(sender)}</b>${badge||''}${when?' · '+fmt(when):''}</div>
+    ${subject?`<div class="thread-subject">${esc(subject)}</div>`:''}
+    <div class="thread-body">${esc(body||'(no message text captured)')}</div>
+  </div>`;
+}
+
+function threadGap(t1, t2) {
+  const gap = daysBetween(t1, t2);
+  if(gap==null || gap<1) return '';
+  return `<div class="thread-gap">${gap===1?'1 day later':gap+' days later'}</div>`;
+}
+
+function threadComposeBox(rd) {
   const confBadge = rd.confidence==='quote_summary'
     ? `<span class="pill p-quote">quote summary</span>`
     : rd.confidence==='matched'
     ? `<span class="pill p-valid">matched</span>`
     : `<span class="pill p-dup">fallback — no strong match</span>`;
-  const when = rd.sent_at ? 'sent '+fmt(rd.sent_at) : rd.rejected_at ? 'rejected '+fmt(rd.rejected_at) : rd.approved_at ? 'approved '+fmt(rd.approved_at) : 'drafted '+fmt(rd.created_at);
-  const isDraft = rd.status === 'Draft';
-  // A pending draft is editable and actionable right here -- approve &
-  // send, save edits, or reject -- so acting on a reply never requires
-  // leaving the lead to go find the right campaign in the Campaigns tab.
-  // Anything already sent/rejected stays a plain read-only body.
-  const ourReply = isDraft ? `
+  return `<div class="thread-compose">
+    <div class="thread-meta"><b>AKEIS</b> — draft reply <span class="pill p-quote">pending your review</span> ${confBadge}</div>
     <input type="text" id="rd-subj-${rd.id}" value="${esc(rd.subject)}" style="font-weight:600;margin-bottom:8px;"/>
-    <textarea id="rd-body-${rd.id}" oninput="autoGrow(this)" style="min-height:120px;">${esc(rd.body)}</textarea>
+    <textarea id="rd-body-${rd.id}" oninput="autoGrow(this)" style="min-height:110px;">${esc(rd.body)}</textarea>
     <div class="row mt12">
-      <button class="btn ok" onclick="leadApproveReplyDraft(${rd.id})">Approve &amp; send</button>
-      <button class="btn sec" onclick="leadSaveReplyDraft(${rd.id})">Save edits</button>
-      <button class="btn reject" onclick="leadRejectReplyDraft(${rd.id})">Reject</button>
-    </div>` : `<pre>${esc(rd.body)}</pre>`;
-  // Two-sided, in order: what they actually wrote (full text, not a
-  // truncated quoted line), then what we sent back -- previously only our
-  // side got the full <pre> treatment and their message was chopped to a
-  // 140-char preview that never expanded, which is why a whole reply chain
-  // read as "only my responses."
-  return `<details class="draft" ${isDraft?'open':''} style="margin-bottom:8px;">
-    <summary style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
-      <span>${roundNum?`<b class="mono">#${roundNum}</b> `:''}${esc(rd.subject)}</span>
-      <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">${confBadge}${pill(rd.status)}</span>
-    </summary>
-    <div class="muted" style="margin:8px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Their message${delayText?` <span style="text-transform:none;letter-spacing:0;">(${esc(delayText)})</span>`:''} — "${esc(rd.source_reply_subject||'(no subject)')}"</div>
-    <pre>${esc(rd.source_reply_snippet || '(no message text captured)')}</pre>
-    <div class="muted" style="margin:10px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Our reply${isDraft?' (edit before sending)':''}</div>
-    ${ourReply}
-    <div class="day-note" style="margin:6px 0 0;">Matched: ${esc(rd.matched_summary||'—')}</div>
-    <div class="muted" style="font-size:11px;margin-top:6px;">${esc(when)}</div>
-  </details>`;
+      <button class="btn ok" onclick="leadApproveReplyDraft(${rd.id},${rd.campaign_prospect_id})">Approve &amp; send</button>
+      <button class="btn sec" onclick="leadSaveReplyDraft(${rd.id},${rd.campaign_prospect_id})">Save edits</button>
+      <button class="btn reject" onclick="leadRejectReplyDraft(${rd.id},${rd.campaign_prospect_id})">Reject</button>
+    </div>
+    <div class="day-note" style="margin-top:8px;">Matched: ${esc(rd.matched_summary||'—')}</div>
+  </div>`;
 }
 
-async function leadSaveReplyDraft(id) {
+function emailThreadHTML(d, m) {
+  const p = d.prospect;
+  const followUps = m.follow_ups || [];
+  const drafts = m.reply_drafts || [];
+
+  const items = [];
+  if(m.sent_at) items.push({t: m.sent_at, kind: 'initial'});
+  followUps.forEach(fu => items.push({t: fu.sent_at, kind: 'followup', data: fu}));
+  drafts.forEach(rd => items.push({t: rd.created_at, kind: 'reply', data: rd}));
+  items.sort((a,b) => new Date(a.t) - new Date(b.t));
+
+  let prevT = null;
+  const body = items.map(item => {
+    const gapHtml = prevT ? threadGap(prevT, item.t) : '';
+    if(item.kind === 'initial') {
+      prevT = m.sent_at;
+      return gapHtml + threadBubble('us', 'AKEIS', m.subject, m.body, m.sent_at, ' <span class="pill p-sent">sent</span>');
+    }
+    if(item.kind === 'followup') {
+      prevT = item.data.sent_at;
+      return gapHtml + threadBubble('auto', `Automated follow-up #${item.data.follow_up_number}`, item.data.subject, item.data.body, item.data.sent_at);
+    }
+    // Reply round: their message, then our response -- sent (read-only) or
+    // still pending review (a live compose box instead of a static bubble).
+    const rd = item.data;
+    const theirs = threadBubble('them', [p.first_name,p.last_name].filter(Boolean).join(' ')||p.email||'Customer', rd.source_reply_subject, rd.source_reply_snippet, rd.created_at);
+    const ours = rd.status === 'Draft' ? threadComposeBox(rd) : threadBubble('us', 'AKEIS', rd.subject, rd.body, rd.sent_at || rd.approved_at || rd.created_at, ` ${pill(rd.status)}`);
+    prevT = rd.sent_at || rd.created_at;
+    return gapHtml + theirs + ours;
+  }).join('');
+
+  return `<div class="panel-head" style="margin-bottom:6px;"><h2>Email thread — ${esc(d.lead_number)}</h2></div>
+    <p class="hint" style="margin:0 0 4px;">${esc([p.first_name,p.last_name].filter(Boolean).join(' ')||'—')} · ${esc(p.email||'—')} · ${esc(p.company||'—')}</p>
+    <div class="thread-wrap">${body}</div>
+    <div class="status" id="emailThreadStatus" style="margin-top:10px;"></div>`;
+}
+
+function renderEmailThreadModalBody(cpid) {
+  const m = leadDetailData.memberships.find(x => x.id === cpid);
+  if(!m) return;
+  document.getElementById('emailThreadModalRoot').innerHTML = `<div class="modal-panel" style="max-width:640px;">
+    <button class="modal-close" onclick="closeEmailThreadModal()">✕</button>
+    <div class="modal-panel-body">${emailThreadHTML(leadDetailData, m)}</div>
+  </div>`;
+  const wrap = document.querySelector('#emailThreadModalRoot .thread-wrap');
+  if(wrap) wrap.scrollTop = wrap.scrollHeight; // land on the most recent message, not the top
+}
+
+function openEmailThreadModal(cpid) {
+  document.getElementById('emailThreadModalRoot').classList.remove('hidden');
+  renderEmailThreadModalBody(cpid);
+}
+
+function closeEmailThreadModal() {
+  const root = document.getElementById('emailThreadModalRoot');
+  root.classList.add('hidden');
+  root.innerHTML = '';
+}
+
+document.getElementById('emailThreadModalRoot').addEventListener('click', e => {
+  if(e.target.id === 'emailThreadModalRoot') closeEmailThreadModal();
+});
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && !document.getElementById('emailThreadModalRoot').classList.contains('hidden')) closeEmailThreadModal();
+});
+
+// Each of these re-renders the modal body wholesale on success (it's a
+// full re-fetch of the lead, not a patch), which recreates #emailThreadStatus
+// empty -- so the confirmation message has to be set *after* that
+// re-render, not before, or it's wiped out before ever being seen.
+async function leadSaveReplyDraft(id, cpid) {
   const subject = document.getElementById('rd-subj-'+id).value;
   const body = document.getElementById('rd-body-'+id).value;
   const r = await fetch('/reply-drafts/'+id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({subject, body})});
   const d = await r.json();
-  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to save', true);
-  setS(leadDetailCtx.statusId, 'Reply draft updated.');
-  refreshLeadDetail();
+  if(!r.ok) return setS('emailThreadStatus', d.detail||'Failed to save', true);
+  await refreshLeadDetail();
+  if(cpid) renderEmailThreadModalBody(cpid);
+  setS('emailThreadStatus', 'Reply draft updated.');
 }
-async function leadApproveReplyDraft(id) {
+async function leadApproveReplyDraft(id, cpid) {
   const r = await fetch('/reply-drafts/'+id+'/approve', {method:'POST'});
   const d = await r.json();
-  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed to send', true);
-  setS(leadDetailCtx.statusId, 'Reply sent.');
-  refreshLeadDetail();
+  if(!r.ok) return setS('emailThreadStatus', d.detail||'Failed to send', true);
+  await refreshLeadDetail();
+  if(cpid) renderEmailThreadModalBody(cpid);
+  setS('emailThreadStatus', 'Reply sent.');
 }
-async function leadRejectReplyDraft(id) {
+async function leadRejectReplyDraft(id, cpid) {
   await fetch('/reply-drafts/'+id+'/reject', {method:'POST'});
-  refreshLeadDetail();
+  await refreshLeadDetail();
+  if(cpid) renderEmailThreadModalBody(cpid);
+  setS('emailThreadStatus', 'Reply draft rejected.');
 }
 
 // ══════════════════════════════════════════════════════
