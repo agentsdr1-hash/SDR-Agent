@@ -442,13 +442,13 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
   <div class="panel hidden" id="pCampaign">
     <div class="panel-head"><div class="step-dot">3</div><h2>Assign to a campaign</h2><span class="obj-tag">OBJ-003</span></div>
     <div class="row">
-      <select id="campSelect"></select>
-      <button class="btn" id="assignBtn">Assign valid prospects</button>
-    </div>
-    <div class="divider">or create one</div>
-    <div class="row">
       <input type="text" id="campName" placeholder="e.g. 2026-07-20 — New Prospects"/>
-      <button class="btn sec" id="campCreate">Create campaign</button>
+      <button class="btn" id="campCreate">Create campaign</button>
+    </div>
+    <div class="divider">or use an existing one</div>
+    <div class="row">
+      <select id="campSelect"></select>
+      <button class="btn sec" id="assignBtn">Assign valid prospects</button>
     </div>
     <div class="status" id="campStatus"></div>
   </div>
@@ -1365,39 +1365,48 @@ function renderValidation(counts, rows) {
 }
 
 // CAMPAIGN ASSIGNMENT — OBJ-003
-function syncCampSelect() {
+function syncCampSelect(selectId) {
   const sel = document.getElementById('campSelect');
   if(MODE==='server') {
     fetch('/campaigns').then(r=>r.json()).then(camps => {
       sel.innerHTML = camps.length
         ? camps.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')
-        : '<option value="">No campaigns yet — create one</option>';
+        : '<option value="">No campaigns yet — create one above</option>';
+      if(selectId != null) sel.value = String(selectId);
     });
   } else {
     sel.innerHTML = campaigns.length
       ? campaigns.map(c=>`<option value="${c.id}">${c.name} (${c.prospects.length} queued)</option>`).join('')
-      : '<option value="">No campaigns yet — create one below</option>';
+      : '<option value="">No campaigns yet — create one above</option>';
+    if(selectId != null) sel.value = String(selectId);
   }
 }
 
 document.getElementById('campCreate').addEventListener('click', async () => {
   const name = document.getElementById('campName').value.trim();
   if(!name) return setS('campStatus','Enter a campaign name.', true);
+  let newId;
   if(MODE==='server') {
     const r = await fetch('/campaigns', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
     const d = await r.json();
     if(!r.ok) return setS('campStatus', d.detail||'Failed', true);
-    setS('campStatus','Created "'+d.name+'".');
+    setS('campStatus','Created "'+d.name+'" — selected below, ready to assign.');
+    newId = d.id;
   } else {
     if(campaigns.some(c=>c.name.toLowerCase()===name.toLowerCase())) {
       const today = new Date().toISOString().slice(0,10);
       return setS('campStatus', `A campaign named "${name}" already exists. Campaign names must be unique -- try including today's date, e.g. "${today} — ${name}".`, true);
     }
-    campaigns.push({id:nextCampId++,name,currentDay:1,prospects:[]});
-    setS('campStatus','Created "'+name+'".');
+    newId = nextCampId++;
+    campaigns.push({id:newId,name,currentDay:1,prospects:[]});
+    setS('campStatus','Created "'+name+'" — selected below, ready to assign.');
   }
   document.getElementById('campName').value = '';
-  syncCampSelect();
+  // Selects the campaign just created in the dropdown below, so "Assign
+  // valid prospects" immediately targets it instead of leaving the
+  // dropdown on whatever was previously selected (or empty) -- the
+  // natural next step right after creating one.
+  syncCampSelect(newId);
 });
 
 document.getElementById('assignBtn').addEventListener('click', async () => {
