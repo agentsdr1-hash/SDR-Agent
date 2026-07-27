@@ -1549,14 +1549,16 @@ async function loadServerProspects(cid) {
   set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
   document.getElementById('pProspects').classList.remove('hidden');
   document.getElementById('emailCards').innerHTML = rows.map(r => serverProspectCard(r, cid)).join('');
+  document.querySelectorAll('#emailCards textarea.ebody').forEach(autoGrow);
   renderCampBulkBar();
   loadReplyDrafts();
 }
 
 function serverProspectCard(r, cid) {
   const name = [r.first_name,r.last_name].filter(Boolean).join(' ')||'—';
+  const isQueued = r.status === 'Queued';
   let actions = '';
-  if(r.status==='Queued') actions = `<button class="btn ok" onclick="serverApprove('${cid}',${r.id})">Approve</button><button class="btn reject" onclick="serverReject('${cid}',${r.id})">Reject</button>`;
+  if(isQueued) actions = `<button class="btn sec" onclick="serverSaveDraft('${cid}',${r.id})">Save draft</button><button class="btn ok" onclick="serverApprove('${cid}',${r.id})">Approve</button><button class="btn reject" onclick="serverReject('${cid}',${r.id})">Reject</button>`;
   else if(r.status==='Approved') actions = `<button class="btn sec" onclick="serverSimulateSent('${cid}',${r.id})" title="Flips to Sent without touching Gmail -- for testing the funnel before real credentials exist">Simulate send (test)</button>`;
   else if(r.status==='Sent') actions = `<button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},false)" title="Mimics a real detected reply, without an actual inbox">Simulate reply (test)</button><button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},true)" title="Mimics a reply containing opt-out language">Simulate opt-out (test)</button>`;
   else if(r.status==='QuoteRequested') actions = `<button class="btn ok" onclick="serverWon('${cid}',${r.id})">Mark Won</button><button class="btn reject" onclick="serverLost('${cid}',${r.id})">Mark Lost</button>`;
@@ -1577,8 +1579,25 @@ function serverProspectCard(r, cid) {
     actions += `<button class="btn sec" onclick="serverSendFollowup('${cid}',${r.id})" title="Sends follow-up #${followUpCount+1} now, without waiting for day ${followUpCount===0?4:8}">Send follow-up now (${followUpCount}/2 sent)</button>`;
   }
   const followUpNote = followUpCount ? `<span class="day-note">Follow-ups: ${followUpCount}/2${r.last_followup_at?' · last '+fmt(r.last_followup_at):''}</span>` : '';
-  const checkbox = r.status==='Queued' ? `<input type="checkbox" class="camp-row-check" data-id="${r.id}" onclick="toggleCampSelect(${r.id}, this.checked)" style="margin-right:10px;"/>` : '';
-  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div>${sameCompanyWarning(r.same_company_peers)}<div class="ebody">${esc(r.body||'No body yet')}</div><div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span>${followUpNote}</div></div>`;
+  const checkbox = isQueued ? `<input type="checkbox" class="camp-row-check" data-id="${r.id}" onclick="toggleCampSelect(${r.id}, this.checked)" style="margin-right:10px;"/>` : '';
+  // Editable while Queued -- this is the initial cold-outreach draft, the
+  // one point in the whole flow that used to be a read-only preview with
+  // no subject shown at all, so a typo or the wrong specifics couldn't be
+  // fixed here at all; Approve/Reject were the only options.
+  const bodyHtml = isQueued
+    ? `<input class="edit-subject" id="outreachSubject-${r.id}" value="${esc(r.subject||'')}"/><textarea class="ebody" id="outreachBody-${r.id}" oninput="autoGrow(this)">${esc(r.body||'')}</textarea>`
+    : `${r.subject?`<div class="muted" style="margin:2px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">${esc(r.subject)}</div>`:''}<div class="ebody">${esc(r.body||'No body yet')}</div>`;
+  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div>${sameCompanyWarning(r.same_company_peers)}${bodyHtml}<div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span>${followUpNote}</div></div>`;
+}
+
+async function serverSaveDraft(cid, cpid) {
+  const subject = document.getElementById('outreachSubject-'+cpid).value.trim();
+  const body = document.getElementById('outreachBody-'+cpid).value.trim();
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/draft', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({subject, body})});
+  const d = await r.json();
+  if(!r.ok) return setS('reviewStatus', d.detail||'Failed to save', true);
+  setS('reviewStatus', 'Draft saved.');
+  loadServerProspects(cid);
 }
 
 // A company gets cold-pitched once, not once per contact -- three
