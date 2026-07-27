@@ -30,11 +30,27 @@ from app.models import ImportSummary
 from app.services.audit import log_event
 
 CANONICAL_COLUMNS = {
-    "first_name": ["first_name", "first", "firstname", "given name"],
-    "last_name": ["last_name", "last", "lastname", "surname"],
+    "first_name": ["first_name", "first", "firstname", "fname", "given_name", "given name", "forename"],
+    "last_name": ["last_name", "last", "lastname", "lname", "surname", "family_name", "family name"],
+    # A single combined name column is only used when there's no separate
+    # first_name/last_name -- see the split logic in import_prospect_file().
+    "full_name": ["name", "full_name", "fullname", "contact_name", "contact name", "prospect_name", "lead_name"],
     "email": ["email", "email_address", "e-mail"],
     "company": ["company", "company_name", "organization", "employer"],
     "phone": ["phone", "phone_number", "telephone", "mobile"],
+}
+
+# Second pass, only for canonical fields an exact whole-header match above
+# missed -- catches a recognizable header buried in extra words ("Contact
+# First Name", "Full Name (required)") by substring instead of exact
+# match. Deliberately a separate, narrower list: bare tokens like "first"/
+# "last"/"name" are exact-match-only up above, because as a *substring*
+# check they false-positive constantly ("Last Updated", "Company Name",
+# "Display Name" for something unrelated all contain one of those).
+FALLBACK_SUBSTRINGS = {
+    "first_name": ["first_name", "firstname", "given_name", "forename"],
+    "last_name": ["last_name", "lastname", "surname", "family_name"],
+    "full_name": ["full_name", "fullname", "contact_name", "prospect_name", "lead_name"],
 }
 
 
@@ -43,13 +59,29 @@ class ImportError_(Exception):
 
 
 def _map_columns(columns: list[str]) -> dict[str, str]:
-    """Return {canonical_name: source_column_name} for whatever we can match."""
+    """Return {canonical_name: source_column_name} for whatever we can match.
+    Exact whole-header match first (safest), then a narrower substring
+    fallback (FALLBACK_SUBSTRINGS) for headers with extra words around the
+    recognizable part -- see that constant's docstring for why it's kept
+    separate from the exact-match alias lists rather than folded in."""
     normalized = {c: c.strip().lower().replace(" ", "_") for c in columns}
     mapping = {}
     for canonical, aliases in CANONICAL_COLUMNS.items():
         for source_col, norm in normalized.items():
             if norm in aliases:
                 mapping[canonical] = source_col
+                break
+
+    mapped_source_cols = set(mapping.values())
+    for canonical, substrings in FALLBACK_SUBSTRINGS.items():
+        if canonical in mapping:
+            continue
+        for source_col, norm in normalized.items():
+            if source_col in mapped_source_cols:
+                continue
+            if any(s in norm for s in substrings):
+                mapping[canonical] = source_col
+                mapped_source_cols.add(source_col)
                 break
     return mapping
 
@@ -97,6 +129,11 @@ def import_prospect_file(filename: str, content: bytes) -> ImportSummary:
             f"Found columns: {list(df.columns)}"
         )
 
+    # A combined "Name" column only gets used when there's no separate
+    # first_name/last_name -- an explicit split always wins over a guess at
+    # splitting free text, so a file with both isn't second-guessed.
+    use_full_name = "full_name" in mapping and "first_name" not in mapping and "last_name" not in mapping
+
     batch_id = str(uuid.uuid4())[:8]
     now = datetime.now(timezone.utc).isoformat()
 
@@ -113,11 +150,22 @@ def import_prospect_file(filename: str, content: bytes) -> ImportSummary:
                 val = row.get(src)
                 return None if pd.isna(val) else str(val).strip()
 
+            if use_full_name:
+                # Splits on the first run of whitespace: "Jane van der Berg"
+                # -> first="Jane", last="van der Berg" -- the surname stays
+                # intact rather than losing everything past the second word.
+                full = get("full_name") or ""
+                parts = full.split(None, 1)
+                first_name = parts[0] if parts else None
+                last_name = parts[1] if len(parts) > 1 else None
+            else:
+                first_name, last_name = get("first_name"), get("last_name")
+
             conn.execute(
                 """INSERT INTO prospects_raw
                    (batch_id, row_number, first_name, last_name, email, company, phone, status)
                    VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending')""",
-                (batch_id, i + 1, get("first_name"), get("last_name"),
+                (batch_id, i + 1, first_name, last_name,
                  get("email"), get("company"), get("phone")),
             )
 
