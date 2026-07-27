@@ -251,6 +251,97 @@ def test_existing_customer_matched_by_company_name(server):
     assert "Globex Inc" in rows[0]["validation_notes"]
 
 
+def test_import_splits_a_combined_name_column(server):
+    tag = next(_tag_counter)
+    csv = (
+        "Name,Email,Company\n"
+        f"Jane van der Berg,jane{tag}@combined.example,Combined Co\n"
+        f"Solo,solo{tag}@combined.example,Combined Co\n"
+    )
+    r = server.session.post(
+        server.base_url + "/prospects/import",
+        files={"file": ("combined.csv", csv, "text/csv")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["columns_mapped"]["full_name"] == "Name"
+    assert "first_name" not in body["columns_mapped"]
+
+    server.post(f"/prospects/validate/{body['batch_id']}")
+    leads = server.get("/leads").json()
+    jane = next(l for l in leads if l["email"] == f"jane{tag}@combined.example")
+    assert jane["first_name"] == "Jane"
+    assert jane["last_name"] == "van der Berg"  # only the FIRST space splits, surname stays whole
+
+    solo = next(l for l in leads if l["email"] == f"solo{tag}@combined.example")
+    assert solo["first_name"] == "Solo"
+    assert not solo["last_name"]  # single-word name: no last name, not an error
+
+
+def test_import_prefers_separate_name_columns_over_a_combined_one(server):
+    # A file with both a split First/Last Name and a redundant combined
+    # Name column shouldn't have its explicit split second-guessed.
+    tag = next(_tag_counter)
+    csv = (
+        "First Name,Last Name,Name,Email\n"
+        f"Jane,Doe,Jane Doe,jane{tag}@both.example\n"
+    )
+    r = server.session.post(
+        server.base_url + "/prospects/import",
+        files={"file": ("both.csv", csv, "text/csv")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["columns_mapped"]["first_name"] == "First Name"
+    assert body["columns_mapped"]["last_name"] == "Last Name"
+
+    server.post(f"/prospects/validate/{body['batch_id']}")
+    leads = server.get("/leads").json()
+    jane = next(l for l in leads if l["email"] == f"jane{tag}@both.example")
+    assert jane["first_name"] == "Jane"
+    assert jane["last_name"] == "Doe"
+
+
+def test_import_matches_headers_with_extra_words_around_the_recognizable_part(server):
+    # "Contact First Name" isn't a whole-header match for any alias, only a
+    # substring one -- the fallback pass this exercises.
+    tag = next(_tag_counter)
+    csv = (
+        "Contact First Name,Contact Last Name,Email\n"
+        f"Jane,Doe,jane{tag}@fallback.example\n"
+    )
+    r = server.session.post(
+        server.base_url + "/prospects/import",
+        files={"file": ("fallback.csv", csv, "text/csv")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["columns_mapped"]["first_name"] == "Contact First Name"
+    assert body["columns_mapped"]["last_name"] == "Contact Last Name"
+
+
+def test_import_does_not_confuse_an_unrelated_last_updated_column(server):
+    # Guards against the fallback substring pass being too eager: "Last
+    # Updated" contains "last" but isn't a name column.
+    tag = next(_tag_counter)
+    csv = (
+        "Last Updated,First Name,Last Name,Email\n"
+        f"2026-01-01,Jane,Doe,jane{tag}@guard.example\n"
+    )
+    r = server.session.post(
+        server.base_url + "/prospects/import",
+        files={"file": ("guard.csv", csv, "text/csv")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["columns_mapped"]["last_name"] == "Last Name"
+
+    server.post(f"/prospects/validate/{body['batch_id']}")
+    leads = server.get("/leads").json()
+    jane = next(l for l in leads if l["email"] == f"jane{tag}@guard.example")
+    assert jane["last_name"] == "Doe"  # not "2026-01-01" or otherwise mangled
+
+
 def test_import_rejects_file_with_no_email_column(server):
     r = server.session.post(
         server.base_url + "/prospects/import",

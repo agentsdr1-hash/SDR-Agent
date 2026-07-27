@@ -998,8 +998,11 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
 const EXISTING_CUSTOMERS = new Set(['jsmith@acmecorp.com','dlee@globex.com']);
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const CANONICAL = {
-  first_name:['first_name','first','firstname','given name'],
-  last_name:['last_name','last','lastname','surname'],
+  first_name:['first_name','first','firstname','fname','given_name','given name','forename'],
+  last_name:['last_name','last','lastname','lname','surname','family_name','family name'],
+  // Used only when there's no separate first_name/last_name column -- see
+  // the split in handleFile() below.
+  full_name:['name','full_name','fullname','contact_name','contact name','prospect_name','lead_name'],
   email:['email','email_address','e-mail'],
   company:['company','company_name','organization','employer'],
   phone:['phone','phone_number','telephone','mobile'],
@@ -1210,14 +1213,27 @@ function handleFile(file) {
         if(!rows.length) return setS('importStatus','No data rows found', true);
         const map = mapColumns(Object.keys(rows[0]));
         if(!map.email) return setS('importStatus','No recognizable email column found', true);
-        const prospects = rows.map((r,i) => ({
-          row_number:i+1,
-          first_name:map.first_name?(r[map.first_name]||'').toString().trim():'',
-          last_name:map.last_name?(r[map.last_name]||'').toString().trim():'',
-          email:map.email?(r[map.email]||'').toString().trim():'',
-          company:map.company?(r[map.company]||'').toString().trim():'',
-          phone:map.phone?(r[map.phone]||'').toString().trim():'',
-        }));
+        // A combined "Name" column only splits into first/last when there's
+        // no separate first_name/last_name column -- an explicit split
+        // always wins over guessing where a free-text name splits.
+        const useFullName = !map.first_name && !map.last_name && map.full_name;
+        const prospects = rows.map((r,i) => {
+          let first_name = map.first_name?(r[map.first_name]||'').toString().trim():'';
+          let last_name = map.last_name?(r[map.last_name]||'').toString().trim():'';
+          if(useFullName) {
+            const full = (r[map.full_name]||'').toString().trim();
+            const sp = full.indexOf(' ');
+            first_name = sp===-1 ? full : full.slice(0,sp);
+            last_name = sp===-1 ? '' : full.slice(sp+1).trim();
+          }
+          return {
+            row_number:i+1,
+            first_name, last_name,
+            email:map.email?(r[map.email]||'').toString().trim():'',
+            company:map.company?(r[map.company]||'').toString().trim():'',
+            phone:map.phone?(r[map.phone]||'').toString().trim():'',
+          };
+        });
         setS('importStatus','Imported '+prospects.length+' rows. Validating…');
         runValidation(prospects, file.name);
       }
