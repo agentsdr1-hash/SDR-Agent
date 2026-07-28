@@ -99,8 +99,22 @@ def get_summary() -> dict:
                FROM campaign_prospects"""
         ).fetchone()
         total_sent = activity_row["total_sent"] or 0
+        # Unique LEADS who replied at least once -- campaign_prospects.replied_at
+        # is one column per membership, overwritten to the latest reply's
+        # timestamp on every new round (see inbox_monitor.py), so this can
+        # only ever be a per-lead yes/no, never a message count. Response
+        # rate is deliberately built on this, not total_reply_messages below:
+        # "what fraction of prospects engaged" is the right denominator,
+        # not diluted by how many times any one of them wrote back.
         total_replied = activity_row["total_replied"] or 0
         response_rate = round((total_replied / total_sent) * 100, 1) if total_sent else 0.0
+
+        # Every actual inbound reply, every round -- this industry runs on
+        # multi-round back-and-forth (see inbox_monitor.py), and a lead who
+        # replied 3 times still only shows once in total_replied above.
+        # reply_drafts has one row per detected reply (real or simulated),
+        # so a plain count is the true reply volume, not a per-lead cap.
+        total_reply_messages = conn.execute("SELECT COUNT(*) c FROM reply_drafts").fetchone()["c"]
 
         response_pairs = conn.execute(
             "SELECT sent_at, replied_at FROM campaign_prospects WHERE sent_at IS NOT NULL AND replied_at IS NOT NULL"
@@ -121,6 +135,12 @@ def get_summary() -> dict:
         # ---- Activity over time (Dashboard chart) -- one row per day that
         # had ANY sent/replied/won event, counts per kind. Sparse by design;
         # the frontend fills gaps and re-buckets into week/month client-side.
+        # 'replied' is sourced from reply_drafts.created_at (one row per
+        # actual reply, every round), not campaign_prospects.replied_at --
+        # that column is overwritten to the latest reply's date on every
+        # new round, so a lead who wrote back on three different days would
+        # only ever show up on the last one, with the earlier two silently
+        # dropped from the chart entirely.
         activity_rows = conn.execute(
             f"""SELECT d,
                       SUM(CASE WHEN kind = 'sent' THEN 1 ELSE 0 END) sent,
@@ -129,7 +149,7 @@ def get_summary() -> dict:
                FROM (
                    SELECT {_date_expr('sent_at')} d, 'sent' kind FROM campaign_prospects WHERE sent_at IS NOT NULL
                    UNION ALL
-                   SELECT {_date_expr('replied_at')} d, 'replied' kind FROM campaign_prospects WHERE replied_at IS NOT NULL
+                   SELECT {_date_expr('created_at')} d, 'replied' kind FROM reply_drafts
                    UNION ALL
                    SELECT {_date_expr('won_at')} d, 'won' kind FROM campaign_prospects WHERE won_at IS NOT NULL
                ) x
@@ -160,7 +180,12 @@ def get_summary() -> dict:
         },
         "sdr_performance": {
             "total_emails_sent": total_sent,
-            "total_replies_received": total_replied,
+            # Unique leads who replied at least once -- what response_rate_pct
+            # is built on. See total_reply_messages for actual reply volume,
+            # which can run higher once multi-round back-and-forth is
+            # counted (a lead who wrote back 3 times is 1 here, 3 there).
+            "unique_leads_replied": total_replied,
+            "total_reply_messages": total_reply_messages,
             "response_rate_pct": response_rate,
             "avg_response_time_hours": avg_response_time_hours,
             "sends_by_day": sends_by_day,

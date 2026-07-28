@@ -742,9 +742,11 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
 
   <div class="panel">
     <div class="panel-head"><h2>SDR performance</h2><span class="obj-tag">activity metrics</span></div>
-    <div class="grid g5">
+    <p class="hint" style="margin:0 0 10px;">"Leads replied" counts each prospect once, however many times they've written back; "Total replies" counts every message, including multi-round back-and-forth from the same lead.</p>
+    <div class="grid g6">
       <div class="stat clickable" onclick="dashDrill('ever_sent','Emails sent')"><div class="n" style="color:var(--sky)" id="sp_s">–</div><div class="lbl">Emails sent</div></div>
-      <div class="stat clickable" onclick="dashDrill('ever_replied','Replied leads')"><div class="n" style="color:var(--indigo)" id="sp_r">–</div><div class="lbl">Replies received</div></div>
+      <div class="stat clickable" onclick="dashDrill('ever_replied','Replied leads')"><div class="n" style="color:var(--indigo)" id="sp_r">–</div><div class="lbl">Leads replied</div></div>
+      <div class="stat" title="Every inbound reply, including multiple rounds from the same lead"><div class="n" style="color:var(--indigo)" id="sp_trm">–</div><div class="lbl">Total replies (all rounds)</div></div>
       <div class="stat"><div class="n" id="sp_rr">–</div><div class="lbl">Response rate</div></div>
       <div class="stat clickable" onclick="dashDrill('ever_replied','Replied leads')"><div class="n" id="sp_ar">–</div><div class="lbl">Avg. reply time</div></div>
       <div class="stat clickable" onclick="dashDrill('follow_up_due','Follow-ups due')"><div class="n" style="color:var(--invalid)" id="sp_fud">–</div><div class="lbl">Follow-ups due</div></div>
@@ -2421,7 +2423,8 @@ document.getElementById('dashExportBtn').addEventListener('click', () => {
     {Metric: 'Deals lost', Value: v.deals_lost},
     {Metric: 'Win rate %', Value: v.win_rate_pct},
     {Metric: 'Emails sent', Value: p.total_emails_sent},
-    {Metric: 'Replies received', Value: p.total_replies_received},
+    {Metric: 'Leads replied (unique)', Value: p.unique_leads_replied},
+    {Metric: 'Total replies (all rounds)', Value: p.total_reply_messages},
     {Metric: 'Response rate %', Value: p.response_rate_pct},
     {Metric: 'Avg. reply time (hours)', Value: p.avg_response_time_hours ?? ''},
   ];
@@ -3166,7 +3169,7 @@ async function loadDashboard() {
       const v=d.value_captured;
       set('vc_w',v.customers_won); set('vc_t',fmtMoney(v.total_turnover)); set('vc_q',v.quotes_requested); set('vc_l',v.deals_lost); set('vc_wr',v.win_rate_pct+'%');
       const p=d.sdr_performance;
-      set('sp_s',p.total_emails_sent); set('sp_r',p.total_replies_received); set('sp_rr',p.response_rate_pct+'%'); set('sp_ar',p.avg_response_time_hours==null?'—':p.avg_response_time_hours+'h');
+      set('sp_s',p.total_emails_sent); set('sp_r',p.unique_leads_replied); set('sp_trm',p.total_reply_messages); set('sp_rr',p.response_rate_pct+'%'); set('sp_ar',p.avg_response_time_hours==null?'—':p.avg_response_time_hours+'h');
       // outreach funnel from campaigns
       const of={q:0,ap:0,s:0,r:0,c:0,rj:0};
       d.campaigns.forEach(c=>{of.q+=c.queued;of.ap+=c.approved||0;of.s+=c.sent;of.r+=c.replied;of.c+=c.suppressed||0;of.rj+=c.rejected||0;});
