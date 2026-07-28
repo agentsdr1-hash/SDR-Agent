@@ -62,7 +62,8 @@ def test_summary_math_matches_seeded_funnel(server):
     assert summary["value_captured"]["win_rate_pct"] == 50.0
 
     assert summary["sdr_performance"]["total_emails_sent"] == 4       # all 4 reached Sent
-    assert summary["sdr_performance"]["total_replies_received"] == 3  # all but sent_only
+    assert summary["sdr_performance"]["unique_leads_replied"] == 3    # all but sent_only
+    assert summary["sdr_performance"]["total_reply_messages"] == 3    # one reply round each here
     assert summary["sdr_performance"]["response_rate_pct"] == 75.0
 
     campaign_summary = next(c for c in summary["campaigns"] if c["id"] == cid)
@@ -70,6 +71,36 @@ def test_summary_math_matches_seeded_funnel(server):
     assert campaign_summary["lost"] == 1
     assert campaign_summary["turnover"] == 50000
     assert campaign_summary["total"] == 4
+
+
+def test_summary_counts_every_reply_round_not_just_unique_leads(server):
+    # This industry runs on multi-round back-and-forth -- a lead who
+    # writes back three times is still 1 unique lead who engaged, but
+    # should count as 3 replies in the true volume metric and show up on
+    # the activity chart 3 times, not silently collapse to 1 (or worse,
+    # to whichever day the *last* round happened to land on).
+    before = server.get("/reports/summary").json()
+    before_perf = before["sdr_performance"]
+    before_activity_replied = sum(day["replied"] for day in before["activity_by_day"])
+
+    cid = server.post("/campaigns", json={"name": "Multi-Round Reporting Test"}).json()["id"]
+    pid = server.seed_prospect(email="multiround@example.com")
+    server.post(f"/campaigns/{cid}/assign-prospect/{pid}")
+    row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-sent")
+
+    for i in range(3):
+        r = server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", json={"reply_body": f"round {i+1}"})
+        assert r.status_code == 200, r.text
+
+    after = server.get("/reports/summary").json()
+    after_perf = after["sdr_performance"]
+    after_activity_replied = sum(day["replied"] for day in after["activity_by_day"])
+
+    assert after_perf["unique_leads_replied"] - before_perf["unique_leads_replied"] == 1
+    assert after_perf["total_reply_messages"] - before_perf["total_reply_messages"] == 3
+    assert after_activity_replied - before_activity_replied == 3
 
 
 def test_summary_prospect_status_counts_reflect_validation(server):
