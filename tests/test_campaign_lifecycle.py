@@ -66,6 +66,69 @@ def test_approve_and_reject_single_draft(server):
     assert r.status_code == 422
 
 
+def test_back_to_draft_reverts_an_approved_outreach_draft_to_queued(server):
+    cid = _create_campaign(server, "Back To Draft Test")
+    pid = server.seed_prospect()
+    _assign(server, cid, pid)
+    row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    assert server.get(f"/campaigns/{cid}/prospects").json()[0]["status"] == "Approved"
+
+    r = server.post(f"/campaigns/{cid}/prospects/{row_id}/back-to-draft")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "Queued"
+
+    prospect = server.get(f"/campaigns/{cid}/prospects").json()[0]
+    assert prospect["status"] == "Queued"
+    assert prospect["approved_at"] is None
+
+    # Editable again -- update_draft() only allows edits while Queued.
+    r = server.put(f"/campaigns/{cid}/prospects/{row_id}/draft", json={"subject": "Edited after revert", "body": "New body"})
+    assert r.status_code == 200, r.text
+    prospect = server.get(f"/campaigns/{cid}/prospects").json()[0]
+    assert prospect["subject"] == "Edited after revert"
+
+    # Can be approved again from the reverted Queued state.
+    r = server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    assert r.status_code == 200
+
+    # Only valid from Approved -- not from Sent.
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-sent")
+    r = server.post(f"/campaigns/{cid}/prospects/{row_id}/back-to-draft")
+    assert r.status_code == 422
+
+
+def test_back_to_draft_reverts_an_approved_reply_draft_to_draft(server):
+    cid = _create_campaign(server, "Reply Back To Draft Test")
+    pid = server.seed_prospect()
+    _assign(server, cid, pid)
+    row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-sent")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-reply", json={"reply_body": "interested"})
+    draft_id = server.get("/reply-drafts").json()[0]["id"]
+
+    server.post(f"/reply-drafts/{draft_id}/approve")
+    assert server.get("/reply-drafts", params={"status": "Approved"}).json()[0]["id"] == draft_id
+
+    r = server.post(f"/reply-drafts/{draft_id}/back-to-draft")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "Draft"
+
+    drafts = server.get("/reply-drafts", params={"status": "Draft"}).json()
+    reverted = next(d for d in drafts if d["id"] == draft_id)
+    assert reverted["approved_at"] is None
+
+    # Editable again -- update_reply_draft() only allows edits while Draft.
+    r = server.put(f"/reply-drafts/{draft_id}", json={"subject": "Edited reply", "body": "New reply body"})
+    assert r.status_code == 200, r.text
+
+    # Only valid from Approved -- not from Draft (nothing to revert).
+    r = server.post(f"/reply-drafts/{draft_id}/back-to-draft")
+    assert r.status_code == 422
+
+
 def test_bulk_approve_and_reject(server):
     cid = _create_campaign(server, "Bulk Test")
     row_ids = []
@@ -109,8 +172,11 @@ def test_simulate_sent_and_reply_flow(server):
     prospect = server.get(f"/campaigns/{cid}/prospects").json()[0]
     assert prospect["status"] == "Replied"
 
-    # A reply draft should have been generated automatically.
-    drafts = server.get("/reply-drafts").json()
+    # A reply draft should have been generated automatically. Scoped to
+    # this campaign -- the unscoped /reply-drafts view accumulates drafts
+    # from every test in this module (shared server/DB), so asserting an
+    # exact global count here would be order-dependent.
+    drafts = server.get("/reply-drafts", params={"campaign_id": cid}).json()
     assert len(drafts) == 1
     assert drafts[0]["status"] == "Draft"
 

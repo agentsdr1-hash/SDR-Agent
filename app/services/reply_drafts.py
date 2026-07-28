@@ -89,3 +89,25 @@ def approve_reply_draft(draft_id: int):
             (datetime.now(timezone.utc).isoformat(), draft_id),
         )
     log_event("reply_draft_approved", "reply_draft", str(draft_id), None)
+
+
+VALID_FOR_REVERT = {"Approved"}
+
+
+def revert_to_draft(draft_id: int):
+    """Un-approves an Approved reply back to Draft -- editable again (edits
+    are Draft-only, same as update_reply_draft()), or simply left out of
+    the next 'Send all approved' without rejecting it outright. Only valid
+    from Approved: once actually Sent there's nothing to take back, and
+    reject_reply_draft() already covers "never mind, drop this reply"."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT status FROM reply_drafts WHERE id = ?", (draft_id,)).fetchone()
+        if not row:
+            raise ReplyDraftError("Reply draft not found")
+        if row["status"] not in VALID_FOR_REVERT:
+            raise ReplyDraftError(f"Can only send back to draft from status 'Approved' (current: '{row['status']}')")
+        conn.execute(
+            "UPDATE reply_drafts SET status = 'Draft', approved_at = NULL WHERE id = ?",
+            (draft_id,),
+        )
+    log_event("reply_draft_reverted", "reply_draft", str(draft_id), None)
