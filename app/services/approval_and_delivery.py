@@ -75,6 +75,32 @@ def reject(campaign_id: int, prospect_row_id: int):
     log_event("draft_rejected", "campaign_prospect", str(prospect_row_id), f"Campaign {campaign_id}")
 
 
+VALID_TRANSITIONS_TO_DRAFT = {"Approved"}
+
+
+def back_to_draft(campaign_id: int, prospect_row_id: int):
+    """Un-approves an Approved outreach draft back to Queued -- for
+    approving too early, then wanting to edit it again (editing is
+    Queued-only, same as everything else in this approval flow) or simply
+    deciding not to send it after all without the dead end reject() is.
+    Only valid from Approved: once actually Sent there's nothing to take
+    back, and reject() already covers "never mind, drop this one"."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT status FROM campaign_prospects WHERE campaign_id = ? AND id = ?",
+            (campaign_id, prospect_row_id),
+        ).fetchone()
+        if not row:
+            raise ApprovalError("Campaign prospect not found")
+        if row["status"] not in VALID_TRANSITIONS_TO_DRAFT:
+            raise ApprovalError(f"Can only send back to draft from status 'Approved' (current: '{row['status']}')")
+        conn.execute(
+            "UPDATE campaign_prospects SET status = 'Queued', approved_at = NULL WHERE id = ?",
+            (prospect_row_id,),
+        )
+    log_event("draft_reverted", "campaign_prospect", str(prospect_row_id), f"Campaign {campaign_id}")
+
+
 def send_approved(campaign_id: int) -> SendResult:
     """Actually send every Approved prospect (fresh outreach) AND every
     Approved reply draft in this campaign via Gmail -- one action, one

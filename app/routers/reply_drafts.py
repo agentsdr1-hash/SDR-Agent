@@ -15,6 +15,7 @@ from app.services.reply_drafts import (
     update_reply_draft,
     approve_reply_draft,
     reject_reply_draft,
+    revert_to_draft,
     ReplyDraftError,
 )
 
@@ -54,5 +55,17 @@ def reject_draft(draft_id: int):
     try:
         reject_reply_draft(draft_id)
         return {"status": "Rejected"}
+    except ReplyDraftError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{draft_id}/back-to-draft")
+def back_to_draft_endpoint(draft_id: int):
+    """Un-approves an Approved reply back to Draft -- editable again, or
+    simply left out of the next 'Send all approved' without rejecting it
+    outright."""
+    try:
+        revert_to_draft(draft_id)
+        return {"status": "Draft"}
     except ReplyDraftError as e:
         raise HTTPException(status_code=422, detail=str(e))

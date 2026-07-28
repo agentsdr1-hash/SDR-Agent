@@ -1584,7 +1584,7 @@ function serverProspectCard(r, cid) {
   const isQueued = r.status === 'Queued';
   let actions = '';
   if(isQueued) actions = `<button class="btn sec" onclick="serverSaveDraft('${cid}',${r.id})">Save draft</button><button class="btn ok" onclick="serverApprove('${cid}',${r.id})">Approve</button><button class="btn reject" onclick="serverReject('${cid}',${r.id})">Reject</button>`;
-  else if(r.status==='Approved') actions = `<button class="btn sec" onclick="serverSimulateSent('${cid}',${r.id})" title="Flips to Sent without touching Gmail -- for testing the funnel before real credentials exist">Simulate send (test)</button>`;
+  else if(r.status==='Approved') actions = `<button class="btn sec" onclick="serverBackToDraft('${cid}',${r.id})" title="Un-approves it -- editable again, and left out of the next Send all approved">↩ Back to draft</button><button class="btn sec" onclick="serverSimulateSent('${cid}',${r.id})" title="Flips to Sent without touching Gmail -- for testing the funnel before real credentials exist">Simulate send (test)</button>`;
   else if(r.status==='Sent') actions = `<button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},false)" title="Mimics a real detected reply, without an actual inbox">Simulate reply (test)</button><button class="btn sec" onclick="serverSimulateReply('${cid}',${r.id},true)" title="Mimics a reply containing opt-out language">Simulate opt-out (test)</button>`;
   else if(r.status==='QuoteRequested') actions = `<button class="btn ok" onclick="serverWon('${cid}',${r.id})">Mark Won</button><button class="btn reject" onclick="serverLost('${cid}',${r.id})">Mark Lost</button>`;
   else if(r.status==='Won') actions = `<button class="btn sec" onclick="serverWon('${cid}',${r.id})">Edit amount</button><button class="btn sec" onclick="serverReopen('${cid}',${r.id})">Reopen</button>`;
@@ -1693,6 +1693,13 @@ document.getElementById('campBulkRejectBtn').addEventListener('click', async () 
 
 async function serverApprove(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/approve',{method:'POST'}); loadServerProspects(cid); }
 async function serverReject(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/reject',{method:'POST'}); loadServerProspects(cid); }
+async function serverBackToDraft(cid,rid) {
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+rid+'/back-to-draft',{method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS('reviewStatus', d.detail||'Failed', true);
+  setS('reviewStatus', 'Sent back to draft -- edit it above.');
+  loadServerProspects(cid);
+}
 async function serverQuote(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/request-quote',{method:'POST'}); loadServerProspects(cid); }
 async function serverWon(cid,rid) { const v=prompt('Deal value (optional):'); if(v===null) return; const dv=v&&!isNaN(parseFloat(v))?parseFloat(v):null; const qn=prompt('ERP quote number (optional):'); if(qn===null) return; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/won',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deal_value:dv, quote_number: qn||null})}); loadServerProspects(cid); }
 async function serverReopen(cid,rid) { if(!confirm('Reopen this deal back to Quote Requested? The current Won/Lost details will be cleared.')) return; await fetch('/campaigns/'+cid+'/prospects/'+rid+'/reopen',{method:'POST'}); loadServerProspects(cid); }
@@ -1767,9 +1774,10 @@ function replyDraftCard(d, showCampaignTag) {
   </div>`;
 }
 
-// Read-only card for a reply draft that's Approved but not yet sent -- no
-// edit/approve/reject controls, since the only thing left to do is the
-// same "Send all approved" batch action that sends fresh outreach.
+// Read-only card for a reply draft that's Approved but not yet sent --
+// the only actions left are the same "Send all approved" batch action
+// that sends fresh outreach, or backing out of that batch via "Back to
+// draft" (editable again, same as a fresh Draft).
 function approvedReplyDraftCard(d, showCampaignTag) {
   const name = [d.first_name,d.last_name].filter(Boolean).join(' ')||'—';
   const campaignTag = showCampaignTag ? `<span class="pill p-neutral">${esc(campaignNamesById[d.campaign_id]||'Campaign #'+d.campaign_id)}</span>` : '';
@@ -1777,7 +1785,16 @@ function approvedReplyDraftCard(d, showCampaignTag) {
     <div class="ehead"><div class="who">${esc(name)}<span>${esc(d.email||'')} · ${esc(d.company||'—')}</span></div>${campaignTag}<span class="pill p-approved">Approved — sends with next batch</span></div>
     <div class="muted" style="margin:2px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">${esc(d.subject)}</div>
     <div class="ebody">${esc(d.body)}</div>
+    <div class="eactions"><button class="btn sec" onclick="revertReplyDraft(${d.id})">↩ Back to draft</button></div>
   </div>`;
+}
+
+async function revertReplyDraft(id) {
+  const r = await fetch('/reply-drafts/'+id+'/back-to-draft', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS('reviewStatus', d.detail||'Failed', true);
+  setS('reviewStatus', 'Sent back to draft -- edit it below.');
+  loadReplyDrafts();
 }
 
 async function saveReplyDraft(id) {
@@ -2887,7 +2904,8 @@ function outreachDraftCard(m) {
       <button class="btn sec" onclick="saveOutreachDraft(${m.campaign_id},${m.id})">Save draft</button>
       <button class="btn ok" onclick="approveOutreachDraft(${m.campaign_id},${m.id})">Approve</button>
       <button class="btn reject" onclick="rejectOutreachDraft(${m.campaign_id},${m.id})">Reject</button>
-    </div>` : `<pre>${esc(m.body||'(no draft body)')}</pre>`;
+    </div>` : isApproved ? `<pre>${esc(m.body||'(no draft body)')}</pre>
+    <div class="row mt12"><button class="btn sec" onclick="leadRevertOutreachDraft(${m.campaign_id},${m.id})">↩ Back to draft</button></div>` : `<pre>${esc(m.body||'(no draft body)')}</pre>`;
 
   return `<details class="draft" open style="margin-bottom:8px;">
     <summary style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
@@ -2965,6 +2983,13 @@ async function rejectOutreachDraft(cid, cpid) {
   setS(leadDetailCtx.statusId, 'Rejected.');
   refreshLeadDetail();
 }
+async function leadRevertOutreachDraft(cid, cpid) {
+  const r = await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/back-to-draft', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed', true);
+  setS(leadDetailCtx.statusId, 'Sent back to draft -- edit and re-approve when ready.');
+  refreshLeadDetail();
+}
 
 // ══════════════════════════════════════════════════════
 // EMAIL THREAD MODAL — chat-style read of one membership's whole
@@ -3031,11 +3056,21 @@ function emailThreadHTML(d, m) {
       prevT = item.data.sent_at;
       return gapHtml + threadBubble('auto', `Automated follow-up #${item.data.follow_up_number}`, item.data.subject, item.data.body, item.data.sent_at);
     }
-    // Reply round: their message, then our response -- sent (read-only) or
-    // still pending review (a live compose box instead of a static bubble).
+    // Reply round: their message, then our response -- sent (read-only),
+    // still pending review (a live compose box), or approved-but-not-yet-
+    // sent (read-only bubble + a way to un-approve it back to that same
+    // compose box).
     const rd = item.data;
     const theirs = threadBubble('them', [p.first_name,p.last_name].filter(Boolean).join(' ')||p.email||'Customer', rd.source_reply_subject, rd.source_reply_snippet, rd.created_at);
-    const ours = rd.status === 'Draft' ? threadComposeBox(rd) : threadBubble('us', 'AKEIS', rd.subject, rd.body, rd.sent_at || rd.approved_at || rd.created_at, ` ${pill(rd.status)}`);
+    let ours;
+    if(rd.status === 'Draft') {
+      ours = threadComposeBox(rd);
+    } else if(rd.status === 'Approved') {
+      ours = threadBubble('us', 'AKEIS', rd.subject, rd.body, rd.approved_at || rd.created_at, ` ${pill(rd.status)}`)
+        + `<div class="row" style="align-self:flex-end;"><button class="btn sec" style="padding:4px 10px;font-size:11.5px;" onclick="leadRevertReplyDraft(${rd.id},${rd.campaign_prospect_id})">↩ Back to draft</button></div>`;
+    } else {
+      ours = threadBubble('us', 'AKEIS', rd.subject, rd.body, rd.sent_at || rd.created_at, ` ${pill(rd.status)}`);
+    }
     prevT = rd.sent_at || rd.created_at;
     return gapHtml + theirs + ours;
   }).join('');
@@ -3102,6 +3137,14 @@ async function leadRejectReplyDraft(id, cpid) {
   await refreshLeadDetail();
   if(cpid) renderEmailThreadModalBody(cpid);
   setS('emailThreadStatus', 'Reply draft rejected.');
+}
+async function leadRevertReplyDraft(id, cpid) {
+  const r = await fetch('/reply-drafts/'+id+'/back-to-draft', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS('emailThreadStatus', d.detail||'Failed', true);
+  await refreshLeadDetail();
+  if(cpid) renderEmailThreadModalBody(cpid);
+  setS('emailThreadStatus', 'Sent back to draft -- edit and re-approve when ready.');
 }
 
 // ══════════════════════════════════════════════════════
