@@ -75,6 +75,32 @@ def reject(campaign_id: int, prospect_row_id: int):
     log_event("draft_rejected", "campaign_prospect", str(prospect_row_id), f"Campaign {campaign_id}")
 
 
+VALID_TRANSITIONS_TO_UNREJECT = {"Rejected"}
+
+
+def unreject(campaign_id: int, prospect_row_id: int):
+    """Undoes a Reject -- back to Queued, editable and awaiting a fresh
+    approve/reject decision, same as back_to_draft()'s undo for Approved.
+    Rejected used to be a genuine dead end (no way back short of deleting
+    and re-assigning the lead from scratch) -- a wrong click, or a change
+    of mind about a lead that looked unpromising at a glance, had no
+    recovery path."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT status FROM campaign_prospects WHERE campaign_id = ? AND id = ?",
+            (campaign_id, prospect_row_id),
+        ).fetchone()
+        if not row:
+            raise ApprovalError("Campaign prospect not found")
+        if row["status"] not in VALID_TRANSITIONS_TO_UNREJECT:
+            raise ApprovalError(f"Can only un-reject from status 'Rejected' (current: '{row['status']}')")
+        conn.execute(
+            "UPDATE campaign_prospects SET status = 'Queued' WHERE id = ?",
+            (prospect_row_id,),
+        )
+    log_event("draft_unrejected", "campaign_prospect", str(prospect_row_id), f"Campaign {campaign_id}")
+
+
 VALID_TRANSITIONS_TO_DRAFT = {"Approved"}
 
 

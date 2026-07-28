@@ -18,6 +18,7 @@ from app.services.approval_and_delivery import (
     update_draft,
     approve,
     reject,
+    unreject,
     back_to_draft,
     send_approved,
     simulate_sent,
@@ -102,6 +103,17 @@ def reject_one(campaign_id: int, prospect_row_id: int):
     try:
         reject(campaign_id, prospect_row_id)
         return {"status": "rejected"}
+    except ApprovalError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/{campaign_id}/prospects/{prospect_row_id}/unreject", tags=["OBJ-005"])
+def unreject_one(campaign_id: int, prospect_row_id: int):
+    """Undoes a Reject -- back to Queued, editable again and up for a
+    fresh approve/reject decision."""
+    try:
+        unreject(campaign_id, prospect_row_id)
+        return {"status": "Queued"}
     except ApprovalError as e:
         raise HTTPException(status_code=422, detail=str(e))
 

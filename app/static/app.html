@@ -1596,6 +1596,7 @@ function serverProspectCard(r, cid) {
   else if(r.status==='QuoteRequested') actions = `<button class="btn ok" onclick="serverWon('${cid}',${r.id})">Mark Won</button><button class="btn reject" onclick="serverLost('${cid}',${r.id})">Mark Lost</button>`;
   else if(r.status==='Won') actions = `<button class="btn sec" onclick="serverWon('${cid}',${r.id})">Edit amount</button><button class="btn sec" onclick="serverReopen('${cid}',${r.id})">Reopen</button>`;
   else if(r.status==='Lost') actions = `<button class="btn sec" onclick="serverLost('${cid}',${r.id})">Edit reason</button><button class="btn sec" onclick="serverReopen('${cid}',${r.id})">Reopen</button>`;
+  else if(r.status==='Rejected') actions = `<button class="btn sec" onclick="serverUnreject('${cid}',${r.id})" title="Back to Queued, editable again">↩ Un-reject</button>`;
   // A quote can be logged at any point before the deal closes, not just
   // after a reply -- a phone call or walk-in doesn't need a fake "Replied"
   // step first. See VALID_FOR_QUOTE in sales_outcomes.py.
@@ -1700,6 +1701,7 @@ document.getElementById('campBulkRejectBtn').addEventListener('click', async () 
 
 async function serverApprove(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/approve',{method:'POST'}); loadServerProspects(cid); }
 async function serverReject(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/reject',{method:'POST'}); loadServerProspects(cid); }
+async function serverUnreject(cid,rid) { await fetch('/campaigns/'+cid+'/prospects/'+rid+'/unreject',{method:'POST'}); loadServerProspects(cid); }
 async function serverBackToDraft(cid,rid) {
   const r = await fetch('/campaigns/'+cid+'/prospects/'+rid+'/back-to-draft',{method:'POST'});
   const d = await r.json();
@@ -2551,6 +2553,7 @@ function membershipActions(m) {
   if(m.status==='QuoteRequested') return `<button class="btn ok" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadMarkWon(${m.campaign_id},${m.id})">Mark Won</button><button class="btn reject" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadMarkLost(${m.campaign_id},${m.id})">Mark Lost</button>`;
   if(m.status==='Won') return `<button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadMarkWon(${m.campaign_id},${m.id})">Edit amount</button><button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadReopen(${m.campaign_id},${m.id})">Reopen</button>`;
   if(m.status==='Lost') return `<button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadMarkLost(${m.campaign_id},${m.id})">Edit reason</button><button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadReopen(${m.campaign_id},${m.id})">Reopen</button>`;
+  if(m.status==='Rejected') return `<button class="btn sec" style="padding:3px 10px;font-size:11px;" onclick="event.stopPropagation();leadUnreject(${m.campaign_id},${m.id})" title="Back to Queued, editable again">↩ Un-reject</button>`;
   return '';
 }
 
@@ -2580,6 +2583,12 @@ async function leadMarkLost(cid,cpid) {
 async function leadReopen(cid,cpid) {
   if(!confirm('Reopen this deal back to Quote Requested? The current Won/Lost details will be cleared.')) return;
   const r=await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/reopen',{method:'POST'});
+  const d=await r.json();
+  if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed', true);
+  refreshLeadDetail();
+}
+async function leadUnreject(cid,cpid) {
+  const r=await fetch('/campaigns/'+cid+'/prospects/'+cpid+'/unreject',{method:'POST'});
   const d=await r.json();
   if(!r.ok) return setS(leadDetailCtx.statusId, d.detail||'Failed', true);
   refreshLeadDetail();

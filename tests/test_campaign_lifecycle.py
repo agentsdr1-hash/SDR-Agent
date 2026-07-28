@@ -66,6 +66,34 @@ def test_approve_and_reject_single_draft(server):
     assert r.status_code == 422
 
 
+def test_unreject_reverts_a_rejected_draft_to_queued(server):
+    # Reject used to be a dead end -- no way back short of deleting and
+    # re-assigning the lead from scratch. unreject() is the undo, mirroring
+    # what back_to_draft() already does for Approved.
+    cid = _create_campaign(server, "Unreject Test")
+    pid = server.seed_prospect()
+    _assign(server, cid, pid)
+    row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/reject")
+    assert server.get(f"/campaigns/{cid}/prospects").json()[0]["status"] == "Rejected"
+
+    r = server.post(f"/campaigns/{cid}/prospects/{row_id}/unreject")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "Queued"
+    assert server.get(f"/campaigns/{cid}/prospects").json()[0]["status"] == "Queued"
+
+    # Editable again, and can be approved or rejected fresh from Queued.
+    r = server.put(f"/campaigns/{cid}/prospects/{row_id}/draft", json={"subject": "Second look", "body": "New body"})
+    assert r.status_code == 200, r.text
+    r = server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    assert r.status_code == 200, r.text
+
+    # Only valid from Rejected -- not from Approved.
+    r = server.post(f"/campaigns/{cid}/prospects/{row_id}/unreject")
+    assert r.status_code == 422
+
+
 def test_back_to_draft_reverts_an_approved_outreach_draft_to_queued(server):
     cid = _create_campaign(server, "Back To Draft Test")
     pid = server.seed_prospect()
