@@ -72,6 +72,17 @@ def test_summary_math_matches_seeded_funnel(server):
     assert campaign_summary["turnover"] == 50000
     assert campaign_summary["total"] == 4
 
+    # 'replied' is the current-status snapshot -- only replied_only is
+    # actually sitting in that status right now, since won/lost moved on
+    # through it to Quote Requested and then their outcome. 'ever_replied'
+    # is the fuller count: all 3 leads that replied at some point, whether
+    # or not they're still sitting in that exact status -- this is what
+    # the Campaigns tab and Dashboard overview tiles are built on, so a
+    # 2-campaign summary doesn't read as "4 replied, 2 won" when the 2 Won
+    # leads replied too on their way there.
+    assert campaign_summary["replied"] == 1        # replied_only, currently in that status
+    assert campaign_summary["ever_replied"] == 3    # replied_only + won + lost
+
 
 def test_summary_counts_every_reply_round_not_just_unique_leads(server):
     # This industry runs on multi-round back-and-forth -- a lead who

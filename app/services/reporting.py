@@ -56,6 +56,20 @@ def get_summary() -> dict:
                 "SELECT COALESCE(SUM(deal_value), 0) v FROM campaign_prospects WHERE campaign_id = ? AND status = 'Won'",
                 (c["id"],),
             ).fetchone()
+            # A lead that replied and then moved on to QuoteRequested/Won/
+            # Lost leaves the 'Replied' status bucket above entirely, even
+            # though it did reply -- 'replied' (the cp_counts snapshot) is
+            # only leads CURRENTLY sitting in that exact stage, useful for
+            # "who still needs a next step", but undercounts total
+            # engagement (a 2-campaign summary reading "4 replied, 2 won"
+            # reads as 4 total responses when it's really at least 6: the 2
+            # Won leads replied too, on their way there). ever_replied is
+            # that fuller count -- replied_at IS NOT NULL regardless of
+            # where the lead is now.
+            ever_replied_row = conn.execute(
+                "SELECT COUNT(*) c FROM campaign_prospects WHERE campaign_id = ? AND replied_at IS NOT NULL",
+                (c["id"],),
+            ).fetchone()
             campaign_summaries.append({
                 "id": c["id"],
                 "name": c["name"],
@@ -66,6 +80,7 @@ def get_summary() -> dict:
                 "rejected": cp_counts.get("Rejected", 0),
                 "sent": cp_counts.get("Sent", 0),
                 "replied": cp_counts.get("Replied", 0),
+                "ever_replied": ever_replied_row["c"],
                 "suppressed": cp_counts.get("Suppressed", 0),
                 "quote_requested": cp_counts.get("QuoteRequested", 0),
                 "won": cp_counts.get("Won", 0),

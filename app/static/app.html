@@ -464,7 +464,7 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
       <div class="stat"><div class="n" id="ov_campaigns">–</div><div class="lbl">Campaigns</div></div>
       <div class="stat"><div class="n" id="ov_queued">–</div><div class="lbl">Queued</div></div>
       <div class="stat"><div class="n" style="color:var(--sky)" id="ov_sent">–</div><div class="lbl">Sent — awaiting reply</div></div>
-      <div class="stat"><div class="n" style="color:var(--indigo)" id="ov_replied">–</div><div class="lbl">Replied</div></div>
+      <div class="stat" title="Every lead who has ever replied, including ones that have since moved on to a quote/won/lost"><div class="n" style="color:var(--indigo)" id="ov_replied">–</div><div class="lbl">Replied</div></div>
       <div class="stat"><div class="n" style="color:var(--valid)" id="ov_won">–</div><div class="lbl">Won</div></div>
       <div class="stat clickable" onclick="selectAllCampaignsView()" title="Switch the campaign selector below to 'All campaigns'"><div class="n" style="color:var(--dup)" id="ov_pending">–</div><div class="lbl">Reply drafts pending</div></div>
     </div>
@@ -723,7 +723,7 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
       <div class="stat clickable" onclick="dashDrill('Queued','Queued')"><div class="n" id="of_q">–</div><div class="lbl">Queued</div></div>
       <div class="stat clickable" onclick="dashDrill('Approved','Approved')"><div class="n" style="color:var(--valid)" id="of_ap">–</div><div class="lbl">Approved</div></div>
       <div class="stat clickable" onclick="dashDrill('Sent','Awaiting reply')"><div class="n" style="color:var(--sky)" id="of_s">–</div><div class="lbl">Awaiting reply</div></div>
-      <div class="stat clickable" onclick="dashDrill('Replied','Replied')"><div class="n" style="color:var(--indigo)" id="of_r">–</div><div class="lbl">Replied</div></div>
+      <div class="stat clickable" onclick="dashDrill('ever_replied','Replied')" title="Every lead who has ever replied, including ones that have since moved on to a quote/won/lost"><div class="n" style="color:var(--indigo)" id="of_r">–</div><div class="lbl">Replied</div></div>
       <div class="stat clickable" onclick="dashDrill('Suppressed','Suppressed')"><div class="n" style="color:var(--invalid)" id="of_c">–</div><div class="lbl">Suppressed</div></div>
       <div class="stat clickable" onclick="dashDrill('Rejected','Rejected')"><div class="n" style="color:var(--invalid)" id="of_rj">–</div><div class="lbl">Rejected</div></div>
     </div>
@@ -1480,9 +1480,14 @@ function syncReviewSelect() {
 
       // Top-level overview tiles -- sums across every campaign, so there's
       // a glance-able answer to "how are things going" before drilling
-      // into any one campaign via the dropdown below.
+      // into any one campaign via the dropdown below. Replied uses
+      // ever_replied, not the current-status 'replied' count -- a lead
+      // that replied and then moved on to Quote Requested/Won/Lost leaves
+      // the 'Replied' status bucket entirely, so "4 replied, 2 won" read
+      // like 4 total responses when the 2 Won leads replied too on their
+      // way there (6 total, not 4).
       const totals = (summary.campaigns||[]).reduce((acc,c) => {
-        acc.queued += c.queued; acc.sent += c.sent; acc.replied += c.replied; acc.won += c.won;
+        acc.queued += c.queued; acc.sent += c.sent; acc.replied += c.ever_replied; acc.won += c.won;
         return acc;
       }, {queued:0, sent:0, replied:0, won:0});
       set('ov_campaigns', camps.length);
@@ -3170,9 +3175,12 @@ async function loadDashboard() {
       set('vc_w',v.customers_won); set('vc_t',fmtMoney(v.total_turnover)); set('vc_q',v.quotes_requested); set('vc_l',v.deals_lost); set('vc_wr',v.win_rate_pct+'%');
       const p=d.sdr_performance;
       set('sp_s',p.total_emails_sent); set('sp_r',p.unique_leads_replied); set('sp_trm',p.total_reply_messages); set('sp_rr',p.response_rate_pct+'%'); set('sp_ar',p.avg_response_time_hours==null?'—':p.avg_response_time_hours+'h');
-      // outreach funnel from campaigns
+      // outreach funnel from campaigns -- Replied uses ever_replied (see
+      // syncReviewSelect's totals for why: a lead that moved on to Quote
+      // Requested/Won/Lost still replied, but drops out of the current-
+      // status 'replied' count).
       const of={q:0,ap:0,s:0,r:0,c:0,rj:0};
-      d.campaigns.forEach(c=>{of.q+=c.queued;of.ap+=c.approved||0;of.s+=c.sent;of.r+=c.replied;of.c+=c.suppressed||0;of.rj+=c.rejected||0;});
+      d.campaigns.forEach(c=>{of.q+=c.queued;of.ap+=c.approved||0;of.s+=c.sent;of.r+=c.ever_replied;of.c+=c.suppressed||0;of.rj+=c.rejected||0;});
       set('of_q',of.q);set('of_ap',of.ap);set('of_s',of.s);set('of_r',of.r);set('of_c',of.c);set('of_rj',of.rj);
       // campaigns
       document.getElementById('dCamps').innerHTML = d.campaigns.length
