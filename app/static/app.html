@@ -484,7 +484,7 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
 
   <div class="panel" id="replyDraftsPanel">
     <div class="panel-head"><h2>Reply drafts awaiting review — <span id="rdCampaignName">—</span> (<span id="rdCount">0</span>)</h2><button class="btn sec" style="font-size:12px;padding:5px 12px;margin-left:auto;" onclick="loadReplyDrafts()">↻ Refresh</button><span class="obj-tag">smart-reply, rule-based</span></div>
-    <p class="hint" style="margin:0 0 10px;">Generated automatically whenever a prospect replies (real Gmail poll, or the Simulate reply buttons below) — matched against the Q&amp;A knowledge base and stock catalog. Review before sending; nothing here goes out on its own. Scoped to the campaign selected above — a lead's full reply history across every campaign is in the Leads tab.</p>
+    <p class="hint" style="margin:0 0 10px;">Generated automatically whenever a prospect replies (real Gmail poll, or the Simulate reply buttons below) — matched against the Q&amp;A knowledge base and stock catalog. Review before sending; nothing here goes out on its own. With one campaign selected, review each reply directly on that customer's own card below — this panel then just tracks what's approved and queued to send. Viewing "All campaigns" shows every pending reply across every campaign here instead. A lead's full reply history across every campaign is in the Leads tab.</p>
     <div id="rdList"></div>
     <div class="empty hidden" id="rdEmpty">No reply drafts waiting on you right now.</div>
   </div>
@@ -1571,22 +1571,35 @@ async function loadServerProspects(cid) {
     loadReplyDrafts();
     return;
   }
-  const r = await fetch('/campaigns/'+cid+'/prospects');
-  const rows = await r.json();
-  if(!r.ok) return;
+  const [prospectsRes, draftsRes] = await Promise.all([
+    fetch('/campaigns/'+cid+'/prospects'),
+    fetch('/reply-drafts?status=Draft&campaign_id='+cid),
+  ]);
+  const rows = await prospectsRes.json();
+  if(!prospectsRes.ok) return;
+  // Indexed by campaign_prospect_id (== each row's own id) so a pending
+  // reply renders inline on the customer's own card -- see
+  // serverProspectCard -- instead of only in the separate panel below,
+  // which used to be the only place a reply's content and its
+  // approve/reject actions were visible at all.
+  const draftsByCp = {};
+  if(draftsRes.ok) (await draftsRes.json()).forEach(d => {
+    (draftsByCp[d.campaign_prospect_id] = draftsByCp[d.campaign_prospect_id] || []).push(d);
+  });
   campCurrentCid = cid;
   campSelectedIds = new Set();
   const counts = {Queued:0,Sent:0,Replied:0,Won:0};
   rows.forEach(r => { if(counts[r.status]!==undefined) counts[r.status]++; });
   set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
   document.getElementById('pProspects').classList.remove('hidden');
-  document.getElementById('emailCards').innerHTML = rows.map(r => serverProspectCard(r, cid)).join('');
+  document.getElementById('emailCards').innerHTML = rows.map(r => serverProspectCard(r, cid, draftsByCp[r.id]||[])).join('');
   document.querySelectorAll('#emailCards textarea.ebody').forEach(autoGrow);
   renderCampBulkBar();
   loadReplyDrafts();
 }
 
-function serverProspectCard(r, cid) {
+function serverProspectCard(r, cid, pendingDrafts) {
+  pendingDrafts = pendingDrafts || [];
   const name = [r.first_name,r.last_name].filter(Boolean).join(' ')||'—';
   const isQueued = r.status === 'Queued';
   let actions = '';
@@ -1620,7 +1633,11 @@ function serverProspectCard(r, cid) {
   const bodyHtml = isQueued
     ? `<input class="edit-subject" id="outreachSubject-${r.id}" value="${esc(r.subject||'')}"/><textarea class="ebody" id="outreachBody-${r.id}" oninput="autoGrow(this)">${esc(r.body||'')}</textarea>`
     : `${r.subject?`<div class="muted" style="margin:2px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">${esc(r.subject)}</div>`:''}<div class="ebody">${esc(r.body||'No body yet')}</div>`;
-  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div>${sameCompanyWarning(r.same_company_peers)}${bodyHtml}<div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span>${followUpNote}</div></div>`;
+  // The original outreach above is what was sent -- this is what came
+  // back, and the same customer's card is where it gets approved/rejected
+  // now, not a separate list elsewhere keyed only by matching name/email.
+  const replyHtml = pendingDrafts.map(d => replyDraftCard(d, false, true)).join('');
+  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div>${sameCompanyWarning(r.same_company_peers)}${bodyHtml}<div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span>${followUpNote}</div>${replyHtml}</div>`;
 }
 
 async function serverSaveDraft(cid, cpid) {
@@ -1750,24 +1767,50 @@ async function loadReplyDrafts() {
       fetch('/reply-drafts?status=Approved'+scopeParam).then(r=>r.json()),
     ]);
     set('rdCount', drafts.length);
-    if(!drafts.length && !approved.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now'+(scoped?' for this campaign.':'.'); empty.classList.remove('hidden'); return; }
+    // Scoped to one campaign: Draft-status review now happens inline on
+    // each customer's own prospect card below (see serverProspectCard),
+    // not in this separate list -- so this panel only needs the read-only
+    // approved/awaiting-send queue here. "All campaigns" has no per-customer
+    // grid to embed into, so it keeps the full original behavior.
+    if(scoped) {
+      if(!approved.length) {
+        list.innerHTML = '';
+        empty.textContent = drafts.length
+          ? `${drafts.length} repl${drafts.length===1?'y':'ies'} pending your review — see the prospect card${drafts.length===1?'':'s'} below.`
+          : 'No reply drafts waiting on you right now for this campaign.';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+      list.innerHTML = `<p class="hint" style="margin:16px 0 8px;">${approved.length} approved, awaiting send:</p>` + approved.map(d => approvedReplyDraftCard(d, false)).join('');
+      return;
+    }
+    if(!drafts.length && !approved.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now.'; empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
     const approvedHtml = approved.length
-      ? `<p class="hint" style="margin:16px 0 8px;">${approved.length} approved, awaiting send:</p>` + approved.map(d => approvedReplyDraftCard(d, !scoped)).join('')
+      ? `<p class="hint" style="margin:16px 0 8px;">${approved.length} approved, awaiting send:</p>` + approved.map(d => approvedReplyDraftCard(d, true)).join('')
       : '';
-    list.innerHTML = drafts.map(d => replyDraftCard(d, !scoped)).join('') + approvedHtml;
+    list.innerHTML = drafts.map(d => replyDraftCard(d, true)).join('') + approvedHtml;
     document.querySelectorAll('#rdList textarea.ebody').forEach(autoGrow);
   } catch(e) { /* leave whatever was showing */ }
 }
 
-function replyDraftCard(d, showCampaignTag) {
+// embedded=true renders this inline on a customer's own prospect card
+// (serverProspectCard) instead of the standalone top-of-page review
+// panel -- same content and the same approve/save/reject actions either
+// way, just without the redundant name/email header the outer card
+// already shows, and a dashed divider instead of its own boxed card.
+function replyDraftCard(d, showCampaignTag, embedded) {
   const name = [d.first_name,d.last_name].filter(Boolean).join(' ')||'—';
   const confBadge = d.confidence==='matched'
     ? `<span class="pill p-valid">matched</span>`
     : `<span class="pill p-dup">fallback — no strong match</span>`;
   const campaignTag = showCampaignTag ? `<span class="pill p-neutral">${esc(campaignNamesById[d.campaign_id]||'Campaign #'+d.campaign_id)}</span>` : '';
-  return `<div class="email-card">
-    <div class="ehead"><div class="who">${esc(name)}<span>${esc(d.email||'')} · ${esc(d.company||'—')}</span></div>${campaignTag}${confBadge}</div>
+  const header = embedded
+    ? `<div class="day-note" style="margin-bottom:2px;">Reply awaiting review ${confBadge}</div>`
+    : `<div class="ehead"><div class="who">${esc(name)}<span>${esc(d.email||'')} · ${esc(d.company||'—')}</span></div>${campaignTag}${confBadge}</div>`;
+  return `<div class="${embedded?'':'email-card'}" style="${embedded?'border-top:1px dashed var(--line);margin-top:10px;padding-top:10px;':''}">
+    ${header}
     <div class="muted" style="margin:2px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Their message — "${esc(d.source_reply_subject||'(no subject)')}"</div>
     <div class="ebody">${esc(d.source_reply_snippet || '(no message text captured)')}</div>
     <div class="day-note" style="margin-bottom:8px;">Matched: ${esc(d.matched_summary||'—')}</div>
@@ -1798,12 +1841,22 @@ function approvedReplyDraftCard(d, showCampaignTag) {
   </div>`;
 }
 
+// Refreshes whichever view is actually showing this draft -- when a
+// campaign is scoped, pending drafts render inline on each customer's own
+// prospect card (see serverProspectCard), so that's what needs to
+// re-fetch; loadServerProspects() already re-loads the top panel too via
+// its own call to loadReplyDrafts(). "All campaigns" has no per-customer
+// grid, so it falls back to just refreshing the panel itself.
+function refreshReplyDraftViews() {
+  if(campCurrentCid) loadServerProspects(campCurrentCid); else loadReplyDrafts();
+}
+
 async function revertReplyDraft(id) {
   const r = await fetch('/reply-drafts/'+id+'/back-to-draft', {method:'POST'});
   const d = await r.json();
   if(!r.ok) return setS('reviewStatus', d.detail||'Failed', true);
   setS('reviewStatus', 'Sent back to draft -- edit it below.');
-  loadReplyDrafts();
+  refreshReplyDraftViews();
 }
 
 async function saveReplyDraft(id) {
@@ -1820,12 +1873,12 @@ async function approveReplyDraft(id) {
   const d = await r.json();
   if(!r.ok) return setS('reviewStatus', d.detail||'Failed to approve', true);
   setS('reviewStatus', 'Reply approved -- click "Send all approved" above to actually send it.');
-  loadReplyDrafts();
+  refreshReplyDraftViews();
 }
 
 async function rejectReplyDraft(id) {
   await fetch('/reply-drafts/'+id+'/reject', {method:'POST'});
-  loadReplyDrafts();
+  refreshReplyDraftViews();
 }
 
 function renderEmailCards() {
