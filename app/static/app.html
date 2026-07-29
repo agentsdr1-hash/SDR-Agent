@@ -280,6 +280,34 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
 .legend span{display:flex;align-items:center;gap:3px;}
 .dot{width:6px;height:6px;border-radius:50%;}
 
+/* Overview funnel -- one horizontal bar per pipeline stage, click to
+   drill into exactly those leads. Not a re-listing of every campaign's
+   detail (that's the comparison further down) -- this is the glance-able
+   shape of the whole pipeline. */
+.funnel-hint{font-size:11px;color:var(--muted);font-family:var(--mono);margin:0 0 12px;}
+.funnel-row{display:flex;align-items:center;gap:12px;margin-bottom:9px;cursor:pointer;padding:5px 6px;border-radius:8px;transition:background .12s;}
+.funnel-row:hover{background:var(--paper);}
+.funnel-label{width:170px;flex-shrink:0;font-size:12px;font-weight:600;color:var(--ink);}
+.funnel-track{flex:1;height:18px;background:var(--line-soft);border-radius:6px;overflow:hidden;}
+.funnel-fill{height:100%;border-radius:6px;transition:width .3s;}
+.funnel-count{width:34px;text-align:right;flex-shrink:0;font-family:var(--display);font-weight:700;font-size:13px;}
+.funnel-lost-note{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--invalid);margin-top:10px;padding-top:12px;border-top:1px dashed var(--line);cursor:pointer;}
+.funnel-lost-note:hover{text-decoration:underline;}
+
+/* Prospects grouped into workflow stages -- one collapsible section per
+   status instead of one long flat list, so scanning "what needs me right
+   now" doesn't mean scrolling past everything already Sent or Won. Cards
+   inside are the exact same serverProspectCard() markup either way. */
+.stage-section{border:1px solid var(--line);border-left:4px solid var(--stage-color, var(--line));border-radius:12px;margin-bottom:12px;overflow:hidden;background:var(--panel);}
+.stage-section summary{list-style:none;cursor:pointer;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.stage-section summary::-webkit-details-marker{display:none;}
+.stage-section-title{display:flex;align-items:center;gap:10px;}
+.stage-section-title h3{font-family:var(--display);font-size:13.5px;font-weight:600;margin:0;}
+.stage-count{font-family:var(--mono);font-size:10.5px;background:var(--stage-soft, var(--line-soft));color:var(--stage-color, var(--muted));padding:2px 9px;border-radius:999px;font-weight:600;}
+.stage-chevron{color:var(--muted);transition:transform .15s;flex-shrink:0;}
+.stage-section[open] .stage-chevron{transform:rotate(180deg);}
+.stage-body{padding:0 18px 16px;}
+
 /* misc */
 .empty{color:var(--muted);font-size:12.5px;padding:16px 0;text-align:center;}
 .hidden{display:none;}
@@ -460,14 +488,30 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
 
   <div class="panel">
     <div class="panel-head"><h2>Overview — all campaigns</h2><span class="obj-tag">at a glance</span></div>
-    <div class="grid g6">
-      <div class="stat"><div class="n" id="ov_campaigns">–</div><div class="lbl">Campaigns</div></div>
-      <div class="stat"><div class="n" id="ov_queued">–</div><div class="lbl">Queued</div></div>
-      <div class="stat"><div class="n" style="color:var(--sky)" id="ov_sent">–</div><div class="lbl">Sent — awaiting reply</div></div>
-      <div class="stat" title="Every lead who has ever replied, including ones that have since moved on to a quote/won/lost"><div class="n" style="color:var(--indigo)" id="ov_replied">–</div><div class="lbl">Replied</div></div>
-      <div class="stat"><div class="n" style="color:var(--valid)" id="ov_won">–</div><div class="lbl">Won</div></div>
-      <div class="stat clickable" onclick="selectAllCampaignsView()" title="Switch the campaign selector below to 'All campaigns'"><div class="n" style="color:var(--dup)" id="ov_pending">–</div><div class="lbl">Reply drafts pending</div></div>
+    <div class="grid g4">
+      <div class="stat clickable" onclick="campOverviewDrill('__all__','All leads')"><div class="n" id="ov_total">–</div><div class="lbl">Total leads</div></div>
+      <div class="stat"><div class="n" id="ov_response_rate">–</div><div class="lbl">Response rate</div></div>
+      <div class="stat"><div class="n" id="ov_win_rate">–</div><div class="lbl">Win rate</div></div>
+      <div class="stat"><div class="n" id="ov_turnover">–</div><div class="lbl">Turnover</div></div>
     </div>
+    <div class="mt16 hidden" id="ov_pending_wrap">
+      <span class="pill p-quote" style="cursor:pointer;font-size:12px;padding:6px 12px;" onclick="selectAllCampaignsView()" title="Switch the campaign selector below to 'All campaigns'"><span id="ov_pending">–</span> reply draft(s) pending review</span>
+    </div>
+    <div class="mt16">
+      <p class="funnel-hint">Click a stage to see which leads.</p>
+      <div id="ov_funnel"></div>
+    </div>
+  </div>
+
+  <div class="panel hidden" id="campOverviewDrillPanel">
+    <div class="panel-head">
+      <h2 id="campOverviewDrillTitle">—</h2>
+      <button class="btn sec" style="font-size:12px;padding:6px 12px;margin-left:auto;" onclick="closeCampOverviewDrill()">✕ Close</button>
+    </div>
+    <div class="status" id="campOverviewDrillStatus"></div>
+    <div class="lead-doc-grid" id="campOverviewDrillCards"></div>
+    <div class="empty hidden" id="campOverviewDrillEmpty">No leads match.</div>
+    <div id="campOverviewDrillDetailWrap"></div>
   </div>
 
   <div class="panel">
@@ -1478,24 +1522,7 @@ function syncReviewSelect() {
         ? `<option value="">All campaigns${allDrafts.length?` (${allDrafts.length} pending)`:''}</option>` + optionsHtml
         : '<option value="">No campaigns yet</option>';
 
-      // Top-level overview tiles -- sums across every campaign, so there's
-      // a glance-able answer to "how are things going" before drilling
-      // into any one campaign via the dropdown below. Replied uses
-      // ever_replied, not the current-status 'replied' count -- a lead
-      // that replied and then moved on to Quote Requested/Won/Lost leaves
-      // the 'Replied' status bucket entirely, so "4 replied, 2 won" read
-      // like 4 total responses when the 2 Won leads replied too on their
-      // way there (6 total, not 4).
-      const totals = (summary.campaigns||[]).reduce((acc,c) => {
-        acc.queued += c.queued; acc.sent += c.sent; acc.replied += c.ever_replied; acc.won += c.won;
-        return acc;
-      }, {queued:0, sent:0, replied:0, won:0});
-      set('ov_campaigns', camps.length);
-      set('ov_queued', totals.queued);
-      set('ov_sent', totals.sent);
-      set('ov_replied', totals.replied);
-      set('ov_won', totals.won);
-      set('ov_pending', allDrafts.length);
+      renderCampOverview(summary.campaigns||[], allDrafts.length);
 
       if(camps.length) loadServerProspects(camps[0].id);
       else loadReplyDrafts();
@@ -1517,6 +1544,92 @@ function selectAllCampaignsView() {
   const sel = document.getElementById('reviewSelect');
   sel.value = '';
   loadServerProspects('');
+}
+
+// Overview — all campaigns: KPI tiles + a funnel built from the same
+// per-campaign fields /reports/summary already returns (no new backend
+// needed), each stage clickable into a drill-down using the same
+// leadDocumentCard/leadsParamsFor machinery the Dashboard's drill panel
+// uses. 'Replied' deliberately sums ever_replied, not the current-status
+// 'replied' snapshot -- see reporting.py's comment: a lead that replied
+// and moved on to QuoteRequested/Won/Lost would otherwise be missed.
+const CAMP_FUNNEL_STAGES = [
+  { key: 'queued', label: 'Queued', option: 'Queued', color: 'var(--muted)' },
+  { key: 'approved', label: 'Approved', option: 'Approved', color: 'var(--blue)' },
+  { key: 'sent', label: 'Sent', option: 'Sent', color: 'var(--indigo)' },
+  { key: 'ever_replied', label: 'Replied', option: 'ever_replied', color: 'var(--valid)' },
+  { key: 'quote_requested', label: 'Quote requested', option: 'QuoteRequested', color: 'var(--dup)' },
+  { key: 'won', label: 'Won', option: 'Won', color: 'var(--valid)' },
+];
+
+function renderCampOverview(campaigns, pendingCount) {
+  const totals = { total: 0, won: 0, lost: 0, turnover: 0, ever_replied: 0 };
+  CAMP_FUNNEL_STAGES.forEach(s => { totals[s.key] = 0; });
+  campaigns.forEach(c => {
+    totals.total += c.total || 0;
+    totals.won += c.won || 0;
+    totals.lost += c.lost || 0;
+    totals.turnover += c.turnover || 0;
+    CAMP_FUNNEL_STAGES.forEach(s => { totals[s.key] += c[s.key] || 0; });
+  });
+
+  set('ov_total', totals.total);
+  set('ov_response_rate', totals.total ? Math.round((totals.ever_replied/totals.total)*1000)/10+'%' : '–');
+  const winDenom = totals.won + totals.lost;
+  set('ov_win_rate', winDenom ? Math.round((totals.won/winDenom)*1000)/10+'%' : '–');
+  set('ov_turnover', 'AED '+totals.turnover.toLocaleString());
+
+  const pendingWrap = document.getElementById('ov_pending_wrap');
+  if(pendingCount > 0) { pendingWrap.classList.remove('hidden'); set('ov_pending', pendingCount); }
+  else pendingWrap.classList.add('hidden');
+
+  const maxCount = Math.max(1, ...CAMP_FUNNEL_STAGES.map(s => totals[s.key]));
+  document.getElementById('ov_funnel').innerHTML = CAMP_FUNNEL_STAGES.map(s => {
+    const n = totals[s.key];
+    const pct = Math.round((n/maxCount)*100);
+    return `<div class="funnel-row" onclick="campOverviewDrill('${s.option}','${esc(s.label)}')">
+      <div class="funnel-label">${esc(s.label)}</div>
+      <div class="funnel-track"><div class="funnel-fill" style="width:${pct}%;background:${s.color};"></div></div>
+      <div class="funnel-count">${n}</div>
+    </div>`;
+  }).join('') + (totals.lost > 0
+    ? `<div class="funnel-lost-note" onclick="campOverviewDrill('Lost','Lost')">${totals.lost} lost — click to review</div>`
+    : '');
+}
+
+let campOverviewDrillOptionValue = null;
+
+async function campOverviewDrill(optionValue, label) {
+  campOverviewDrillOptionValue = optionValue;
+  const panel = document.getElementById('campOverviewDrillPanel');
+  panel.classList.remove('hidden');
+  document.getElementById('campOverviewDrillTitle').textContent = label;
+  document.getElementById('campOverviewDrillDetailWrap').innerHTML = '';
+  if(leadDetailCtx.bodyId === 'campOverviewDrillDetailWrap') leadDetailCtx = { leadNumber: null, bodyId: 'leadDetailBody', statusId: 'leadDetailStatus' };
+  panel.scrollIntoView({behavior:'smooth', block:'start'});
+  await refreshCampOverviewDrillCards();
+}
+
+async function refreshCampOverviewDrillCards() {
+  const cards = document.getElementById('campOverviewDrillCards'), empty = document.getElementById('campOverviewDrillEmpty');
+  if(MODE!=='server') { cards.innerHTML=''; setS('campOverviewDrillStatus','Requires server mode.', true); return; }
+  setS('campOverviewDrillStatus','Loading…');
+  const params = campOverviewDrillOptionValue === '__all__' ? new URLSearchParams() : leadsParamsFor(campOverviewDrillOptionValue);
+  const r = await fetch('/leads?'+params.toString());
+  const rows = await r.json();
+  if(!r.ok) { cards.innerHTML=''; setS('campOverviewDrillStatus','Could not load leads.', true); return; }
+  setS('campOverviewDrillStatus', rows.length+' lead(s).');
+  if(!rows.length) { cards.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  cards.innerHTML = rows.map(l => leadDocumentCard(l, 'campOverviewDrillDetailWrap', 'campOverviewDrillStatus')).join('');
+}
+
+function closeCampOverviewDrill() {
+  document.getElementById('campOverviewDrillPanel').classList.add('hidden');
+  document.getElementById('campOverviewDrillCards').innerHTML = '';
+  document.getElementById('campOverviewDrillDetailWrap').innerHTML = '';
+  if(leadDetailCtx.bodyId === 'campOverviewDrillDetailWrap') leadDetailCtx = { leadNumber: null, bodyId: 'leadDetailBody', statusId: 'leadDetailStatus' };
+  campOverviewDrillOptionValue = null;
 }
 
 document.getElementById('sendAllBtn').addEventListener('click', async () => {
@@ -1597,10 +1710,51 @@ async function loadServerProspects(cid) {
   rows.forEach(r => { if(counts[r.status]!==undefined) counts[r.status]++; });
   set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
   document.getElementById('pProspects').classList.remove('hidden');
-  document.getElementById('emailCards').innerHTML = rows.map(r => serverProspectCard(r, cid, draftsByCp[r.id]||[], followupDraftsByCp[r.id]||[])).join('');
+  document.getElementById('emailCards').innerHTML = renderProspectStageSections(rows, cid, draftsByCp, followupDraftsByCp);
   document.querySelectorAll('#emailCards textarea.ebody').forEach(autoGrow);
   renderCampBulkBar();
   loadReplyDrafts();
+}
+
+// Groups the flat prospects list into collapsible workflow-stage sections
+// -- pure regrouping of serverProspectCard's own output, no change to what
+// each card renders or does. Stages with something actionable to review
+// (Queued, Approved, Replied) start open; the rest start collapsed so a
+// campaign that's mostly Sent/Won doesn't bury what needs attention.
+const PROSPECT_STAGE_SECTIONS = [
+  { status: 'Replied', label: 'In conversation', color: 'var(--indigo)', soft: 'var(--indigo-soft)', open: true },
+  { status: 'QuoteRequested', label: 'Quote requested', color: 'var(--dup)', soft: 'var(--dup-soft)', open: true },
+  { status: 'Approved', label: 'Approved', color: 'var(--blue)', soft: 'var(--blue-soft)', open: true },
+  { status: 'Queued', label: 'Queued', color: 'var(--muted)', soft: 'var(--line-soft)', open: true },
+  { status: 'Sent', label: 'Awaiting first response', color: 'var(--sky)', soft: 'var(--sky-soft)', open: false },
+  { status: 'Won', label: 'Won', color: 'var(--valid)', soft: 'var(--valid-soft)', open: false },
+  { status: 'Lost', label: 'Lost', color: 'var(--invalid)', soft: 'var(--invalid-soft)', open: false },
+  { status: 'Rejected', label: 'Rejected', color: 'var(--invalid)', soft: 'var(--invalid-soft)', open: false },
+  { status: 'Suppressed', label: 'Suppressed', color: 'var(--muted)', soft: 'var(--line-soft)', open: false },
+];
+
+function renderProspectStageSections(rows, cid, draftsByCp, followupDraftsByCp) {
+  const byStatus = {};
+  rows.forEach(r => { (byStatus[r.status] = byStatus[r.status] || []).push(r); });
+  const known = new Set(PROSPECT_STAGE_SECTIONS.map(s => s.status));
+  const sections = PROSPECT_STAGE_SECTIONS.slice();
+  // Any status this campaign has that isn't in the known list (future-proofing,
+  // not expected today) still gets shown rather than silently dropped.
+  Object.keys(byStatus).forEach(st => { if(!known.has(st)) sections.push({ status: st, label: st, color: 'var(--muted)', soft: 'var(--line-soft)', open: false }); });
+
+  return sections.filter(s => (byStatus[s.status]||[]).length).map(s => {
+    const cards = byStatus[s.status].map(r => serverProspectCard(r, cid, draftsByCp[r.id]||[], followupDraftsByCp[r.id]||[])).join('');
+    return `<details class="stage-section" style="--stage-color:${s.color};--stage-soft:${s.soft};" ${s.open?'open':''}>
+      <summary>
+        <div class="stage-section-title">
+          <svg class="stage-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          <h3>${esc(s.label)}</h3>
+        </div>
+        <span class="stage-count">${byStatus[s.status].length}</span>
+      </summary>
+      <div class="stage-body">${cards}</div>
+    </details>`;
+  }).join('');
 }
 
 function serverProspectCard(r, cid, pendingDrafts, pendingFollowupDrafts) {
@@ -2325,7 +2479,7 @@ async function refreshDashDrillCards() {
   setS('dashDrillStatus', rows.length+' lead(s).');
   if(!rows.length) { cards.innerHTML=''; empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
-  cards.innerHTML = rows.map(leadDocumentCard).join('');
+  cards.innerHTML = rows.map(l => leadDocumentCard(l, 'dashDrillDetailWrap', 'dashDrillStatus')).join('');
 }
 
 function closeDashDrill() {
@@ -2336,14 +2490,16 @@ function closeDashDrill() {
   dashDrillOptionValue = null;
 }
 
-function leadDocumentCard(l) {
+function leadDocumentCard(l, bodyId, statusId) {
+  bodyId = bodyId || 'dashDrillDetailWrap';
+  statusId = statusId || 'dashDrillStatus';
   const name = [l.first_name,l.last_name].filter(Boolean).join(' ')||'—';
-  const active = leadDetailCtx.leadNumber===l.lead_number && leadDetailCtx.bodyId==='dashDrillDetailWrap' ? ' active' : '';
+  const active = leadDetailCtx.leadNumber===l.lead_number && leadDetailCtx.bodyId===bodyId ? ' active' : '';
   const materialsField = l.materials ? `<div class="lead-doc-field span2"><div class="k">Materials</div><div class="v">${esc(l.materials)}</div></div>` : '';
   const targetPriceField = l.target_price!=null ? `<div class="lead-doc-field"><div class="k">Target price</div><div class="v">${fmtMoney(l.target_price)}</div></div>` : '';
   const quoteNumberField = l.quote_number ? `<div class="lead-doc-field"><div class="k">Quote #</div><div class="v mono">${esc(l.quote_number)}</div></div>` : '';
   const readiness = l.quote_readiness || {filled:0,total:11,ready:false};
-  return `<div class="lead-doc${active}" onclick="openLeadDetail('${esc(l.lead_number)}','dashDrillDetailWrap','dashDrillStatus')">
+  return `<div class="lead-doc${active}" onclick="openLeadDetail('${esc(l.lead_number)}','${bodyId}','${statusId}')">
     <div class="lead-doc-head">
       <span class="lead-doc-num">${esc(l.lead_number)}</span>
       <span>${scorePill(l.lead_score)}${pill(l.status)}</span>
