@@ -486,7 +486,7 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
 <div class="view" id="vCampaigns">
   <div class="page-title">Campaign Review</div>
 
-  <div class="panel">
+  <div class="panel" id="campOverviewPanel">
     <div class="panel-head"><h2>Overview — all campaigns</h2><span class="obj-tag">at a glance</span></div>
     <div class="grid g4">
       <div class="stat clickable" onclick="campOverviewDrill('__all__','All leads')"><div class="n" id="ov_total">–</div><div class="lbl">Total leads</div></div>
@@ -531,6 +531,17 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
     <p class="hint" style="margin:0 0 10px;">Generated automatically whenever a prospect replies (real Gmail poll, or the Simulate reply buttons below) — matched against the Q&amp;A knowledge base and stock catalog. Review before sending; nothing here goes out on its own. With one campaign selected, review each reply directly on that customer's own card below — this panel then just tracks what's approved and queued to send. Viewing "All campaigns" shows every pending reply across every campaign here instead. A lead's full reply history across every campaign is in the Leads tab.</p>
     <div id="rdList"></div>
     <div class="empty hidden" id="rdEmpty">No reply drafts waiting on you right now.</div>
+  </div>
+
+  <div class="panel hidden" id="campBoardHeader">
+    <button class="btn sec" style="font-size:12px;padding:6px 12px;margin-bottom:12px;" onclick="document.getElementById('campOverviewPanel').scrollIntoView({behavior:'smooth',block:'start'})">← Overview</button>
+    <div class="panel-head" style="margin-bottom:4px;">
+      <h2 id="campBoardName">—</h2>
+      <span class="pill p-valid" id="campBoardStatus" style="margin-left:10px;"></span>
+    </div>
+    <p class="hint" id="campBoardSub" style="margin:0 0 16px;"></p>
+    <p class="funnel-hint">Click a stage to jump to it below.</p>
+    <div id="campBoardFunnel"></div>
   </div>
 
   <div class="panel hidden" id="pProspects">
@@ -1513,7 +1524,8 @@ function syncReviewSelect() {
       const pendingByCampaign = {};
       allDrafts.forEach(d => { pendingByCampaign[d.campaign_id] = (pendingByCampaign[d.campaign_id]||0) + 1; });
       campaignNamesById = {};
-      camps.forEach(c => { campaignNamesById[c.id] = c.name; });
+      campaignsById = {};
+      camps.forEach(c => { campaignNamesById[c.id] = c.name; campaignsById[c.id] = c; });
       const optionsHtml = camps.map(c => {
         const n = pendingByCampaign[c.id] || 0;
         return `<option value="${c.id}">${esc(c.name)}${n?` (${n} pending)`:''}</option>`;
@@ -1672,6 +1684,7 @@ document.getElementById('advDayBtn').addEventListener('click', () => {
 let campCurrentCid = null;
 let campSelectedIds = new Set();
 let campaignNamesById = {};
+let campaignsById = {};
 
 async function loadServerProspects(cid) {
   if(!cid) {
@@ -1681,6 +1694,7 @@ async function loadServerProspects(cid) {
     campCurrentCid = null;
     campSelectedIds = new Set();
     document.getElementById('pProspects').classList.add('hidden');
+    document.getElementById('campBoardHeader').classList.add('hidden');
     loadReplyDrafts();
     return;
   }
@@ -1713,7 +1727,55 @@ async function loadServerProspects(cid) {
   document.getElementById('emailCards').innerHTML = renderProspectStageSections(rows, cid, draftsByCp, followupDraftsByCp);
   document.querySelectorAll('#emailCards textarea.ebody').forEach(autoGrow);
   renderCampBulkBar();
+  renderCampBoardHeader(cid, rows);
   loadReplyDrafts();
+}
+
+// Per-campaign board header -- name/status/created/leads/turnover, a
+// "back to Overview" jump (Overview is always visible above, not a
+// separate toggled view, so this just scrolls to it), and a mini funnel
+// scoped to this one campaign. Counts come straight from the same `rows`
+// the stage sections below are built from, so the two can never disagree.
+const CAMP_BOARD_FUNNEL_STAGES = [
+  { status: 'Queued', label: 'Queued', color: 'var(--muted)' },
+  { status: 'Approved', label: 'Approved', color: 'var(--blue)' },
+  { status: 'Sent', label: 'Awaiting first response', color: 'var(--sky)' },
+  { status: 'Replied', label: 'In conversation', color: 'var(--indigo)' },
+  { status: 'QuoteRequested', label: 'Quote requested', color: 'var(--dup)' },
+  { status: 'Won', label: 'Won', color: 'var(--valid)' },
+];
+
+function renderCampBoardHeader(cid, rows) {
+  const header = document.getElementById('campBoardHeader');
+  const camp = campaignsById[cid];
+  if(!camp) { header.classList.add('hidden'); return; }
+  header.classList.remove('hidden');
+  set('campBoardName', camp.name);
+  const statusEl = document.getElementById('campBoardStatus');
+  statusEl.textContent = camp.status;
+  statusEl.className = 'pill ' + (camp.status === 'Active' ? 'p-valid' : 'p-neutral');
+  const turnover = rows.filter(r => r.status === 'Won').reduce((a, r) => a + (r.deal_value || 0), 0);
+  set('campBoardSub', `Created ${fmtDate(camp.created_at)} · ${rows.length} lead(s) · AED ${turnover.toLocaleString()} turnover`);
+
+  const counts = {};
+  rows.forEach(r => { counts[r.status] = (counts[r.status]||0) + 1; });
+  const maxCount = Math.max(1, ...CAMP_BOARD_FUNNEL_STAGES.map(s => counts[s.status]||0));
+  document.getElementById('campBoardFunnel').innerHTML = CAMP_BOARD_FUNNEL_STAGES.map(s => {
+    const n = counts[s.status] || 0;
+    const pct = Math.round((n/maxCount)*100);
+    return `<div class="funnel-row" onclick="scrollToProspectStage('${s.status}')">
+      <div class="funnel-label">${esc(s.label)}</div>
+      <div class="funnel-track"><div class="funnel-fill" style="width:${pct}%;background:${s.color};"></div></div>
+      <div class="funnel-count">${n}</div>
+    </div>`;
+  }).join('');
+}
+
+function scrollToProspectStage(status) {
+  const el = document.getElementById('prospStage-'+status);
+  if(!el) return;
+  el.open = true;
+  el.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 // Groups the flat prospects list into collapsible workflow-stage sections
@@ -1744,7 +1806,7 @@ function renderProspectStageSections(rows, cid, draftsByCp, followupDraftsByCp) 
 
   return sections.filter(s => (byStatus[s.status]||[]).length).map(s => {
     const cards = byStatus[s.status].map(r => serverProspectCard(r, cid, draftsByCp[r.id]||[], followupDraftsByCp[r.id]||[])).join('');
-    return `<details class="stage-section" style="--stage-color:${s.color};--stage-soft:${s.soft};" ${s.open?'open':''}>
+    return `<details class="stage-section" id="prospStage-${s.status}" style="--stage-color:${s.color};--stage-soft:${s.soft};" ${s.open?'open':''}>
       <summary>
         <div class="stage-section-title">
           <svg class="stage-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
