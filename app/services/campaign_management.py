@@ -296,16 +296,30 @@ def list_campaign_prospects(campaign_id: int) -> list[CampaignProspect]:
                ORDER BY cp.added_at""",
             (campaign_id,),
         ).fetchall()
+        # follow_up_count is the "N/2 sent" badge -- actually delivered
+        # follow-ups only, not drafts still waiting on review.
+        # pending_followup_count separately flags a draft that needs
+        # approval, same shape as the reply-pending badge.
         counts = conn.execute(
             """SELECT campaign_prospect_id, COUNT(*) c FROM campaign_followups
                WHERE campaign_prospect_id IN (SELECT id FROM campaign_prospects WHERE campaign_id = ?)
+                 AND status = 'Sent'
+               GROUP BY campaign_prospect_id""",
+            (campaign_id,),
+        ).fetchall()
+        pending_counts = conn.execute(
+            """SELECT campaign_prospect_id, COUNT(*) c FROM campaign_followups
+               WHERE campaign_prospect_id IN (SELECT id FROM campaign_prospects WHERE campaign_id = ?)
+                 AND status = 'Draft'
                GROUP BY campaign_prospect_id""",
             (campaign_id,),
         ).fetchall()
         same_company = _same_company_peers_by_cp_id(conn, rows)
     count_by_cp = {c["campaign_prospect_id"]: c["c"] for c in counts}
+    pending_by_cp = {c["campaign_prospect_id"]: c["c"] for c in pending_counts}
     return [
         CampaignProspect(**dict(r), lead_number=lead_number_for(r["prospect_id"]), follow_up_count=count_by_cp.get(r["id"], 0),
+                          pending_followup_count=pending_by_cp.get(r["id"], 0),
                           same_company_peers=same_company.get(r["id"], []))
         for r in rows
     ]

@@ -866,15 +866,15 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
     </div>
 
     <div class="mt16" style="border-top:1px solid var(--line);padding-top:16px;">
-      <h3 style="margin:0 0 10px;font-size:14px;">Automated follow-ups <span class="obj-tag">day 4 / day 8, auto-send</span></h3>
-      <p class="hint" style="margin:0 0 10px;">Every prospect still on 'Sent' (no reply yet) gets up to 2 automated follow-ups — no approval step, same daily send limit as everything else. A reply at any point cancels the rest.</p>
+      <h3 style="margin:0 0 10px;font-size:14px;">Automated follow-ups <span class="obj-tag">day 4 / day 8, drafted for review</span></h3>
+      <p class="hint" style="margin:0 0 10px;">Every prospect still on 'Sent' (no reply yet) gets up to 2 automated follow-ups drafted on schedule — same review-before-send model as outreach and replies, approved from the prospect's own card in the Campaigns tab. A reply at any point cancels the rest.</p>
       <div class="grid g2">
         <div class="stat"><div class="n" id="fu_lr">–</div><div class="lbl">Last run</div></div>
-        <div class="stat"><div class="n" id="fu_sc">–</div><div class="lbl">Sent last run</div></div>
+        <div class="stat"><div class="n" id="fu_sc">–</div><div class="lbl">Drafted last run</div></div>
       </div>
       <div class="status" id="fu_err"></div>
       <div class="row mt12">
-        <button class="btn sec" id="sendFollowupsNow">Trigger follow-ups now</button>
+        <button class="btn sec" id="sendFollowupsNow">Check for due follow-ups now</button>
       </div>
     </div>
 
@@ -1571,9 +1571,10 @@ async function loadServerProspects(cid) {
     loadReplyDrafts();
     return;
   }
-  const [prospectsRes, draftsRes] = await Promise.all([
+  const [prospectsRes, draftsRes, followupDraftsRes] = await Promise.all([
     fetch('/campaigns/'+cid+'/prospects'),
     fetch('/reply-drafts?status=Draft&campaign_id='+cid),
+    fetch('/followup-drafts?status=Draft&campaign_id='+cid),
   ]);
   const rows = await prospectsRes.json();
   if(!prospectsRes.ok) return;
@@ -1586,20 +1587,25 @@ async function loadServerProspects(cid) {
   if(draftsRes.ok) (await draftsRes.json()).forEach(d => {
     (draftsByCp[d.campaign_prospect_id] = draftsByCp[d.campaign_prospect_id] || []).push(d);
   });
+  const followupDraftsByCp = {};
+  if(followupDraftsRes.ok) (await followupDraftsRes.json()).forEach(d => {
+    (followupDraftsByCp[d.campaign_prospect_id] = followupDraftsByCp[d.campaign_prospect_id] || []).push(d);
+  });
   campCurrentCid = cid;
   campSelectedIds = new Set();
   const counts = {Queued:0,Sent:0,Replied:0,Won:0};
   rows.forEach(r => { if(counts[r.status]!==undefined) counts[r.status]++; });
   set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
   document.getElementById('pProspects').classList.remove('hidden');
-  document.getElementById('emailCards').innerHTML = rows.map(r => serverProspectCard(r, cid, draftsByCp[r.id]||[])).join('');
+  document.getElementById('emailCards').innerHTML = rows.map(r => serverProspectCard(r, cid, draftsByCp[r.id]||[], followupDraftsByCp[r.id]||[])).join('');
   document.querySelectorAll('#emailCards textarea.ebody').forEach(autoGrow);
   renderCampBulkBar();
   loadReplyDrafts();
 }
 
-function serverProspectCard(r, cid, pendingDrafts) {
+function serverProspectCard(r, cid, pendingDrafts, pendingFollowupDrafts) {
   pendingDrafts = pendingDrafts || [];
+  pendingFollowupDrafts = pendingFollowupDrafts || [];
   const name = [r.first_name,r.last_name].filter(Boolean).join(' ')||'—';
   const isQueued = r.status === 'Queued';
   let actions = '';
@@ -1619,12 +1625,33 @@ function serverProspectCard(r, cid, pendingDrafts) {
   actions += `<button class="btn sec" onclick="openCampHistory('${esc(r.lead_number)}')" title="Full cross-campaign history for this lead">History</button>`;
   // Automated follow-ups (day 4 / day 8) only ever apply while still
   // awaiting a first reply -- once Replied/Won/Lost/etc. the cadence has
-  // already stopped on its own. See app/services/followups.py.
-  const followUpCount = r.follow_up_count || 0;
+  // already stopped on its own. See app/services/followups.py. A due
+  // follow-up is now drafted for review, not sent outright -- pendingFollowupDrafts
+  // (rendered below) is where that draft and its approve/reject actions
+  // live, same pattern as a pending reply.
+  const followUpCount = r.follow_up_count || 0;   // actually sent
+  const pendingFollowups = r.pending_followup_count || 0;
   if(r.status==='Sent' && followUpCount < 2) {
-    actions += `<button class="btn sec" onclick="serverSendFollowup('${cid}',${r.id})" title="Sends follow-up #${followUpCount+1} now, without waiting for day ${followUpCount===0?4:8}">Send follow-up now (${followUpCount}/2 sent)</button>`;
+    actions += `<button class="btn sec" onclick="serverSendFollowup('${cid}',${r.id})" title="Sends follow-up #${followUpCount+1} right now, no review step -- an explicit one-off nudge, unlike the day-4/day-8 cadence which drafts for approval">Send follow-up now (${followUpCount}/2 sent)</button>`;
   }
-  const followUpNote = followUpCount ? `<span class="day-note">Follow-ups: ${followUpCount}/2${r.last_followup_at?' · last '+fmt(r.last_followup_at):''}</span>` : '';
+  let followUpNote = '';
+  if(r.status==='Sent') {
+    if(pendingFollowups) {
+      followUpNote = `<span class="day-note" style="color:var(--indigo);">Follow-up drafted — pending your review below</span>`;
+    } else if(followUpCount >= 2) {
+      followUpNote = `<span class="day-note">Follow-ups: 2/2 sent${r.last_followup_at?' · last '+fmt(r.last_followup_at):''}</span>`;
+    } else {
+      const daysSince = r.sent_at ? daysBetween(r.sent_at, new Date().toISOString()) : null;
+      if(daysSince != null) {
+        const nextDueDay = followUpCount===0 ? 4 : 8;
+        const daysUntil = nextDueDay - daysSince;
+        const dueText = daysUntil > 0
+          ? `next reminder due in ${daysUntil} day${daysUntil===1?'':'s'} (day ${nextDueDay})`
+          : `reminder due — drafted at the next check`;
+        followUpNote = `<span class="day-note">Sent ${daysSince} day${daysSince===1?'':'s'} ago · ${followUpCount}/2 follow-ups sent · ${dueText}</span>`;
+      }
+    }
+  }
   const checkbox = isQueued ? `<input type="checkbox" class="camp-row-check" data-id="${r.id}" onclick="toggleCampSelect(${r.id}, this.checked)" style="margin-right:10px;"/>` : '';
   // Editable while Queued -- this is the initial cold-outreach draft, the
   // one point in the whole flow that used to be a read-only preview with
@@ -1637,7 +1664,37 @@ function serverProspectCard(r, cid, pendingDrafts) {
   // back, and the same customer's card is where it gets approved/rejected
   // now, not a separate list elsewhere keyed only by matching name/email.
   const replyHtml = pendingDrafts.map(d => replyDraftCard(d, false, true)).join('');
-  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div>${sameCompanyWarning(r.same_company_peers)}${bodyHtml}<div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span>${followUpNote}</div>${replyHtml}</div>`;
+  const followupDraftHtml = pendingFollowupDrafts.map(d => followupDraftCard(d, true)).join('');
+  return `<div class="email-card"><div class="ehead"><div class="who">${checkbox}${esc(name)}<span>${esc(r.email||'')} · ${esc(r.company||'—')} · <span class="mono">${esc(r.lead_number||'—')}</span></span></div>${pill(r.status)}</div>${sameCompanyWarning(r.same_company_peers)}${bodyHtml}<div class="eactions">${actions}<span class="day-note">Status: ${r.status}</span>${followUpNote}</div>${replyHtml}${followupDraftHtml}</div>`;
+}
+
+// embedded=true renders this inline on a customer's own prospect card
+// (serverProspectCard), same pattern as replyDraftCard's embedded mode --
+// a due day-4/day-8 follow-up drafted for review, right where the rest
+// of that customer's status and actions already are.
+function followupDraftCard(fu, embedded) {
+  return `<div class="${embedded?'':'email-card'}" style="${embedded?'border-top:1px dashed var(--line);margin-top:10px;padding-top:10px;':''}">
+    <div class="day-note" style="margin-bottom:6px;">Follow-up #${fu.follow_up_number} draft — pending your review</div>
+    <div class="muted" style="margin:2px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">${esc(fu.subject)}</div>
+    <div class="ebody">${esc(fu.body)}</div>
+    <p class="hint" style="margin:4px 0 8px;">Approving queues this for "Send all approved" above -- it doesn't send on its own.</p>
+    <div class="eactions">
+      <button class="btn ok" onclick="approveFollowupDraft(${fu.id})">Approve</button>
+      <button class="btn reject" onclick="rejectFollowupDraft(${fu.id})">Reject</button>
+    </div>
+  </div>`;
+}
+
+async function approveFollowupDraft(id) {
+  const r = await fetch('/followup-drafts/'+id+'/approve', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS('reviewStatus', d.detail||'Failed to approve', true);
+  setS('reviewStatus', 'Follow-up approved -- click "Send all approved" above to actually send it.');
+  if(campCurrentCid) loadServerProspects(campCurrentCid);
+}
+async function rejectFollowupDraft(id) {
+  await fetch('/followup-drafts/'+id+'/reject', {method:'POST'});
+  if(campCurrentCid) loadServerProspects(campCurrentCid);
 }
 
 async function serverSaveDraft(cid, cpid) {
@@ -3084,6 +3141,19 @@ function threadGap(t1, t2) {
   return `<div class="thread-gap">${gap===1?'1 day later':gap+' days later'}</div>`;
 }
 
+function followupComposeBox(fu) {
+  return `<div class="thread-compose">
+    <div class="thread-meta"><b>AKEIS</b> — follow-up #${fu.follow_up_number} draft <span class="pill p-quote">pending your review</span></div>
+    <div class="thread-subject">${esc(fu.subject)}</div>
+    <div class="thread-body">${esc(fu.body)}</div>
+    <div class="row mt12">
+      <button class="btn ok" onclick="leadApproveFollowupDraft(${fu.id},${fu.campaign_prospect_id})">Approve</button>
+      <button class="btn reject" onclick="leadRejectFollowupDraft(${fu.id},${fu.campaign_prospect_id})">Reject</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0;">Approving queues this for the campaign's next "Send all approved" -- it doesn't send on its own.</p>
+  </div>`;
+}
+
 function threadComposeBox(rd) {
   const confBadge = rd.confidence==='quote_summary'
     ? `<span class="pill p-quote">quote summary</span>`
@@ -3111,7 +3181,9 @@ function emailThreadHTML(d, m) {
 
   const items = [];
   if(m.sent_at) items.push({t: m.sent_at, kind: 'initial'});
-  followUps.forEach(fu => items.push({t: fu.sent_at, kind: 'followup', data: fu}));
+  // sent_at is only set once a follow-up actually goes out -- a Draft or
+  // Approved one sorts by created_at instead, same as an unsent reply draft.
+  followUps.forEach(fu => items.push({t: fu.sent_at || fu.created_at, kind: 'followup', data: fu}));
   drafts.forEach(rd => items.push({t: rd.created_at, kind: 'reply', data: rd}));
   items.sort((a,b) => new Date(a.t) - new Date(b.t));
 
@@ -3123,8 +3195,14 @@ function emailThreadHTML(d, m) {
       return gapHtml + threadBubble('us', 'AKEIS', m.subject, m.body, m.sent_at, ' <span class="pill p-sent">sent</span>');
     }
     if(item.kind === 'followup') {
-      prevT = item.data.sent_at;
-      return gapHtml + threadBubble('auto', `Automated follow-up #${item.data.follow_up_number}`, item.data.subject, item.data.body, item.data.sent_at);
+      const fu = item.data;
+      prevT = fu.sent_at || fu.created_at;
+      if(fu.status === 'Draft') return gapHtml + followupComposeBox(fu);
+      if(fu.status === 'Approved') {
+        return gapHtml + threadBubble('auto', `Automated follow-up #${fu.follow_up_number}`, fu.subject, fu.body, fu.approved_at || fu.created_at, ` ${pill(fu.status)}`)
+          + `<div class="row" style="align-self:center;"><button class="btn sec" style="padding:4px 10px;font-size:11.5px;" onclick="leadRevertFollowupDraft(${fu.id},${fu.campaign_prospect_id})">↩ Back to draft</button></div>`;
+      }
+      return gapHtml + threadBubble('auto', `Automated follow-up #${fu.follow_up_number}`, fu.subject, fu.body, fu.sent_at || fu.created_at, fu.status!=='Sent'?` ${pill(fu.status)}`:'');
     }
     // Reply round: their message, then our response -- sent (read-only),
     // still pending review (a live compose box), or approved-but-not-yet-
@@ -3215,6 +3293,28 @@ async function leadRevertReplyDraft(id, cpid) {
   await refreshLeadDetail();
   if(cpid) renderEmailThreadModalBody(cpid);
   setS('emailThreadStatus', 'Sent back to draft -- edit and re-approve when ready.');
+}
+async function leadApproveFollowupDraft(id, cpid) {
+  const r = await fetch('/followup-drafts/'+id+'/approve', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS('emailThreadStatus', d.detail||'Failed to approve', true);
+  await refreshLeadDetail();
+  if(cpid) renderEmailThreadModalBody(cpid);
+  setS('emailThreadStatus', 'Follow-up approved -- it\'ll go out with this campaign\'s next "Send all approved" (Campaigns tab).');
+}
+async function leadRejectFollowupDraft(id, cpid) {
+  await fetch('/followup-drafts/'+id+'/reject', {method:'POST'});
+  await refreshLeadDetail();
+  if(cpid) renderEmailThreadModalBody(cpid);
+  setS('emailThreadStatus', 'Follow-up draft rejected.');
+}
+async function leadRevertFollowupDraft(id, cpid) {
+  const r = await fetch('/followup-drafts/'+id+'/back-to-draft', {method:'POST'});
+  const d = await r.json();
+  if(!r.ok) return setS('emailThreadStatus', d.detail||'Failed', true);
+  await refreshLeadDetail();
+  if(cpid) renderEmailThreadModalBody(cpid);
+  setS('emailThreadStatus', 'Sent back to draft.');
 }
 
 // ══════════════════════════════════════════════════════
@@ -3836,7 +3936,7 @@ document.getElementById('sendFollowupsNow').addEventListener('click', async () =
   if(MODE!=='server') return setS('fu_err','Requires server mode.',true);
   const r=await adminFetch('/email/send-followups-now',{method:'POST'}); const d=await r.json();
   if(!r.ok) { setS('fu_err', d.detail||'Failed', true); return; }
-  document.getElementById('fu_err').textContent='Run complete — '+d.sent+' follow-up(s) sent.';
+  document.getElementById('fu_err').textContent='Run complete — '+d.drafted+' follow-up(s) drafted for review.';
   document.getElementById('fu_err').classList.remove('err');
   loadEmailStatus();
 });

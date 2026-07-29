@@ -1,11 +1,16 @@
 """
 Automated follow-up cadence (app/services/followups.py) -- the day-4/day-8
-auto-send follow-ups, gated on: still awaiting a reply, under the 2-per-lead
-cap, not suppressed, and today's daily send limit. Run via an isolated
-subprocess probe (_followups_probe.py) for the same reason
-test_daily_send_limit.py does: it needs to mock email_provider.send_email
-to avoid a real Gmail SMTP call, which only works with a direct import in
-a process that hasn't already cached a different app.db.DB_PATH.
+follow-ups, gated on: still awaiting a reply, under the 2-per-lead cap,
+and not suppressed. send_due_followups() only ever drafts a follow-up for
+review now; it never sends one itself (no Gmail needed, no daily-limit
+concept at draft time) -- the actual send happens later, once approved,
+from approval_and_delivery.send_approved(), which is where the daily
+send limit and suppression-list check actually apply. Run via an
+isolated subprocess probe (_followups_probe.py) for the same reason
+test_daily_send_limit.py does: it needs to mock
+email_provider.send_email to avoid a real Gmail SMTP call, which only
+works with a direct import in a process that hasn't already cached a
+different app.db.DB_PATH.
 
 The HTTP-level behavior (the manual send-followup endpoint refusing to
 pretend to send without Gmail configured, and follow-up data showing up on
@@ -35,44 +40,52 @@ def _run_probe(tmp_path):
     return json.loads(result.stdout)
 
 
-def test_cadence_sends_followup_1_at_day_4_and_followup_2_at_day_8(tmp_path):
+def test_cadence_drafts_followup_1_at_day_4_and_followup_2_at_day_8(tmp_path):
     data = _run_probe(tmp_path)["cadence"]
     assert data["after_day5_numbers"] == [1]        # day 4 window passed, day 8 hasn't -- only #1
+    assert data["after_day5_all_drafts"] is True     # drafted, not sent -- no Gmail was even configured
     assert data["after_day9_numbers"] == [1, 2]      # day 8 window now passed too -- #2 joins it
-    assert data["run1_sent"] == 1
-    assert data["run2_sent"] == 1
+    assert data["run1_drafted"] == 1
+    assert data["run2_drafted"] == 1
 
 
 def test_a_reply_cancels_all_further_followups(tmp_path):
     data = _run_probe(tmp_path)["reply_cancels"]
     assert data["followup_count_after_reply"] == 0
-    assert data["run_sent"] == 0
+    assert data["run_drafted"] == 0
 
 
 def test_max_two_followups_per_lead(tmp_path):
     data = _run_probe(tmp_path)["max_cap"]
     assert data["count_after_first_pass"] == 1
     assert data["count_after_second_pass"] == 2
-    assert data["second_pass_sent"] == 1
-    assert data["third_pass_sent"] == 0  # already at the cap -- nothing left to send
+    assert data["second_pass_drafted"] == 1
+    assert data["third_pass_drafted"] == 0  # already at the cap -- nothing left to draft
 
 
 def test_suppressed_email_never_gets_a_followup(tmp_path):
     data = _run_probe(tmp_path)["suppressed"]
     assert data["followup_count"] == 0
-    assert data["run_sent_at_least_one"] is False
+    assert data["run_drafted_at_least_one"] is False
 
 
-def test_daily_send_limit_skips_rather_than_sends(tmp_path):
-    data = _run_probe(tmp_path)["daily_limit"]
-    assert data["sent"] == 0
-    assert data["skipped_daily_limit"] == 1
+def test_approving_a_followup_draft_queues_it_and_send_approved_delivers_it(tmp_path):
+    data = _run_probe(tmp_path)["approve_and_send"]
+    assert data["after_approve_status"] == "Approved"
+    # Daily limit of 0 -- send_approved() leaves it Approved, doesn't send.
+    assert data["after_capped_send_status"] == "Approved"
+    # Limit raised -- the same batch action now actually delivers it.
+    assert data["sent_count_from_send_approved"] == 1
+    assert data["after_real_send_status"] == "Sent"
+    assert data["after_real_send_has_sent_at"] is True
+    assert data["last_followup_at_set"] is True
 
 
-def test_manual_send_now_bypasses_the_day_wait_but_still_enforces_the_cap(tmp_path):
+def test_manual_send_now_still_sends_immediately_but_still_enforces_the_cap(tmp_path):
     data = _run_probe(tmp_path)["manual_now"]
     assert data["first_call_number"] == 1     # sent immediately despite sent_at being "today"
     assert data["count_after_first_call"] == 1
+    assert data["manual_status_is_sent"] is True
     assert data["third_call_error"] == "Already sent the maximum of 2 follow-ups for this lead"
 
 
@@ -110,6 +123,7 @@ def test_follow_up_count_and_last_followup_at_default_to_zero_and_null(server):
     server.post(f"/campaigns/{cid}/assign-prospect/{pid}")
     row = server.get(f"/campaigns/{cid}/prospects").json()[0]
     assert row["follow_up_count"] == 0
+    assert row["pending_followup_count"] == 0
     assert row["last_followup_at"] is None
 
 
@@ -120,3 +134,20 @@ def test_lead_timeline_includes_empty_follow_ups_list_when_none_sent(server):
     lead_number = f"L-{pid:06d}"
     detail = server.get(f"/leads/{lead_number}").json()
     assert detail["memberships"][0]["follow_ups"] == []
+
+
+# ---- followup-drafts router: same shape as reply-drafts ----
+
+def test_followup_draft_approve_reject_and_back_to_draft(server):
+    cid = _create_campaign(server, "Followup Draft Review Test")
+    pid = server.seed_prospect()
+    server.post(f"/campaigns/{cid}/assign-prospect/{pid}")
+    row_id = server.get(f"/campaigns/{cid}/prospects").json()[0]["id"]
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/approve")
+    server.post(f"/campaigns/{cid}/prospects/{row_id}/simulate-sent")
+
+    # No due follow-up yet (sent_at is "now", cadence is day 4+) -- the
+    # review queue for this campaign is empty.
+    r = server.get("/followup-drafts", params={"campaign_id": cid, "status": "Draft"})
+    assert r.status_code == 200
+    assert r.json() == []

@@ -128,15 +128,14 @@ def back_to_draft(campaign_id: int, prospect_row_id: int):
 
 
 def send_approved(campaign_id: int) -> SendResult:
-    """Actually send every Approved prospect (fresh outreach) AND every
-    Approved reply draft in this campaign via Gmail -- one action, one
-    chokepoint. Reply drafts used to have their own separate
-    immediate-send path (approving one sent it on the spot), which meant
-    a reply could go out without the suppression-list check or
-    daily-pacing cap this batch send already applies to outreach.
-    Routing both through here closes that gap: approving a reply now
-    just queues it (reply_drafts.approve_reply_draft), and it only
-    actually sends from this same batch action as everything else.
+    """Actually send every Approved prospect (fresh outreach), every
+    Approved reply draft, AND every Approved follow-up draft in this
+    campaign via Gmail -- one action, one chokepoint. Reply drafts (and
+    now follow-ups) used to have their own separate immediate-send path,
+    which meant they could go out without the suppression-list check or
+    daily-pacing cap this batch send already applies to outreach. Routing
+    all three through here closes that gap: approving any of them just
+    queues it, and it only actually sends from this same batch action.
 
     Raises EmailNotConfiguredError immediately (before touching anything) if
     credentials aren't set, so a half-sent batch never happens because of
@@ -159,8 +158,16 @@ def send_approved(campaign_id: int) -> SendResult:
                WHERE cp.campaign_id = ? AND rd.status = 'Approved'""",
             (campaign_id,),
         ).fetchall()
+        followup_rows = conn.execute(
+            """SELECT cf.id, cf.campaign_prospect_id, cf.subject, cf.body, pr.email
+               FROM campaign_followups cf
+               JOIN campaign_prospects cp ON cp.id = cf.campaign_prospect_id
+               JOIN prospects_raw pr ON pr.id = cp.prospect_id
+               WHERE cp.campaign_id = ? AND cf.status = 'Approved'""",
+            (campaign_id,),
+        ).fetchall()
 
-    attempted = len(outreach_rows) + len(reply_rows)
+    attempted = len(outreach_rows) + len(reply_rows) + len(followup_rows)
     sent = 0
     failed = 0
     suppressed = 0
@@ -230,6 +237,41 @@ def send_approved(campaign_id: int) -> SendResult:
             failed += 1
             errors.append(f"{row['email']}: {e}")
             log_event("email_send_failed", "campaign_prospect", str(row["id"]), f"{row['email']}: {e}")
+
+    # Follow-ups last -- lowest urgency of the three: a live conversation
+    # (replies) and a brand-new prospect (fresh outreach) both matter more
+    # than a day-4/day-8 bump on someone who hasn't responded at all, so
+    # if the daily cap is tight, follow-ups are what gets left for
+    # tomorrow first.
+    for row in followup_rows:
+        if is_suppressed(row["email"]):
+            with get_conn() as conn:
+                conn.execute("UPDATE campaign_followups SET status = 'Suppressed' WHERE id = ?", (row["id"],))
+            suppressed += 1
+            errors.append(f"{row['email']}: skipped — on suppression list, not sent")
+            log_event("send_blocked_suppressed", "campaign_followup", str(row["id"]), f"{row['email']} is on suppression list")
+            continue
+        if remaining <= 0:
+            skipped_daily_limit += 1
+            continue
+        try:
+            email_provider.send_email(row["email"], row["subject"], row["body"])
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE campaign_followups SET status = 'Sent', sent_at = ? WHERE id = ?",
+                    (now, row["id"]),
+                )
+                conn.execute(
+                    "UPDATE campaign_prospects SET last_followup_at = ? WHERE id = ?",
+                    (now, row["campaign_prospect_id"]),
+                )
+            sent += 1
+            remaining -= 1
+            log_event("followup_sent", "campaign_followup", str(row["id"]), f"Sent to {row['email']}")
+        except email_provider.EmailSendError as e:
+            failed += 1
+            errors.append(f"{row['email']}: {e}")
+            log_event("followup_send_failed", "campaign_followup", str(row["id"]), f"{row['email']}: {e}")
 
     if skipped_daily_limit:
         errors.append(

@@ -120,6 +120,7 @@ class CampaignProspect(BaseModel):
     deal_value: Optional[float] = None
     lost_reason: Optional[str] = None
     follow_up_count: int = 0
+    pending_followup_count: int = 0
     last_followup_at: Optional[str] = None
     same_company_peers: list[dict] = []
 
@@ -130,14 +131,36 @@ class FollowUpRecord(BaseModel):
     follow_up_number: int
     subject: str
     body: str
-    sent_at: str
+    status: str
+    created_at: Optional[str] = None
+    approved_at: Optional[str] = None
+    rejected_at: Optional[str] = None
+    sent_at: Optional[str] = None
 
 
 class FollowUpResult(BaseModel):
     checked_at: str
-    sent: int
-    skipped_daily_limit: int
+    drafted: int
     errors: list[str] = []
+
+
+class FollowUpDraft(BaseModel):
+    id: int
+    campaign_prospect_id: int
+    campaign_id: Optional[int] = None
+    follow_up_number: int
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    company: Optional[str] = None
+    subject: str
+    body: str
+    status: str
+    original_sent_at: Optional[str] = None
+    created_at: Optional[str] = None
+    approved_at: Optional[str] = None
+    rejected_at: Optional[str] = None
+    sent_at: Optional[str] = None
 
 
 class DraftUpdate(BaseModel):

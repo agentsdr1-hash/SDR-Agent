@@ -149,7 +149,11 @@ CREATE TABLE IF NOT EXISTS campaign_followups (
     follow_up_number INTEGER NOT NULL,  -- 1 or 2, see app/services/followups.py
     subject TEXT NOT NULL,
     body TEXT NOT NULL,
-    sent_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Draft',  -- Draft/Approved/Rejected/Sent -- see app/services/followups.py
+    created_at TEXT,                       -- when the day-4/day-8 draft was generated
+    approved_at TEXT,
+    rejected_at TEXT,
+    sent_at TEXT,                          -- set only once actually sent; NULL while Draft/Approved/Rejected
     FOREIGN KEY (campaign_prospect_id) REFERENCES campaign_prospects(id)
 );
 CREATE INDEX IF NOT EXISTS idx_campaign_followups_cp ON campaign_followups(campaign_prospect_id);
@@ -333,9 +337,64 @@ def _ensure_column(conn, table: str, column: str, coltype: str):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
 
 
+def _relax_followups_sent_at(conn):
+    """sent_at used to be NOT NULL -- a campaign_followups row only ever
+    existed once actually sent. Now a Draft/Approved/Rejected row has no
+    sent_at yet, so an already-deployed table's stricter constraint needs
+    loosening. Requires the status column (see init_db) to already exist.
+    Safe/idempotent to call every startup."""
+    if IS_POSTGRES:
+        conn.execute("ALTER TABLE campaign_followups ALTER COLUMN sent_at DROP NOT NULL")
+        return
+    notnull = next(
+        (row["notnull"] for row in conn.execute("PRAGMA table_info(campaign_followups)") if row["name"] == "sent_at"),
+        0,
+    )
+    if not notnull:
+        return
+    # SQLite has no ALTER COLUMN to drop a NOT NULL constraint -- rebuild
+    # the table under the corrected schema and copy the data across.
+    # campaign_followups is a leaf table (nothing else has a FK to it),
+    # so this is safe without touching foreign_keys pragmas.
+    conn.execute(
+        """CREATE TABLE campaign_followups_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_prospect_id INTEGER NOT NULL,
+            follow_up_number INTEGER NOT NULL,
+            subject TEXT NOT NULL,
+            body TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Draft',
+            created_at TEXT,
+            approved_at TEXT,
+            rejected_at TEXT,
+            sent_at TEXT,
+            FOREIGN KEY (campaign_prospect_id) REFERENCES campaign_prospects(id)
+        )"""
+    )
+    conn.execute(
+        "INSERT INTO campaign_followups_new "
+        "(id, campaign_prospect_id, follow_up_number, subject, body, status, created_at, approved_at, rejected_at, sent_at) "
+        "SELECT id, campaign_prospect_id, follow_up_number, subject, body, status, created_at, approved_at, rejected_at, sent_at "
+        "FROM campaign_followups"
+    )
+    conn.execute("DROP TABLE campaign_followups")
+    conn.execute("ALTER TABLE campaign_followups_new RENAME TO campaign_followups")
+
+
 def init_db(seed_customers: bool = True):
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        _ensure_column(conn, "campaign_followups", "status", "TEXT")
+        _ensure_column(conn, "campaign_followups", "created_at", "TEXT")
+        _ensure_column(conn, "campaign_followups", "approved_at", "TEXT")
+        _ensure_column(conn, "campaign_followups", "rejected_at", "TEXT")
+        # Every row that existed before the status column was added was,
+        # by definition, already sent -- there was no draft state back then.
+        # Its true creation time was never recorded either, so sent_at is
+        # the closest honest stand-in rather than leaving it blank.
+        conn.execute("UPDATE campaign_followups SET status = 'Sent' WHERE status IS NULL")
+        conn.execute("UPDATE campaign_followups SET created_at = sent_at WHERE created_at IS NULL")
+        _relax_followups_sent_at(conn)
         _ensure_column(conn, "campaign_prospects", "materials", "TEXT")
         _ensure_column(conn, "campaign_prospects", "quantity", "TEXT")
         _ensure_column(conn, "campaign_prospects", "target_price", "REAL")
