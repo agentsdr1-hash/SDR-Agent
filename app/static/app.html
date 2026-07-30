@@ -518,49 +518,65 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
     <div class="panel-head"><h2>Select campaign</h2><span class="obj-tag">OBJ-005 · OBJ-006 · OBJ-007</span></div>
     <div class="row">
       <select id="reviewSelect"></select>
-      <button class="btn sec" id="reviewRefresh">↻ Refresh</button>
-      <button class="btn sky" id="sendAllBtn">Send all approved</button>
-      <button class="btn sec" id="advDayBtn">Simulate next day →</button>
     </div>
-    <div class="status" id="reviewStatus"></div>
-    <div class="hint" id="dayLabel"></div>
   </div>
 
-  <div class="panel" id="replyDraftsPanel">
-    <div class="panel-head"><h2>Reply drafts awaiting review — <span id="rdCampaignName">—</span> (<span id="rdCount">0</span>)</h2><button class="btn sec" style="font-size:12px;padding:5px 12px;margin-left:auto;" onclick="loadReplyDrafts()">↻ Refresh</button><span class="obj-tag">smart-reply, rule-based</span></div>
-    <p class="hint" style="margin:0 0 10px;">Generated automatically whenever a prospect replies (real Gmail poll, or the Simulate reply buttons below) — matched against the Q&amp;A knowledge base and stock catalog. Review before sending; nothing here goes out on its own. With one campaign selected, review each reply directly on that customer's own card below — this panel then just tracks what's approved and queued to send. Viewing "All campaigns" shows every pending reply across every campaign here instead. A lead's full reply history across every campaign is in the Leads tab.</p>
-    <div id="rdList"></div>
-    <div class="empty hidden" id="rdEmpty">No reply drafts waiting on you right now.</div>
-  </div>
-
+  <!-- One continuous panel for a selected campaign's whole workflow -- back
+       link, name/status, actions, funnel, the approved-and-queued replies
+       that don't have anywhere else to live, and the stage-grouped
+       Prospects list -- instead of four separate boxes for what's really
+       one flow. -->
   <div class="panel hidden" id="campBoardHeader">
     <button class="btn sec" style="font-size:12px;padding:6px 12px;margin-bottom:12px;" onclick="document.getElementById('campOverviewPanel').scrollIntoView({behavior:'smooth',block:'start'})">← Overview</button>
     <div class="panel-head" style="margin-bottom:4px;">
       <h2 id="campBoardName">—</h2>
       <span class="pill p-valid" id="campBoardStatus" style="margin-left:10px;"></span>
     </div>
-    <p class="hint" id="campBoardSub" style="margin:0 0 16px;"></p>
-    <p class="funnel-hint">Click a stage to jump to it below.</p>
+    <p class="hint" id="campBoardSub" style="margin:0 0 14px;"></p>
+    <div class="row" style="margin:0 0 4px;">
+      <button class="btn sec" id="reviewRefresh">↻ Refresh</button>
+      <button class="btn sky" id="sendAllBtn">Send all approved</button>
+      <button class="btn sec" id="advDayBtn">Simulate next day →</button>
+    </div>
+    <div class="status" id="reviewStatus"></div>
+    <div class="hint" id="dayLabel"></div>
+
+    <p class="funnel-hint" style="margin-top:16px;">Click a stage to jump to it below.</p>
     <div id="campBoardFunnel"></div>
+
+    <div class="mt16 hidden" id="campApprovedRepliesWrap">
+      <div id="campApprovedRepliesList"></div>
+    </div>
+
+    <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line);">
+      <div class="panel-head" style="margin-bottom:12px;">
+        <h2 id="campHeading" style="font-size:14.5px;">Prospects</h2>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;" id="cs_q">–</div><div class="lbl">Queued</div></div>
+          <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--sky)" id="cs_s">–</div><div class="lbl">Sent</div></div>
+          <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--indigo)" id="cs_r">–</div><div class="lbl">Replied</div></div>
+          <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--valid)" id="cs_w">–</div><div class="lbl">Won</div></div>
+        </div>
+      </div>
+      <div class="row hidden" id="campBulkBar" style="background:var(--blue-soft);border-radius:8px;padding:10px 14px;align-items:center;margin-bottom:12px;">
+        <b style="font-size:12.5px;" id="campBulkCount">0 selected</b>
+        <button class="btn ok" style="padding:6px 12px;font-size:12px;" id="campBulkApproveBtn">Approve selected</button>
+        <button class="btn reject" style="padding:6px 12px;font-size:12px;" id="campBulkRejectBtn">Reject selected</button>
+        <button class="btn sec" style="padding:6px 12px;font-size:12px;margin-left:auto;" id="campBulkClearBtn">Clear selection</button>
+      </div>
+      <div id="emailCards"></div>
+    </div>
   </div>
 
-  <div class="panel hidden" id="pProspects">
-    <div class="panel-head">
-      <h2 id="campHeading">Prospects</h2>
-      <div style="margin-left:auto;display:flex;gap:6px;">
-        <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;" id="cs_q">–</div><div class="lbl">Queued</div></div>
-        <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--sky)" id="cs_s">–</div><div class="lbl">Sent</div></div>
-        <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--indigo)" id="cs_r">–</div><div class="lbl">Replied</div></div>
-        <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--valid)" id="cs_w">–</div><div class="lbl">Won</div></div>
-      </div>
-    </div>
-    <div class="row hidden" id="campBulkBar" style="background:var(--blue-soft);border-radius:8px;padding:10px 14px;align-items:center;margin-bottom:12px;">
-      <b style="font-size:12.5px;" id="campBulkCount">0 selected</b>
-      <button class="btn ok" style="padding:6px 12px;font-size:12px;" id="campBulkApproveBtn">Approve selected</button>
-      <button class="btn reject" style="padding:6px 12px;font-size:12px;" id="campBulkRejectBtn">Reject selected</button>
-      <button class="btn sec" style="padding:6px 12px;font-size:12px;margin-left:auto;" id="campBulkClearBtn">Clear selection</button>
-    </div>
-    <div id="emailCards"></div>
+  <!-- Only shown in "All campaigns" mode -- once a specific campaign is
+       selected, Draft-status review happens inline on each prospect card
+       above, and the approved-awaiting-send queue moves into
+       campApprovedRepliesWrap above instead of a separate box here. -->
+  <div class="panel hidden" id="replyDraftsPanel">
+    <div class="panel-head"><h2>Reply drafts awaiting review — <span id="rdCampaignName">—</span> (<span id="rdCount">0</span>)</h2><button class="btn sec" style="font-size:12px;padding:5px 12px;margin-left:auto;" onclick="loadReplyDrafts()">↻ Refresh</button><span class="obj-tag">smart-reply, rule-based</span></div>
+    <p class="hint" style="margin:0 0 10px;">Generated automatically whenever a prospect replies (real Gmail poll, or the Simulate reply buttons below) — matched against the Q&amp;A knowledge base and stock catalog. Review before sending; nothing here goes out on its own. A lead's full reply history across every campaign is in the Leads tab.</p>
+    <div id="rdList"></div>
+    <div class="empty hidden" id="rdEmpty">No reply drafts waiting on you right now.</div>
   </div>
 
   <div class="panel hidden" id="campHistPanel">
@@ -1719,7 +1735,6 @@ async function loadServerProspects(cid) {
     // this just clears it and shows the aggregated reply queue instead.
     campCurrentCid = null;
     campSelectedIds = new Set();
-    document.getElementById('pProspects').classList.add('hidden');
     document.getElementById('campBoardHeader').classList.add('hidden');
     loadReplyDrafts();
     return;
@@ -1749,7 +1764,6 @@ async function loadServerProspects(cid) {
   const counts = {Queued:0,Sent:0,Replied:0,Won:0};
   rows.forEach(r => { if(counts[r.status]!==undefined) counts[r.status]++; });
   set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
-  document.getElementById('pProspects').classList.remove('hidden');
   document.getElementById('emailCards').innerHTML = renderProspectStageSections(rows, cid, draftsByCp, followupDraftsByCp);
   document.querySelectorAll('#emailCards textarea.ebody').forEach(autoGrow);
   renderCampBulkBar();
@@ -2046,14 +2060,25 @@ async function serverSimulateReply(cid,rid,isOptOut) {
 // ══════════════════════════════════════════════════════
 async function loadReplyDrafts() {
   const list = document.getElementById('rdList'), empty = document.getElementById('rdEmpty');
-  if(MODE!=='server') { list.innerHTML=''; set('rdCount','0'); empty.textContent='Requires server mode.'; empty.classList.remove('hidden'); return; }
+  const panel = document.getElementById('replyDraftsPanel');
+  const approvedWrap = document.getElementById('campApprovedRepliesWrap');
+  const approvedList = document.getElementById('campApprovedRepliesList');
+  if(MODE!=='server') { panel.classList.remove('hidden'); approvedWrap.classList.add('hidden'); list.innerHTML=''; set('rdCount','0'); empty.textContent='Requires server mode.'; empty.classList.remove('hidden'); return; }
   const sel = document.getElementById('reviewSelect');
   const hasCampaigns = Array.from(sel.options).some(o => o.value !== '');
-  if(!hasCampaigns) { list.innerHTML=''; set('rdCount','0'); set('rdCampaignName','—'); empty.textContent='Create a campaign above to start reviewing replies.'; empty.classList.remove('hidden'); return; }
+  if(!hasCampaigns) { panel.classList.remove('hidden'); approvedWrap.classList.add('hidden'); list.innerHTML=''; set('rdCount','0'); set('rdCampaignName','—'); empty.textContent='Create a campaign above to start reviewing replies.'; empty.classList.remove('hidden'); return; }
   // campCurrentCid is null when "All campaigns" is explicitly selected --
   // that's a real, valid choice (not "nothing selected yet"), so it fetches
   // the unscoped cross-campaign queue instead of prompting to pick one.
   const scoped = !!campCurrentCid;
+  // Scoped to one campaign: this whole standalone panel steps aside --
+  // Draft-status review already happens inline on each customer's own
+  // prospect card (see serverProspectCard), and the read-only
+  // approved/awaiting-send queue moves into the campaign board panel
+  // above instead of a separate box. "All campaigns" has no per-customer
+  // grid to embed into, so it keeps the full original panel.
+  panel.classList.toggle('hidden', scoped);
+  if(!scoped) approvedWrap.classList.add('hidden');
   const campaignName = scoped
     ? (sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text.replace(/\s*\(\d+ pending\)$/,'') : '—')
     : 'All campaigns';
@@ -2069,22 +2094,10 @@ async function loadReplyDrafts() {
       fetch('/reply-drafts?status=Approved'+scopeParam).then(r=>r.json()),
     ]);
     set('rdCount', drafts.length);
-    // Scoped to one campaign: Draft-status review now happens inline on
-    // each customer's own prospect card below (see serverProspectCard),
-    // not in this separate list -- so this panel only needs the read-only
-    // approved/awaiting-send queue here. "All campaigns" has no per-customer
-    // grid to embed into, so it keeps the full original behavior.
     if(scoped) {
-      if(!approved.length) {
-        list.innerHTML = '';
-        empty.textContent = drafts.length
-          ? `${drafts.length} repl${drafts.length===1?'y':'ies'} pending your review — see the prospect card${drafts.length===1?'':'s'} below.`
-          : 'No reply drafts waiting on you right now for this campaign.';
-        empty.classList.remove('hidden');
-        return;
-      }
-      empty.classList.add('hidden');
-      list.innerHTML = `<p class="hint" style="margin:16px 0 8px;">${approved.length} approved, awaiting send:</p>` + approved.map(d => approvedReplyDraftCard(d, false)).join('');
+      if(!approved.length) { approvedWrap.classList.add('hidden'); approvedList.innerHTML=''; return; }
+      approvedWrap.classList.remove('hidden');
+      approvedList.innerHTML = `<p class="hint" style="margin:0 0 8px;">${approved.length} approved, awaiting send:</p>` + approved.map(d => approvedReplyDraftCard(d, false)).join('');
       return;
     }
     if(!drafts.length && !approved.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now.'; empty.classList.remove('hidden'); return; }
@@ -2189,7 +2202,17 @@ function renderEmailCards() {
   const counts = {Queued:0,Sent:0,Replied:0,Won:0};
   camp.prospects.forEach(p => { if(counts[p.cpStatus]!==undefined) counts[p.cpStatus]++; });
   set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
-  document.getElementById('pProspects').classList.remove('hidden');
+  // Demo mode has no server-side campaign metadata (status/turnover/funnel
+  // counts) to fill the board header with -- it reuses the same container
+  // as server mode for the Prospects list, but only the bits it actually
+  // has data for.
+  const header = document.getElementById('campBoardHeader');
+  header.classList.remove('hidden');
+  set('campBoardName', camp.name);
+  document.getElementById('campBoardStatus').textContent = '';
+  set('campBoardSub', `Day ${camp.currentDay} · ${camp.prospects.length} lead(s)`);
+  document.getElementById('campBoardFunnel').innerHTML = '';
+  document.getElementById('campApprovedRepliesWrap').classList.add('hidden');
   document.getElementById('emailCards').innerHTML = camp.prospects.map((p,i) => demoCard(p,i,camp)).join('');
   document.querySelectorAll('#emailCards textarea.ebody').forEach(autoGrow);
 }
