@@ -1558,35 +1558,43 @@ function selectAllCampaignsView() {
   loadServerProspects('');
 }
 
-// Overview — all campaigns: KPI tiles + a funnel built from the same
-// per-campaign fields /reports/summary already returns (no new backend
-// needed), each stage clickable into a drill-down using the same
-// leadDocumentCard/leadsParamsFor machinery the Dashboard's drill panel
-// uses. 'Replied' deliberately sums ever_replied, not the current-status
-// 'replied' snapshot -- see reporting.py's comment: a lead that replied
-// and moved on to QuoteRequested/Won/Lost would otherwise be missed.
-const CAMP_FUNNEL_STAGES = [
-  { key: 'queued', label: 'Queued', option: 'Queued', color: 'var(--muted)' },
-  { key: 'approved', label: 'Approved', option: 'Approved', color: 'var(--blue)' },
-  { key: 'sent', label: 'Sent', option: 'Sent', color: 'var(--indigo)' },
-  { key: 'ever_replied', label: 'Replied', option: 'ever_replied', color: 'var(--valid)' },
-  { key: 'quote_requested', label: 'Quote requested', option: 'QuoteRequested', color: 'var(--dup)' },
-  { key: 'won', label: 'Won', option: 'Won', color: 'var(--valid)' },
+// Single source of truth for the workflow's real phases, shared by the
+// Overview funnel, the per-campaign board header's mini funnel, and the
+// Prospects list's stage sections -- so the same "Drafting / Awaiting
+// first response / In conversation / Quote requested / Won / Lost"
+// language and grouping shows up everywhere in this tab. "Drafting"
+// absorbs Queued+Approved (approval is a review gate within a phase, not
+// a phase of its own) -- everything from the first email being written
+// up to the moment it's sent is still "drafting" to a human reading this.
+// `statuses` drives client-side grouping (Prospects rows, board-header
+// counts, both already have the full row list in hand); `summaryFields`
+// drives the Overview's aggregate, which sums /reports/summary's
+// per-campaign fields instead -- 'replied' deliberately reads
+// ever_replied there, not the current-status 'replied' snapshot, so a
+// lead that replied and moved on to QuoteRequested/Won/Lost still counts
+// (see reporting.py's comment on ever_replied).
+const WORKFLOW_STAGES = [
+  { key: 'drafting', label: 'Drafting', color: 'var(--muted)', soft: 'var(--line-soft)', statuses: ['Queued','Approved'], summaryFields: ['queued','approved'], open: true },
+  { key: 'sent', label: 'Awaiting first response', color: 'var(--sky)', soft: 'var(--sky-soft)', statuses: ['Sent'], summaryFields: ['sent'], open: false },
+  { key: 'replied', label: 'In conversation', color: 'var(--indigo)', soft: 'var(--indigo-soft)', statuses: ['Replied'], summaryFields: ['ever_replied'], open: true },
+  { key: 'quote', label: 'Quote requested', color: 'var(--dup)', soft: 'var(--dup-soft)', statuses: ['QuoteRequested'], summaryFields: ['quote_requested'], open: true },
+  { key: 'won', label: 'Won', color: 'var(--valid)', soft: 'var(--valid-soft)', statuses: ['Won'], summaryFields: ['won'], open: false },
+  { key: 'lost', label: 'Lost', color: 'var(--invalid)', soft: 'var(--invalid-soft)', statuses: ['Lost'], summaryFields: ['lost'], open: false },
 ];
 
 function renderCampOverview(campaigns, pendingCount) {
-  const totals = { total: 0, won: 0, lost: 0, turnover: 0, ever_replied: 0 };
-  CAMP_FUNNEL_STAGES.forEach(s => { totals[s.key] = 0; });
+  const totals = { total: 0, won: 0, lost: 0, turnover: 0 };
+  WORKFLOW_STAGES.forEach(s => { totals[s.key] = 0; });
   campaigns.forEach(c => {
     totals.total += c.total || 0;
     totals.won += c.won || 0;
     totals.lost += c.lost || 0;
     totals.turnover += c.turnover || 0;
-    CAMP_FUNNEL_STAGES.forEach(s => { totals[s.key] += c[s.key] || 0; });
+    WORKFLOW_STAGES.forEach(s => { totals[s.key] += s.summaryFields.reduce((a,f) => a + (c[f]||0), 0); });
   });
 
   set('ov_total', totals.total);
-  set('ov_response_rate', totals.total ? Math.round((totals.ever_replied/totals.total)*1000)/10+'%' : '–');
+  set('ov_response_rate', totals.total ? Math.round((totals.replied/totals.total)*1000)/10+'%' : '–');
   const winDenom = totals.won + totals.lost;
   set('ov_win_rate', winDenom ? Math.round((totals.won/winDenom)*1000)/10+'%' : '–');
   set('ov_turnover', 'AED '+totals.turnover.toLocaleString());
@@ -1595,17 +1603,21 @@ function renderCampOverview(campaigns, pendingCount) {
   if(pendingCount > 0) { pendingWrap.classList.remove('hidden'); set('ov_pending', pendingCount); }
   else pendingWrap.classList.add('hidden');
 
-  const maxCount = Math.max(1, ...CAMP_FUNNEL_STAGES.map(s => totals[s.key]));
-  document.getElementById('ov_funnel').innerHTML = CAMP_FUNNEL_STAGES.map(s => {
+  // The funnel rows are the "in progress" stages; Lost gets a separate
+  // dashed note below rather than a row of its own -- it's an exit from
+  // the funnel, not a step in it.
+  const funnelStages = WORKFLOW_STAGES.filter(s => s.key !== 'lost');
+  const maxCount = Math.max(1, ...funnelStages.map(s => totals[s.key]));
+  document.getElementById('ov_funnel').innerHTML = funnelStages.map(s => {
     const n = totals[s.key];
     const pct = Math.round((n/maxCount)*100);
-    return `<div class="funnel-row" onclick="campOverviewDrill('${s.option}','${esc(s.label)}')">
+    return `<div class="funnel-row" onclick="campOverviewDrill('${s.key}','${esc(s.label)}')">
       <div class="funnel-label">${esc(s.label)}</div>
       <div class="funnel-track"><div class="funnel-fill" style="width:${pct}%;background:${s.color};"></div></div>
       <div class="funnel-count">${n}</div>
     </div>`;
   }).join('') + (totals.lost > 0
-    ? `<div class="funnel-lost-note" onclick="campOverviewDrill('Lost','Lost')">${totals.lost} lost — click to review</div>`
+    ? `<div class="funnel-lost-note" onclick="campOverviewDrill('lost','Lost')">${totals.lost} lost — click to review</div>`
     : '');
 }
 
@@ -1622,14 +1634,28 @@ async function campOverviewDrill(optionValue, label) {
   await refreshCampOverviewDrillCards();
 }
 
+// A funnel stage's optionValue is a WORKFLOW_STAGES key ('drafting',
+// 'won', ...), '__all__' for every lead, or (from the Dashboard's own
+// tiles, which call leadDocumentCard/dashDrill separately) a raw
+// leadsParamsFor value -- 'drafting' is the only one backed by more than
+// one real status (Queued+Approved), so it's the only one that needs
+// more than a single /leads fetch merged together.
 async function refreshCampOverviewDrillCards() {
   const cards = document.getElementById('campOverviewDrillCards'), empty = document.getElementById('campOverviewDrillEmpty');
   if(MODE!=='server') { cards.innerHTML=''; setS('campOverviewDrillStatus','Requires server mode.', true); return; }
   setS('campOverviewDrillStatus','Loading…');
-  const params = campOverviewDrillOptionValue === '__all__' ? new URLSearchParams() : leadsParamsFor(campOverviewDrillOptionValue);
-  const r = await fetch('/leads?'+params.toString());
-  const rows = await r.json();
-  if(!r.ok) { cards.innerHTML=''; setS('campOverviewDrillStatus','Could not load leads.', true); return; }
+  const stage = WORKFLOW_STAGES.find(s => s.key === campOverviewDrillOptionValue);
+  const optionValues = campOverviewDrillOptionValue === '__all__' ? ['__all__']
+    : stage ? (stage.key === 'replied' ? ['ever_replied'] : stage.statuses)
+    : [campOverviewDrillOptionValue];
+  const fetches = optionValues.map(v => {
+    const params = v === '__all__' ? new URLSearchParams() : leadsParamsFor(v);
+    return fetch('/leads?'+params.toString());
+  });
+  const responses = await Promise.all(fetches);
+  if(responses.some(r => !r.ok)) { cards.innerHTML=''; setS('campOverviewDrillStatus','Could not load leads.', true); return; }
+  const rowLists = await Promise.all(responses.map(r => r.json()));
+  const rows = rowLists.flat();
   setS('campOverviewDrillStatus', rows.length+' lead(s).');
   if(!rows.length) { cards.innerHTML=''; empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
@@ -1736,15 +1762,6 @@ async function loadServerProspects(cid) {
 // separate toggled view, so this just scrolls to it), and a mini funnel
 // scoped to this one campaign. Counts come straight from the same `rows`
 // the stage sections below are built from, so the two can never disagree.
-const CAMP_BOARD_FUNNEL_STAGES = [
-  { status: 'Queued', label: 'Queued', color: 'var(--muted)' },
-  { status: 'Approved', label: 'Approved', color: 'var(--blue)' },
-  { status: 'Sent', label: 'Awaiting first response', color: 'var(--sky)' },
-  { status: 'Replied', label: 'In conversation', color: 'var(--indigo)' },
-  { status: 'QuoteRequested', label: 'Quote requested', color: 'var(--dup)' },
-  { status: 'Won', label: 'Won', color: 'var(--valid)' },
-];
-
 function renderCampBoardHeader(cid, rows) {
   const header = document.getElementById('campBoardHeader');
   const camp = campaignsById[cid];
@@ -1757,13 +1774,12 @@ function renderCampBoardHeader(cid, rows) {
   const turnover = rows.filter(r => r.status === 'Won').reduce((a, r) => a + (r.deal_value || 0), 0);
   set('campBoardSub', `Created ${fmtDate(camp.created_at)} · ${rows.length} lead(s) · AED ${turnover.toLocaleString()} turnover`);
 
-  const counts = {};
-  rows.forEach(r => { counts[r.status] = (counts[r.status]||0) + 1; });
-  const maxCount = Math.max(1, ...CAMP_BOARD_FUNNEL_STAGES.map(s => counts[s.status]||0));
-  document.getElementById('campBoardFunnel').innerHTML = CAMP_BOARD_FUNNEL_STAGES.map(s => {
-    const n = counts[s.status] || 0;
+  const counts = stageCounts(rows);
+  const maxCount = Math.max(1, ...WORKFLOW_STAGES.map(s => counts[s.key]));
+  document.getElementById('campBoardFunnel').innerHTML = WORKFLOW_STAGES.map(s => {
+    const n = counts[s.key];
     const pct = Math.round((n/maxCount)*100);
-    return `<div class="funnel-row" onclick="scrollToProspectStage('${s.status}')">
+    return `<div class="funnel-row" onclick="scrollToProspectStage('${s.key}')">
       <div class="funnel-label">${esc(s.label)}</div>
       <div class="funnel-track"><div class="funnel-fill" style="width:${pct}%;background:${s.color};"></div></div>
       <div class="funnel-count">${n}</div>
@@ -1771,48 +1787,61 @@ function renderCampBoardHeader(cid, rows) {
   }).join('');
 }
 
-function scrollToProspectStage(status) {
-  const el = document.getElementById('prospStage-'+status);
+function scrollToProspectStage(key) {
+  const el = document.getElementById('prospStage-'+key);
   if(!el) return;
   el.open = true;
   el.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
+// Counts a campaign's prospect rows into WORKFLOW_STAGES buckets --
+// shared by the board-header funnel and the stage-section grouping below
+// so the two numbers can never drift apart.
+function stageCounts(rows) {
+  const counts = {};
+  WORKFLOW_STAGES.forEach(s => { counts[s.key] = 0; });
+  rows.forEach(r => {
+    const stage = WORKFLOW_STAGES.find(s => s.statuses.includes(r.status));
+    if(stage) counts[stage.key]++;
+  });
+  return counts;
+}
+
 // Groups the flat prospects list into collapsible workflow-stage sections
 // -- pure regrouping of serverProspectCard's own output, no change to what
-// each card renders or does. Stages with something actionable to review
-// (Queued, Approved, Replied) start open; the rest start collapsed so a
-// campaign that's mostly Sent/Won doesn't bury what needs attention.
-const PROSPECT_STAGE_SECTIONS = [
-  { status: 'Replied', label: 'In conversation', color: 'var(--indigo)', soft: 'var(--indigo-soft)', open: true },
-  { status: 'QuoteRequested', label: 'Quote requested', color: 'var(--dup)', soft: 'var(--dup-soft)', open: true },
-  { status: 'Approved', label: 'Approved', color: 'var(--blue)', soft: 'var(--blue-soft)', open: true },
-  { status: 'Queued', label: 'Queued', color: 'var(--muted)', soft: 'var(--line-soft)', open: true },
-  { status: 'Sent', label: 'Awaiting first response', color: 'var(--sky)', soft: 'var(--sky-soft)', open: false },
-  { status: 'Won', label: 'Won', color: 'var(--valid)', soft: 'var(--valid-soft)', open: false },
-  { status: 'Lost', label: 'Lost', color: 'var(--invalid)', soft: 'var(--invalid-soft)', open: false },
-  { status: 'Rejected', label: 'Rejected', color: 'var(--invalid)', soft: 'var(--invalid-soft)', open: false },
-  { status: 'Suppressed', label: 'Suppressed', color: 'var(--muted)', soft: 'var(--line-soft)', open: false },
+// each card renders or does (a Drafting section can hold both Queued and
+// Approved cards side by side; each still shows its own correct actions
+// since those are keyed off the card's real status, not the section).
+// Rejected and Suppressed sit outside the main funnel/stage list -- they're
+// exits, not workflow phases -- but still get their own section here since
+// real campaigns do land leads there (un-rejecting, suppression) even
+// though the funnel itself doesn't track them as a stage.
+const EXIT_SECTIONS = [
+  { key: 'rejected', status: 'Rejected', label: 'Rejected', color: 'var(--invalid)', soft: 'var(--invalid-soft)', open: false },
+  { key: 'suppressed', status: 'Suppressed', label: 'Suppressed', color: 'var(--muted)', soft: 'var(--line-soft)', open: false },
 ];
 
 function renderProspectStageSections(rows, cid, draftsByCp, followupDraftsByCp) {
-  const byStatus = {};
-  rows.forEach(r => { (byStatus[r.status] = byStatus[r.status] || []).push(r); });
-  const known = new Set(PROSPECT_STAGE_SECTIONS.map(s => s.status));
-  const sections = PROSPECT_STAGE_SECTIONS.slice();
+  const sections = WORKFLOW_STAGES.map(s => ({ key: s.key, statuses: s.statuses, label: s.label, color: s.color, soft: s.soft, open: s.open }))
+    .concat(EXIT_SECTIONS.map(s => ({ key: s.key, statuses: [s.status], label: s.label, color: s.color, soft: s.soft, open: s.open })));
+  const known = new Set(sections.flatMap(s => s.statuses));
   // Any status this campaign has that isn't in the known list (future-proofing,
   // not expected today) still gets shown rather than silently dropped.
-  Object.keys(byStatus).forEach(st => { if(!known.has(st)) sections.push({ status: st, label: st, color: 'var(--muted)', soft: 'var(--line-soft)', open: false }); });
+  const rowsByStatus = {};
+  rows.forEach(r => { (rowsByStatus[r.status] = rowsByStatus[r.status] || []).push(r); });
+  Object.keys(rowsByStatus).forEach(st => { if(!known.has(st)) sections.push({ key: st, statuses: [st], label: st, color: 'var(--muted)', soft: 'var(--line-soft)', open: false }); });
 
-  return sections.filter(s => (byStatus[s.status]||[]).length).map(s => {
-    const cards = byStatus[s.status].map(r => serverProspectCard(r, cid, draftsByCp[r.id]||[], followupDraftsByCp[r.id]||[])).join('');
-    return `<details class="stage-section" id="prospStage-${s.status}" style="--stage-color:${s.color};--stage-soft:${s.soft};" ${s.open?'open':''}>
+  return sections.map(s => {
+    const items = rows.filter(r => s.statuses.includes(r.status));
+    if(!items.length) return '';
+    const cards = items.map(r => serverProspectCard(r, cid, draftsByCp[r.id]||[], followupDraftsByCp[r.id]||[])).join('');
+    return `<details class="stage-section" id="prospStage-${s.key}" style="--stage-color:${s.color};--stage-soft:${s.soft};" ${s.open?'open':''}>
       <summary>
         <div class="stage-section-title">
           <svg class="stage-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
           <h3>${esc(s.label)}</h3>
         </div>
-        <span class="stage-count">${byStatus[s.status].length}</span>
+        <span class="stage-count">${items.length}</span>
       </summary>
       <div class="stage-body">${cards}</div>
     </details>`;
