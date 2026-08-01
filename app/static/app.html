@@ -595,6 +595,13 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
   </div>
 
   <div class="panel">
+    <div class="panel-head"><h2>Workflow status — all leads</h2><span class="obj-tag">at a glance</span></div>
+    <p class="funnel-hint">Same stages as the Campaigns tab. Click one to filter the table below.</p>
+    <div id="leadsWorkflowFunnel"></div>
+    <div class="hint hidden" id="leadsWorkflowFilterHint" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="panel">
     <div class="panel-head"><h2>All leads</h2><span class="obj-tag">consolidated · every campaign</span></div>
     <p class="hint" style="margin:0 0 10px;">Every lead, across every campaign, in one place. Click a row to open its full history and manage its status.</p>
     <div class="row">
@@ -1130,7 +1137,7 @@ function go(name) {
   document.getElementById('mainTabs').classList.remove('open');
   if(name==='dashboard') loadDashboard();
   if(name==='campaigns') { syncReviewSelect(); }
-  if(name==='leads') loadLeadsList();
+  if(name==='leads') { loadLeadsWorkflowFunnel(); loadLeadsList(); }
   if(name==='admin') { enterAdminTab(); }
   if(name==='import') syncCampSelect();
   if(name==='kb') { renderKBAll(); loadStockCatalog(); loadCustomers(); loadQAEntries(); }
@@ -2511,6 +2518,11 @@ document.getElementById('qaFile').addEventListener('change', () => {
 // ══════════════════════════════════════════════════════
 let leadsSearchDebounce = null;
 let leadsListRequestSeq = 0;
+// Set by clicking a stage in the Workflow status funnel below when that
+// stage covers more than one real status (only 'drafting' does --
+// Queued+Approved -- since #leadsStatusFilter can only ever represent one
+// value at a time). null means "follow the dropdown" as normal.
+let leadsMultiStatusOverride = null;
 
 // A lead's full-detail reader (renderLeadTimeline output, with its edit/
 // assign/manage controls) can be opened from two places: the Leads tab's
@@ -2532,7 +2544,63 @@ document.getElementById('leadsSearch').addEventListener('input', () => {
   clearTimeout(leadsSearchDebounce);
   leadsSearchDebounce = setTimeout(loadLeadsList, 250);
 });
-document.getElementById('leadsStatusFilter').addEventListener('change', loadLeadsList);
+document.getElementById('leadsStatusFilter').addEventListener('change', () => {
+  leadsMultiStatusOverride = null;
+  document.getElementById('leadsWorkflowFilterHint').classList.add('hidden');
+  loadLeadsList();
+});
+
+// ---- Workflow status funnel -- same WORKFLOW_STAGES used on the
+// Campaigns tab, computed here from every lead (not scoped to one
+// campaign), so "which ones are where" reads the same across the app.
+async function loadLeadsWorkflowFunnel() {
+  const el = document.getElementById('leadsWorkflowFunnel');
+  if(MODE!=='server') { el.innerHTML = ''; return; }
+  const r = await fetch('/leads');
+  if(!r.ok) return;
+  const rows = await r.json();
+  const counts = stageCounts(rows);
+  const maxCount = Math.max(1, ...WORKFLOW_STAGES.map(s => counts[s.key]));
+  el.innerHTML = WORKFLOW_STAGES.map(s => {
+    const n = counts[s.key];
+    const pct = Math.round((n/maxCount)*100);
+    return `<div class="funnel-row" onclick="leadsWorkflowFilter('${s.key}')">
+      <div class="funnel-label">${esc(s.label)}</div>
+      <div class="funnel-track"><div class="funnel-fill" style="width:${pct}%;background:${s.color};"></div></div>
+      <div class="funnel-count">${n}</div>
+    </div>`;
+  }).join('');
+}
+
+function leadsWorkflowFilter(stageKey) {
+  const stage = WORKFLOW_STAGES.find(s => s.key === stageKey);
+  if(!stage) return;
+  const sel = document.getElementById('leadsStatusFilter');
+  const hint = document.getElementById('leadsWorkflowFilterHint');
+  if(stage.statuses.length === 1) {
+    // Every stage but Drafting maps 1:1 onto an existing dropdown option --
+    // set it directly so the dropdown itself shows what's filtering the table.
+    leadsMultiStatusOverride = null;
+    sel.value = stage.statuses[0];
+    hint.classList.add('hidden');
+  } else {
+    // Drafting = Queued+Approved -- no single dropdown value covers both,
+    // so this bypasses the dropdown (reset to "All statuses" so it doesn't
+    // show a stale, unrelated selection) and fetches/merges both.
+    leadsMultiStatusOverride = stage.statuses;
+    sel.value = '';
+    hint.innerHTML = `Showing: <b>${esc(stage.label)}</b> <a href="#" onclick="event.preventDefault();clearLeadsWorkflowFilter();" style="margin-left:6px;">Clear ✕</a>`;
+    hint.classList.remove('hidden');
+  }
+  loadLeadsList();
+}
+
+function clearLeadsWorkflowFilter() {
+  leadsMultiStatusOverride = null;
+  document.getElementById('leadsStatusFilter').value = '';
+  document.getElementById('leadsWorkflowFilterHint').classList.add('hidden');
+  loadLeadsList();
+}
 
 // Maps a filter value (matching a #leadsStatusFilter <option value>, or a
 // Dashboard tile's chosen value) to the right /leads query param -- shared
@@ -2635,13 +2703,32 @@ async function loadLeadsList() {
   document.getElementById('leadsSelectAll').checked = false;
   if(MODE!=='server') { body.innerHTML=''; empty.textContent='Leads requires server mode.'; empty.classList.remove('hidden'); leadsCurrentRows=[]; renderLeadsBulkBar(); return; }
   const search = document.getElementById('leadsSearch').value.trim();
-  const sel = document.getElementById('leadsStatusFilter');
-  const params = leadsParamsFor(sel.value);
-  if(search) params.set('search', search);
-  const r = await fetch('/leads?'+params.toString());
-  const rows = await r.json();
+  let ok, rows;
+  if(leadsMultiStatusOverride) {
+    // A workflow stage that covers more than one real status (Drafting) --
+    // fetch each status separately and merge, since /leads only ever takes
+    // one status value. Re-sorted by lead # so the merge doesn't read as
+    // "all of one status, then all of the other".
+    const responses = await Promise.all(leadsMultiStatusOverride.map(st => {
+      const params = leadsParamsFor(st);
+      if(search) params.set('search', search);
+      return fetch('/leads?'+params.toString());
+    }));
+    ok = responses.every(r => r.ok);
+    if(ok) {
+      const lists = await Promise.all(responses.map(r => r.json()));
+      rows = lists.flat().sort((a,b) => a.lead_number.localeCompare(b.lead_number));
+    }
+  } else {
+    const sel = document.getElementById('leadsStatusFilter');
+    const params = leadsParamsFor(sel.value);
+    if(search) params.set('search', search);
+    const r = await fetch('/leads?'+params.toString());
+    ok = r.ok;
+    if(ok) rows = await r.json();
+  }
   if(seq !== leadsListRequestSeq) return; // a newer request has already superseded this one
-  if(!r.ok) { body.innerHTML=''; empty.textContent='Could not load leads.'; empty.classList.remove('hidden'); leadsCurrentRows=[]; renderLeadsBulkBar(); return; }
+  if(!ok) { body.innerHTML=''; empty.textContent='Could not load leads.'; empty.classList.remove('hidden'); leadsCurrentRows=[]; renderLeadsBulkBar(); return; }
   leadsCurrentRows = rows;
   if(!rows.length) { body.innerHTML=''; empty.textContent='No leads match.'; empty.classList.remove('hidden'); renderLeadsBulkBar(); return; }
   empty.classList.add('hidden');
