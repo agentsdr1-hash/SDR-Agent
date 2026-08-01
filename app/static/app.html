@@ -294,6 +294,23 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
 .funnel-lost-note{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--invalid);margin-top:10px;padding-top:12px;border-top:1px dashed var(--line);cursor:pointer;}
 .funnel-lost-note:hover{text-decoration:underline;}
 
+/* Circular-node workflow stepper -- name, count, connecting line. "In
+   conversation" gets a loop glyph since -- unlike every other node -- a
+   lead can cycle through it many times before anything resolves. */
+.stepper{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:20px 24px;box-shadow:var(--shadow);margin-bottom:16px;overflow-x:auto;}
+.stepper-track{display:flex;align-items:flex-start;min-width:640px;}
+.step{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;cursor:pointer;position:relative;padding:0 4px;}
+.step-line{position:absolute;top:15px;left:-50%;width:100%;height:2px;background:var(--line);z-index:0;}
+.step:first-child .step-line{display:none;}
+.step-node{width:30px;height:30px;border-radius:50%;background:var(--panel);border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-weight:700;font-size:12.5px;color:var(--muted);position:relative;z-index:1;transition:transform .12s;}
+.step:hover .step-node{transform:scale(1.08);}
+.step.has-items .step-node{border-color:var(--step-color,var(--blue));color:var(--step-color,var(--blue));background:var(--step-soft,var(--blue-soft));}
+.step.loop .step-node{border-style:dashed;}
+.step-lbl{font-size:10.5px;font-weight:600;color:var(--muted);margin-top:8px;max-width:120px;line-height:1.3;}
+.step.has-items .step-lbl{color:var(--ink);}
+.step-sub{font-size:9px;color:#A6AEC4;margin-top:1px;max-width:120px;line-height:1.3;}
+.loop-icon{position:absolute;top:-9px;right:18%;color:var(--indigo);background:var(--panel);border-radius:50%;}
+
 /* Prospects grouped into workflow stages -- one collapsible section per
    status instead of one long flat list, so scanning "what needs me right
    now" doesn't mean scrolling past everything already Sent or Won. Cards
@@ -1602,13 +1619,31 @@ function selectAllCampaignsView() {
 // right above already surfaces counts per stage at a glance, so nothing
 // forces itself open; the user picks what to look at.
 const WORKFLOW_STAGES = [
-  { key: 'drafting', label: 'Drafting', color: 'var(--muted)', soft: 'var(--line-soft)', statuses: ['Queued','Approved'], summaryFields: ['queued','approved'], open: false },
-  { key: 'sent', label: 'Awaiting first response', color: 'var(--sky)', soft: 'var(--sky-soft)', statuses: ['Sent'], summaryFields: ['sent'], open: false },
-  { key: 'replied', label: 'In conversation', color: 'var(--indigo)', soft: 'var(--indigo-soft)', statuses: ['Replied'], summaryFields: ['ever_replied'], open: false },
+  { key: 'drafting', label: 'Drafting', sub: 'first email, not sent yet', color: 'var(--muted)', soft: 'var(--line-soft)', statuses: ['Queued','Approved'], summaryFields: ['queued','approved'], open: false },
+  { key: 'sent', label: 'Awaiting first response', sub: 'email sent, no reply yet', color: 'var(--sky)', soft: 'var(--sky-soft)', statuses: ['Sent'], summaryFields: ['sent'], open: false },
+  { key: 'replied', label: 'In conversation', sub: 'back-and-forth, any # of rounds', loop: true, color: 'var(--indigo)', soft: 'var(--indigo-soft)', statuses: ['Replied'], summaryFields: ['ever_replied'], open: false },
   { key: 'quote', label: 'Quote requested', color: 'var(--dup)', soft: 'var(--dup-soft)', statuses: ['QuoteRequested'], summaryFields: ['quote_requested'], open: false },
   { key: 'won', label: 'Won', color: 'var(--valid)', soft: 'var(--valid-soft)', statuses: ['Won'], summaryFields: ['won'], open: false },
   { key: 'lost', label: 'Lost', color: 'var(--invalid)', soft: 'var(--invalid-soft)', statuses: ['Lost'], summaryFields: ['lost'], open: false },
 ];
+
+// Circular-node stepper (name, count, connecting line) -- an alternative
+// rendering of the same WORKFLOW_STAGES data used by the horizontal
+// funnel bars elsewhere, for contexts that want the "subway map" look
+// instead. onClickFnName is called with a stage key on click, same
+// contract as the funnel rows.
+function renderWorkflowStepper(counts, onClickFnName) {
+  return `<div class="stepper"><div class="stepper-track">` + WORKFLOW_STAGES.map(s => {
+    const n = counts[s.key] || 0;
+    const hasItems = n > 0;
+    return `<div class="step ${hasItems?'has-items':''} ${s.loop?'loop':''}" style="--step-color:${s.color};--step-soft:${s.soft};" onclick="${onClickFnName}('${s.key}')">
+      <div class="step-line"></div>
+      <div class="step-node">${n}${s.loop?'<svg class="loop-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.7V12a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l5-2.3"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.3V12a9 9 0 0 1-9 9 9 9 0 0 1-6-2.3"/></svg>':''}</div>
+      <div class="step-lbl">${esc(s.label)}</div>
+      ${s.sub?`<div class="step-sub">${esc(s.sub)}</div>`:''}
+    </div>`;
+  }).join('') + `</div></div>`;
+}
 
 function renderCampOverview(campaigns, pendingCount) {
   const totals = { total: 0, won: 0, lost: 0, turnover: 0 };
@@ -2568,16 +2603,7 @@ async function loadLeadsWorkflowFunnel() {
   if(!r.ok) return;
   const rows = await r.json();
   const counts = stageCounts(rows);
-  const maxCount = Math.max(1, ...WORKFLOW_STAGES.map(s => counts[s.key]));
-  el.innerHTML = WORKFLOW_STAGES.map(s => {
-    const n = counts[s.key];
-    const pct = Math.round((n/maxCount)*100);
-    return `<div class="funnel-row" onclick="leadsWorkflowFilter('${s.key}')">
-      <div class="funnel-label">${esc(s.label)}</div>
-      <div class="funnel-track"><div class="funnel-fill" style="width:${pct}%;background:${s.color};"></div></div>
-      <div class="funnel-count">${n}</div>
-    </div>`;
-  }).join('');
+  el.innerHTML = renderWorkflowStepper(counts, 'leadsWorkflowFilter');
 }
 
 function leadsWorkflowFilter(stageKey) {
