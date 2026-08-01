@@ -549,15 +549,10 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
     </div>
 
     <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line);">
-      <div class="panel-head" style="margin-bottom:12px;">
+      <div class="panel-head" style="margin-bottom:4px;">
         <h2 id="campHeading" style="font-size:14.5px;">Prospects</h2>
-        <div style="margin-left:auto;display:flex;gap:6px;">
-          <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;" id="cs_q">–</div><div class="lbl">Queued</div></div>
-          <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--sky)" id="cs_s">–</div><div class="lbl">Sent</div></div>
-          <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--indigo)" id="cs_r">–</div><div class="lbl">Replied</div></div>
-          <div class="stat" style="padding:5px 10px;"><div class="n" style="font-size:15px;color:var(--valid)" id="cs_w">–</div><div class="lbl">Won</div></div>
-        </div>
       </div>
+      <p class="hint" style="margin:0 0 12px;">Same stages as the funnel above -- click a section to expand it.</p>
       <div class="row hidden" id="campBulkBar" style="background:var(--blue-soft);border-radius:8px;padding:10px 14px;align-items:center;margin-bottom:12px;">
         <b style="font-size:12.5px;" id="campBulkCount">0 selected</b>
         <button class="btn ok" style="padding:6px 12px;font-size:12px;" id="campBulkApproveBtn">Approve selected</button>
@@ -1589,11 +1584,14 @@ function selectAllCampaignsView() {
 // ever_replied there, not the current-status 'replied' snapshot, so a
 // lead that replied and moved on to QuoteRequested/Won/Lost still counts
 // (see reporting.py's comment on ever_replied).
+// All stages start collapsed in the Prospects list -- the board funnel
+// right above already surfaces counts per stage at a glance, so nothing
+// forces itself open; the user picks what to look at.
 const WORKFLOW_STAGES = [
-  { key: 'drafting', label: 'Drafting', color: 'var(--muted)', soft: 'var(--line-soft)', statuses: ['Queued','Approved'], summaryFields: ['queued','approved'], open: true },
+  { key: 'drafting', label: 'Drafting', color: 'var(--muted)', soft: 'var(--line-soft)', statuses: ['Queued','Approved'], summaryFields: ['queued','approved'], open: false },
   { key: 'sent', label: 'Awaiting first response', color: 'var(--sky)', soft: 'var(--sky-soft)', statuses: ['Sent'], summaryFields: ['sent'], open: false },
-  { key: 'replied', label: 'In conversation', color: 'var(--indigo)', soft: 'var(--indigo-soft)', statuses: ['Replied'], summaryFields: ['ever_replied'], open: true },
-  { key: 'quote', label: 'Quote requested', color: 'var(--dup)', soft: 'var(--dup-soft)', statuses: ['QuoteRequested'], summaryFields: ['quote_requested'], open: true },
+  { key: 'replied', label: 'In conversation', color: 'var(--indigo)', soft: 'var(--indigo-soft)', statuses: ['Replied'], summaryFields: ['ever_replied'], open: false },
+  { key: 'quote', label: 'Quote requested', color: 'var(--dup)', soft: 'var(--dup-soft)', statuses: ['QuoteRequested'], summaryFields: ['quote_requested'], open: false },
   { key: 'won', label: 'Won', color: 'var(--valid)', soft: 'var(--valid-soft)', statuses: ['Won'], summaryFields: ['won'], open: false },
   { key: 'lost', label: 'Lost', color: 'var(--invalid)', soft: 'var(--invalid-soft)', statuses: ['Lost'], summaryFields: ['lost'], open: false },
 ];
@@ -1761,9 +1759,6 @@ async function loadServerProspects(cid) {
   });
   campCurrentCid = cid;
   campSelectedIds = new Set();
-  const counts = {Queued:0,Sent:0,Replied:0,Won:0};
-  rows.forEach(r => { if(counts[r.status]!==undefined) counts[r.status]++; });
-  set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
   document.getElementById('emailCards').innerHTML = renderProspectStageSections(rows, cid, draftsByCp, followupDraftsByCp);
   document.querySelectorAll('#emailCards textarea.ebody').forEach(autoGrow);
   renderCampBulkBar();
@@ -2199,9 +2194,6 @@ async function rejectReplyDraft(id) {
 function renderEmailCards() {
   const camp = campaigns.find(c=>c.id===selectedCampId);
   if(!camp) return;
-  const counts = {Queued:0,Sent:0,Replied:0,Won:0};
-  camp.prospects.forEach(p => { if(counts[p.cpStatus]!==undefined) counts[p.cpStatus]++; });
-  set('cs_q',counts.Queued); set('cs_s',counts.Sent); set('cs_r',counts.Replied); set('cs_w',counts.Won);
   // Demo mode has no server-side campaign metadata (status/turnover/funnel
   // counts) to fill the board header with -- it reuses the same container
   // as server mode for the Prospects list, but only the bits it actually
