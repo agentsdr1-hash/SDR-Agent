@@ -544,9 +544,16 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
     <p class="funnel-hint" style="margin-top:16px;">Click a stage to jump to it below.</p>
     <div id="campBoardFunnel"></div>
 
-    <div class="mt16 hidden" id="campApprovedRepliesWrap">
-      <div id="campApprovedRepliesList"></div>
-    </div>
+    <details class="stage-section mt16 hidden" id="campApprovedRepliesWrap" style="--stage-color:var(--valid);--stage-soft:var(--valid-soft);">
+      <summary>
+        <div class="stage-section-title">
+          <svg class="stage-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          <h3>Approved, awaiting send</h3>
+        </div>
+        <span class="stage-count" id="campApprovedRepliesCount">0</span>
+      </summary>
+      <div class="stage-body" id="campApprovedRepliesList"></div>
+    </details>
 
     <div style="margin-top:22px;padding-top:16px;border-top:1px solid var(--line);">
       <div class="panel-head" style="margin-bottom:4px;">
@@ -2097,9 +2104,10 @@ async function loadReplyDrafts() {
     ]);
     set('rdCount', drafts.length);
     if(scoped) {
-      if(!approved.length) { approvedWrap.classList.add('hidden'); approvedList.innerHTML=''; return; }
+      if(!approved.length) { approvedWrap.classList.add('hidden'); approvedWrap.open = false; approvedList.innerHTML=''; return; }
       approvedWrap.classList.remove('hidden');
-      approvedList.innerHTML = `<p class="hint" style="margin:0 0 8px;">${approved.length} approved, awaiting send:</p>` + approved.map(d => approvedReplyDraftCard(d, false)).join('');
+      set('campApprovedRepliesCount', approved.length);
+      approvedList.innerHTML = approved.map(d => approvedReplyDraftCard(d, false)).join('');
       return;
     }
     if(!drafts.length && !approved.length) { list.innerHTML=''; empty.textContent='No reply drafts waiting on you right now.'; empty.classList.remove('hidden'); return; }
