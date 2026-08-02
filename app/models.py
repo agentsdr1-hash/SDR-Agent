@@ -9,6 +9,24 @@ class ImportSummary(BaseModel):
     columns_mapped: dict[str, str]
 
 
+class BusinessCardFields(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    company: Optional[str] = None
+    phone: Optional[str] = None
+    title: Optional[str] = None
+
+
+class BusinessCardConfirm(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    company: Optional[str] = None
+    phone: Optional[str] = None
+    title: Optional[str] = None
+
+
 class CustomerImportSummary(BaseModel):
     filename: str
     customer_count: int

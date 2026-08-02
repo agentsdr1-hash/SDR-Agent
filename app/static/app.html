@@ -467,6 +467,34 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
     </div>
     <div class="status" id="importStatus"></div>
     <div class="seed-note">Existing-customer check seeded with: jsmith@acmecorp.com · dlee@globex.com · re-imported prospects already sent an email in a prior campaign are flagged "Already Contacted", not re-queued</div>
+
+    <div class="divider">or scan a business card</div>
+    <div class="dropzone" id="cardDropzone">
+      <div class="dz-title">Drop a business card photo here, or click to browse</div>
+      <div class="dz-sub">JPEG, PNG, or WEBP — Claude reads the contact details (requires the AI Brain connector in Admin)</div>
+      <input type="file" id="cardFileInput" accept="image/*" capture="environment"/>
+    </div>
+    <div class="status" id="cardScanStatus"></div>
+    <div class="hidden" id="cardReviewBox" style="margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:16px;">
+      <h3 style="margin:0 0 4px;font-size:14px;">Review before adding</h3>
+      <p class="hint" style="margin:0 0 12px;">Claude read this from the photo — double-check before it's added as a lead (OCR can misread a card).</p>
+      <div class="row">
+        <input type="text" id="cardFirstName" placeholder="First name"/>
+        <input type="text" id="cardLastName" placeholder="Last name"/>
+      </div>
+      <div class="row mt12">
+        <input type="text" id="cardEmail" placeholder="Email"/>
+        <input type="text" id="cardCompany" placeholder="Company"/>
+      </div>
+      <div class="row mt12">
+        <input type="text" id="cardPhone" placeholder="Phone"/>
+        <input type="text" id="cardTitle" placeholder="Title (saved as a note)"/>
+      </div>
+      <div class="row mt12">
+        <button class="btn" id="cardConfirmBtn">Add contact</button>
+        <button class="btn sec" id="cardCancelBtn">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <div class="panel hidden" id="pResults">
@@ -1314,6 +1342,60 @@ document.getElementById('urlBtn').addEventListener('click', async () => {
   } else {
     setS('importStatus','URL import requires server mode. Use file upload instead.', true);
   }
+});
+
+// ---- Scan a business card -- Claude vision reads a photo's contact
+// fields for review, then reuses the exact same one-row-batch ->
+// serverValidate() pipeline as any CSV import once confirmed. ----
+const cardDropzone = document.getElementById('cardDropzone');
+const cardFileInput = document.getElementById('cardFileInput');
+cardDropzone.addEventListener('click', () => cardFileInput.click());
+cardDropzone.addEventListener('dragover', e => { e.preventDefault(); cardDropzone.classList.add('drag'); });
+cardDropzone.addEventListener('dragleave', () => cardDropzone.classList.remove('drag'));
+cardDropzone.addEventListener('drop', e => { e.preventDefault(); cardDropzone.classList.remove('drag'); if(e.dataTransfer.files.length) scanBusinessCard(e.dataTransfer.files[0]); });
+cardFileInput.addEventListener('change', () => { if(cardFileInput.files.length) scanBusinessCard(cardFileInput.files[0]); });
+
+async function scanBusinessCard(file) {
+  if(MODE!=='server') return setS('cardScanStatus','Business card scanning requires server mode.', true);
+  document.getElementById('cardReviewBox').classList.add('hidden');
+  setS('cardScanStatus','Scanning card…');
+  const form = new FormData(); form.append('file', file);
+  const r = await fetch('/prospects/scan-business-card', {method:'POST', body:form});
+  const d = await r.json();
+  if(!r.ok) return setS('cardScanStatus', d.detail||'Could not read this card.', true);
+  setS('cardScanStatus','Read the card — review the fields below before adding.');
+  document.getElementById('cardFirstName').value = d.first_name || '';
+  document.getElementById('cardLastName').value = d.last_name || '';
+  document.getElementById('cardEmail').value = d.email || '';
+  document.getElementById('cardCompany').value = d.company || '';
+  document.getElementById('cardPhone').value = d.phone || '';
+  document.getElementById('cardTitle').value = d.title || '';
+  document.getElementById('cardReviewBox').classList.remove('hidden');
+}
+
+document.getElementById('cardCancelBtn').addEventListener('click', () => {
+  document.getElementById('cardReviewBox').classList.add('hidden');
+  setS('cardScanStatus','');
+  cardFileInput.value = '';
+});
+
+document.getElementById('cardConfirmBtn').addEventListener('click', async () => {
+  const payload = {
+    first_name: document.getElementById('cardFirstName').value.trim() || null,
+    last_name: document.getElementById('cardLastName').value.trim() || null,
+    email: document.getElementById('cardEmail').value.trim() || null,
+    company: document.getElementById('cardCompany').value.trim() || null,
+    phone: document.getElementById('cardPhone').value.trim() || null,
+    title: document.getElementById('cardTitle').value.trim() || null,
+  };
+  setS('cardScanStatus','Adding contact…');
+  const r = await fetch('/prospects/scan-business-card/confirm', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  const d = await r.json();
+  if(!r.ok) return setS('cardScanStatus', d.detail||'Failed to add contact', true);
+  document.getElementById('cardReviewBox').classList.add('hidden');
+  cardFileInput.value = '';
+  setS('cardScanStatus','Added — validating…');
+  serverValidate(d.batch_id);
 });
 
 function mapColumns(cols) {
