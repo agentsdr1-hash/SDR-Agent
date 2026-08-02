@@ -14,6 +14,7 @@ Live implementations matching the Build Tracker exactly:
 | **OBJ-015 Administration Console** | ✓ `/admin` page | ✓ suppression list | — (rule-based opt-out keyword detection) |
 | **OBJ-011-lite Sales Outcomes** | — (via API) | ✓ Quote → Won/Lost, deal value | — |
 | **OBJ-014 Audit & Monitoring** | ✓ dashboard panel | ✓ event log across every object | — |
+| **OBJ-009 Knowledge Base + AI reply drafting** | ✓ `/admin` AI Brain panel | ✓ `/ai/*` config+status, kb_qa.py AI-first/rule-based-fallback composer | ✓ Claude (Anthropic), bring-your-own API key |
 
 ## Setting up email (OBJ-016) — Gmail via App Password
 
@@ -35,6 +36,29 @@ doesn't cost anything with Gmail) looking for unread mail from any prospect
 currently in `Sent` status. No public URL or webhook needed — this reaches
 out to Gmail, Gmail never has to reach in, so it works the same whether this
 runs on your laptop or a hosted server.
+
+## Setting up the AI Brain (Claude reply drafting) — bring your own subscription
+
+Optional. Upgrades reply drafting from rule-based keyword matching to
+Claude-generated drafts, grounded only in this app's own Knowledge Base
+Q&A entries and stock catalog — Claude is instructed not to invent
+products, pricing, or policies that aren't in there. Every draft still
+requires human approval before it's sent, exactly like today.
+
+This app ships with **no API key of its own** — each deployment connects
+its own Anthropic subscription:
+
+1. Get an API key: https://console.anthropic.com/settings/keys
+2. Set it from the Admin tab (**AI Brain — Claude connector** panel) — takes
+   effect immediately, no restart. Or copy `.env.example` to `.env` and fill
+   in `ANTHROPIC_API_KEY` (and optionally `ANTHROPIC_MODEL`, if your plan
+   needs a specific model name other than the default).
+3. Click **Test connection** to confirm the key actually works.
+
+Without a key connected, reply drafting keeps working exactly as it does
+now (rule-based matching) — nothing here is required, and a failed/expired
+key falls back to the rule-based composer automatically rather than
+leaving a customer's reply undrafted.
 
 ## Run it
 
