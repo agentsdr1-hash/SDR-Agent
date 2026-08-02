@@ -6,3 +6,4 @@ python-multipart>=0.0.9
 requests>=2.31
 python-dotenv>=1.0
 psycopg2-binary>=2.9  # only used when DATABASE_URL is set (Postgres/Supabase); SQLite needs no driver
+anthropic>=0.40  # Claude reply-drafting -- only used when a client API key is configured (Admin tab)

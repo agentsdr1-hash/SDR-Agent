@@ -226,6 +226,18 @@ class DailySendLimitInput(BaseModel):
     limit: int
 
 
+class AIStatus(BaseModel):
+    configured: bool
+    model: Optional[str] = None
+    source: str = "none"  # 'database' (set via Admin tab) / 'environment' / 'none'
+    key_display: Optional[str] = None  # masked, e.g. 'sk-ant-...ab12' -- never the real key
+
+
+class AIConfigInput(BaseModel):
+    api_key: str
+    model: Optional[str] = None
+
+
 class PollResult(BaseModel):
     checked_at: str
     replies_found: int

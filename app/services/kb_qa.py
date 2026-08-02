@@ -1,18 +1,28 @@
 """
 Knowledge Base Q&A + smart reply drafting.
 
-Rule-based (keyword/tag overlap against stored KB entries and the real
-stock catalog), not an LLM -- there's no model API key wired into this
-app. Every draft this produces requires human approval before it's sent
+Two composers, tried in order:
+  1. compose_smart_reply_ai() -- Claude (Anthropic), grounded in this app's
+     own KB entries + stock catalog, when a client-supplied API key is
+     configured (app/integrations/ai_provider.py, set from the Admin tab --
+     bring-your-own-subscription, same pattern as Gmail). Produces a more
+     natural, human-sounding draft than keyword matching can.
+  2. compose_smart_reply() -- rule-based (keyword/tag overlap against
+     stored KB entries and the real stock catalog), used whenever Claude
+     isn't configured or a request to it fails for any reason. This is the
+     original always-available path -- the app works out of the box with
+     no AI key, same as it always has.
+Every draft either one produces requires human approval before it's sent
 (app/services/approval_and_delivery.py handles the actual Gmail send),
-same as outbound drafts -- nothing here auto-sends. If a reply doesn't
-match anything, the fallback is a short holding reply flagged low
+same as outbound drafts -- nothing here auto-sends. If neither path finds
+anything to say, the fallback is a short holding reply flagged low
 confidence, not a confident-sounding guess.
 """
 import re
 from datetime import datetime, timezone
 
 from app.db import get_conn
+from app.integrations import ai_provider
 from app.services import stock_catalog
 from app.services.audit import log_event
 from app.services.campaign_management import COMPANY_NAME
@@ -208,10 +218,60 @@ def compose_smart_reply(first_name: str | None, company: str | None, reply_text:
     }
 
 
+_AI_SYSTEM_PROMPT_TEMPLATE = """You are a sales rep at {company}, a structural steel distributor. Draft a short, warm, human-sounding email reply to a prospect who just replied to our outreach.
+
+Ground every factual claim ONLY in the knowledge base and stock catalog below -- never invent products, pricing, or policies that aren't there. If the reply doesn't match anything in the knowledge base, keep the reply short and ask a clarifying question instead of guessing.
+
+End by moving the conversation toward a quote: ask for whatever grade/size/quantity specs are still missing, or say a formal quote is on its way shortly if everything needed has already been given.
+
+Knowledge base Q&A:
+{kb_context}
+
+Stock catalog families we carry:
+{stock_context}
+
+Reply with ONLY the email body text -- no subject line, no preamble, no markdown formatting -- just the plain-text email, starting with a greeting and ending with a sign-off as "Best,\n{company} Sales Team"."""
+
+
+def compose_smart_reply_ai(first_name: str | None, company: str | None, reply_text: str,
+                            reply_subject: str | None = None) -> dict | None:
+    """Attempts an AI-drafted reply via Claude, grounded in the same KB
+    entries + stock catalog the rule-based composer searches. Returns None
+    (never raises) whenever Claude isn't configured or a request to it
+    fails for any reason -- this function's only job is to produce a
+    better draft when it can, not to surface AI-provider errors to
+    whoever's reviewing a reply; create_reply_draft() falls back to the
+    always-available rule-based composer on None."""
+    if not ai_provider.is_configured():
+        return None
+    kb_entries = list_kb_entries()
+    kb_context = "\n".join(f"Q: {e['question']}\nA: {e['answer']}" for e in kb_entries) or "(no Q&A entries yet)"
+    stock_families = stock_catalog.top_families(30)
+    stock_context = ", ".join(stock_families) or "(no stock catalog loaded)"
+    system_prompt = _AI_SYSTEM_PROMPT_TEMPLATE.format(company=COMPANY_NAME, kb_context=kb_context, stock_context=stock_context)
+    user_prompt = f"Prospect: {first_name or 'there'} at {company or 'their company'}\n\nTheir message:\n{reply_text}"
+    try:
+        body = ai_provider.draft_reply(system_prompt, user_prompt)
+    except ai_provider.AIRequestError:
+        return None
+    if not body:
+        return None
+    entry_word = "entry" if len(kb_entries) == 1 else "entries"
+    return {
+        "subject": reply_subject_for(reply_subject),
+        "body": body,
+        "confidence": "ai",
+        "matched_summary": f"Drafted by Claude ({ai_provider.configured_model()}), grounded in {len(kb_entries)} KB {entry_word} + stock catalog",
+    }
+
+
 def create_reply_draft(campaign_prospect_id: int, first_name: str | None, company: str | None,
                         reply_subject: str | None, reply_text: str) -> int:
     """Generate and store a smart-reply draft for a real or simulated inbound
-    reply. Returns the new reply_drafts.id.
+    reply. Returns the new reply_drafts.id. Tries the AI composer first
+    (compose_smart_reply_ai), falling back to the rule-based one whenever
+    Claude isn't configured or its request fails -- see their respective
+    docstrings.
 
     source_reply_snippet stores the customer's actual message essentially in
     full (capped at 8000 chars, matching email_provider.check_for_replies'
@@ -219,7 +279,8 @@ def create_reply_draft(campaign_prospect_id: int, first_name: str | None, compan
     said, not just enough text to eyeball a one-line preview. The Lead
     Detail view renders it in full alongside our reply, not as a truncated
     quoted line."""
-    draft = compose_smart_reply(first_name, company, reply_text, reply_subject)
+    draft = compose_smart_reply_ai(first_name, company, reply_text, reply_subject) \
+        or compose_smart_reply(first_name, company, reply_text, reply_subject)
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         cur = conn.execute(

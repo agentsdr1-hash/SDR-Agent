@@ -1008,6 +1008,37 @@ textarea.ebody{width:100%;min-height:90px;overflow:hidden;resize:none;}
   </div>
 
   <div class="panel">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+      <div class="panel-head" style="margin:0;flex:1;"><h2>AI Brain — Claude connector</h2><span class="obj-tag">reply drafting</span></div>
+      <span id="aiSourceBadge"></span>
+    </div>
+    <p class="hint" style="margin:0 0 12px;">Upgrades reply drafting from rule-based keyword matching to Claude-generated drafts, grounded only in this app's own Knowledge Base Q&amp;A entries and stock catalog below — Claude is told not to invent products, pricing, or policies that aren't in there. Every draft still requires human approval before it's sent, same as today.</p>
+    <p class="hint" style="margin:0 0 12px;">Bring your own Anthropic subscription — this app ships with no API key of its own. Get one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com/settings/keys</a>. Without a key connected, reply drafting keeps working exactly as it does now (rule-based matching) — nothing here is required.</p>
+    <div class="grid g2">
+      <div class="stat"><div class="n" id="ai_c">–</div><div class="lbl">Claude configured</div></div>
+      <div class="stat"><div class="n" id="ai_m">–</div><div class="lbl">Model</div></div>
+    </div>
+    <div class="row mt12">
+      <button class="btn sec" id="aiTestBtn">Test connection</button>
+    </div>
+    <div class="mt16" style="border-top:1px solid var(--line);padding-top:16px;">
+      <div class="row">
+        <input type="password" id="aiApiKeyInput" placeholder="sk-ant-..." class="mono" autocomplete="off"/>
+        <button class="btn sec" id="aiKeyToggle" type="button" style="flex:0;">Show</button>
+      </div>
+      <div class="row mt12">
+        <input type="text" id="aiModelInput" placeholder="claude-sonnet-5 (default — override only if your plan needs a different model)"/>
+      </div>
+      <div class="row mt12">
+        <button class="btn" id="aiSaveBtn">Save</button>
+        <button class="btn danger hidden" id="aiClearBtn">Disconnect</button>
+      </div>
+      <div class="status" id="aiConfigStatus"></div>
+      <p class="hint" style="margin:12px 0 0;">Stored in this app's database (not encrypted) so it survives restarts — same trust boundary as the Gmail credentials above. Saving takes effect immediately, no restart needed.</p>
+    </div>
+  </div>
+
+  <div class="panel">
     <div class="panel-head"><h2>Suppression list</h2><span class="obj-tag">OBJ-015</span></div>
     <p class="hint" style="margin:0 0 10px;">Auto-populated when an opt-out is detected in a reply. Manually add here anytime. Checked at both campaign assignment and send time — nothing gets through.</p>
     <div class="row">
@@ -2162,7 +2193,9 @@ async function loadReplyDrafts() {
 // already shows, and a dashed divider instead of its own boxed card.
 function replyDraftCard(d, showCampaignTag, embedded) {
   const name = [d.first_name,d.last_name].filter(Boolean).join(' ')||'—';
-  const confBadge = d.confidence==='matched'
+  const confBadge = d.confidence==='ai'
+    ? `<span class="pill p-quote">✨ AI-drafted</span>`
+    : d.confidence==='matched'
     ? `<span class="pill p-valid">matched</span>`
     : `<span class="pill p-dup">fallback — no strong match</span>`;
   const campaignTag = showCampaignTag ? `<span class="pill p-neutral">${esc(campaignNamesById[d.campaign_id]||'Campaign #'+d.campaign_id)}</span>` : '';
@@ -3540,6 +3573,8 @@ function followupComposeBox(fu) {
 function threadComposeBox(rd) {
   const confBadge = rd.confidence==='quote_summary'
     ? `<span class="pill p-quote">quote summary</span>`
+    : rd.confidence==='ai'
+    ? `<span class="pill p-quote">✨ AI-drafted</span>`
     : rd.confidence==='matched'
     ? `<span class="pill p-valid">matched</span>`
     : `<span class="pill p-dup">fallback — no strong match</span>`;
@@ -4239,7 +4274,7 @@ function enterAdminTab() {
     // Already unlocked this session.
     document.getElementById('adminGate').classList.add('hidden');
     document.getElementById('adminContent').classList.remove('hidden');
-    loadEmailStatus(); loadSuppression();
+    loadEmailStatus(); loadSuppression(); loadAIStatus();
     return;
   }
   document.getElementById('adminGate').classList.remove('hidden');
@@ -4373,6 +4408,62 @@ document.getElementById('gmailClearBtn').addEventListener('click', async () => {
   setS('gmailConfigStatus','Disconnected — DB-stored credentials cleared.');
   loadEmailStatus();
   checkEmailBadge();
+});
+
+// ---- AI Brain (Claude) connector -- same shape as the Gmail section
+// above, one endpoint family (/ai/*) instead of /email/*. ----
+async function loadAIStatus() {
+  if(MODE!=='server') { set('ai_c','N/A (demo)'); set('ai_m','—'); document.getElementById('aiSourceBadge').innerHTML=''; return; }
+  try {
+    const r = await fetch('/ai/status'); const d = await r.json();
+    set('ai_c', d.configured?'✓ Yes':'✗ No');
+    set('ai_m', d.model || '—');
+    const badgeMap = {database:['p-valid','Configured here (database)'],environment:['p-dup','Configured via environment variable'],none:['p-neutral','Not configured']};
+    const [cls,label] = badgeMap[d.source]||badgeMap.none;
+    document.getElementById('aiSourceBadge').innerHTML = `<span class="pill ${cls}">${label}</span>`;
+    document.getElementById('aiClearBtn').classList.toggle('hidden', d.source!=='database');
+    const modelInput = document.getElementById('aiModelInput');
+    if(document.activeElement!==modelInput && d.model) modelInput.placeholder = d.model;
+  } catch(e) {}
+}
+
+document.getElementById('aiTestBtn').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('aiConfigStatus','Requires server mode.',true);
+  setS('aiConfigStatus','Testing…');
+  const r = await adminFetch('/ai/test-connection',{method:'POST'});
+  const d = await r.json();
+  setS('aiConfigStatus', d.message||d.detail||'', !r.ok);
+});
+
+document.getElementById('aiKeyToggle').addEventListener('click', () => {
+  const inp = document.getElementById('aiApiKeyInput');
+  const showing = inp.type==='text';
+  inp.type = showing ? 'password' : 'text';
+  document.getElementById('aiKeyToggle').textContent = showing ? 'Show' : 'Hide';
+});
+
+document.getElementById('aiSaveBtn').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('aiConfigStatus','Requires server mode.',true);
+  const api_key = document.getElementById('aiApiKeyInput').value.trim();
+  const model = document.getElementById('aiModelInput').value.trim();
+  if(!api_key) return setS('aiConfigStatus','Enter an Anthropic API key.',true);
+  const r = await adminFetch('/ai/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key, model: model||null})});
+  const d = await r.json();
+  if(!r.ok) return setS('aiConfigStatus', d.detail||'Failed to save', true);
+  document.getElementById('aiApiKeyInput').value='';
+  setS('aiConfigStatus','Saved — Claude is configured. Click "Test connection" to confirm it works.');
+  loadAIStatus();
+});
+
+document.getElementById('aiClearBtn').addEventListener('click', async () => {
+  if(MODE!=='server') return setS('aiConfigStatus','Requires server mode.',true);
+  const r = await adminFetch('/ai/config',{method:'DELETE'});
+  const d = await r.json();
+  if(!r.ok) return setS('aiConfigStatus', d.detail||'Failed to disconnect', true);
+  document.getElementById('aiApiKeyInput').value='';
+  document.getElementById('aiModelInput').value='';
+  setS('aiConfigStatus','Disconnected — reply drafting falls back to rule-based matching.');
+  loadAIStatus();
 });
 
 async function loadSuppression() {

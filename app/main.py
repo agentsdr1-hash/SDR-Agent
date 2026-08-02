@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.db import init_db, close_pool
-from app.routers import prospects, campaigns, reports, email as email_router, admin, audit, dbtables, knowledge_base, reply_drafts, leads, followup_drafts
+from app.routers import prospects, campaigns, reports, email as email_router, admin, audit, dbtables, knowledge_base, reply_drafts, leads, followup_drafts, ai as ai_router
 from app.integrations import email_provider
 from app.services import inbox_monitor, followups
 
@@ -36,6 +36,7 @@ app.include_router(reply_drafts.router)
 app.include_router(followup_drafts.router)
 app.include_router(leads.router)
 app.include_router(knowledge_base.router)
+app.include_router(ai_router.router)
 # Future objects plug in the same way, e.g.:
 # from app.routers import outreach
 # app.include_router(outreach.router)
