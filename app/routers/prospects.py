@@ -8,14 +8,16 @@ new objects add routes, they don't add new tools.
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
 from app.db import get_conn
-from app.models import ImportSummary, ValidationSummary, ProspectRecord, ProspectEdit
+from app.models import ImportSummary, ValidationSummary, ProspectRecord, ProspectEdit, BusinessCardFields, BusinessCardConfirm
 from app.services.prospect_import import (
     import_prospect_file,
     import_prospect_file_from_url,
+    create_prospect_from_scan,
     ImportError_,
 )
 from app.services.prospect_validation import validate_batch, edit_prospect
 from app.services.leads import lead_number_for, NON_LEAD_STATUSES
+from app.services.business_card import scan_business_card, BusinessCardScanError
 
 router = APIRouter(prefix="/prospects", tags=["prospects"])
 
@@ -35,6 +37,31 @@ def import_prospects_from_url(url: str):
         return import_prospect_file_from_url(url)
     except ImportError_ as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/scan-business-card", response_model=BusinessCardFields, tags=["AI Brain"])
+async def scan_business_card_endpoint(file: UploadFile = File(...)):
+    """Reads a photo of a business card via Claude vision and returns the
+    extracted fields for review -- nothing is written to the database
+    yet. Requires the AI Brain (Claude) connector to be configured from
+    the Admin tab; fails with a clear 422 otherwise, same as any other
+    not-configured-yet error in this app."""
+    content = await file.read()
+    media_type = file.content_type or "image/jpeg"
+    try:
+        return scan_business_card(content, media_type)
+    except BusinessCardScanError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/scan-business-card/confirm", response_model=ImportSummary, tags=["AI Brain"])
+def confirm_business_card_scan(payload: BusinessCardConfirm):
+    """Writes the reviewed/edited fields from a business-card scan as a
+    one-row import batch -- the returned batch_id is then handed to the
+    normal POST /prospects/validate/{batch_id}, same as any CSV import,
+    so the rest of the Import tab's flow (validation results, campaign
+    assignment) needs no special-casing for where the row came from."""
+    return create_prospect_from_scan(payload.model_dump())
 
 
 @router.post("/validate/{batch_id}", response_model=ValidationSummary, tags=["OBJ-002"])

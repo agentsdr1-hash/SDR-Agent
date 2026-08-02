@@ -177,3 +177,53 @@ def import_prospect_file(filename: str, content: bytes) -> ImportSummary:
         row_count=len(df),
         columns_mapped=mapping,
     )
+
+
+def create_prospect_from_scan(fields: dict) -> ImportSummary:
+    """Writes one reviewed/confirmed business-card scan (see
+    app/services/business_card.py) as a one-row import batch -- same shape
+    as a CSV import batch, so it flows through the exact same
+    validate_batch()/assign_prospect_to_campaign() pipeline as any other
+    prospect, with no separate code path to keep in sync. Deliberately
+    doesn't hard-reject a missing/malformed email here, matching this
+    module's own import_prospect_file() philosophy in the module
+    docstring above -- that's validate_batch()'s job, not this one's; the
+    row still gets written and shows up as Invalid for the person to fix
+    inline, the same as any other bad row would.
+
+    lead_source defaults to 'Trade Show' -- the natural origin for a
+    business-card capture -- editable afterward like any other field."""
+    batch_id = str(uuid.uuid4())[:8]
+    now = datetime.now(timezone.utc).isoformat()
+
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO import_batches (batch_id, filename, row_count, imported_at) VALUES (?, ?, ?, ?)",
+            (batch_id, "business_card_scan", 1, now),
+        )
+        cur = conn.execute(
+            """INSERT INTO prospects_raw
+               (batch_id, row_number, first_name, last_name, email, company, phone, lead_source, status)
+               VALUES (?, 1, ?, ?, ?, ?, ?, 'Trade Show', 'Pending') RETURNING id""",
+            (batch_id, fields.get("first_name"), fields.get("last_name"),
+             fields.get("email"), fields.get("company"), fields.get("phone")),
+        )
+        new_id = cur.fetchone()["id"]
+
+    log_event("prospect_import", "batch", batch_id, "Imported 1 row from a scanned business card")
+
+    # Job title has no column of its own on prospects_raw -- captured as a
+    # note instead of being silently dropped, so it isn't lost once
+    # Claude did the work of reading it off the card.
+    title = (fields.get("title") or "").strip()
+    if title:
+        from app.services.leads import add_note
+        add_note(new_id, f"Title (from scanned business card): {title}")
+
+    return ImportSummary(
+        batch_id=batch_id,
+        filename="business_card_scan",
+        row_count=1,
+        columns_mapped={"first_name": "first_name", "last_name": "last_name", "email": "email",
+                         "company": "company", "phone": "phone"},
+    )
