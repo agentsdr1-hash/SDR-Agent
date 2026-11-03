@@ -1,5 +1,10 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
 <title>Operation Bosphorus</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
@@ -245,8 +250,15 @@ dialog::backdrop{background:rgba(3,6,14,.7)}
   .status .label{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+[hidden]{display:none!important}
+img{max-width:100%}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.gate{max-width:440px;margin:6vh auto 0;display:grid;gap:16px}
+.ph{width:100%;height:100%;display:grid;place-items:center;color:var(--muted);font:700 11px/1 var(--f-mono)}
 :root{--star:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 4 63.4 17.6 82.5 17.5 82.4 36.6 96 50 82.4 63.4 82.5 82.5 63.4 82.4 50 96 36.6 82.4 17.5 82.5 17.6 63.4 4 50 17.6 36.6 17.5 17.5 36.6 17.6Z'/%3E%3C/svg%3E")}
 </style>
+</head>
+<body>
 
 <header class="bar">
   <div class="wrap">
@@ -268,6 +280,8 @@ dialog::backdrop{background:rgba(3,6,14,.7)}
 <dialog id="dlg"><div id="dlg-body"></div></dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
 <script>
 "use strict";
 /* ============================================================
@@ -491,7 +505,8 @@ function avatar(key, cls = "") {
   const c = crewBy(key); if (!c) return `<span class="av ${cls}">?</span>`;
   const prof = D.crew.find(x => x.id === key) || {};
   const i = crewIdx(key);
-  const inner = prof.photo ? `<img src="${h(prof.photo)}" alt="">` : h(c.name[0]);
+  const src = mediaSrc(prof.photo ? {url: prof.photo} : prof.photoPath ? {path: prof.photoPath} : null);
+  const inner = src ? `<img src="${h(src)}" alt="">` : h(c.name[0]);
   return `<span class="av c${i} ${cls}" title="${h(c.name)}">${inner}</span>`;
 }
 function toast(msg) {
@@ -499,47 +514,70 @@ function toast(msg) {
   clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 3200);
 }
 function errMsg(e) {
-  const code = e && e.code;
-  if (code === "invalid_argument") return "You can view this page but not change it. Ask the organizer to invite you as an Editor.";
-  if (code === "quota_exceeded") return "Storage is full. Delete a few old uploads, then try again.";
-  if (code === "resource_exhausted") return "Too many changes at once. Wait a few seconds and try again.";
-  if (code === "not_granted") return "This page needs storage permission. Open the artifact's Permissions menu to allow it.";
+  const code = e && (e.code || e.statusCode);
+  if (code === "42501" || code === "403" || code === 403) return "You're not allowed to change that. Only the organizer can, or your email isn't on the crew list.";
+  if (code === "quota_exceeded") return "This browser is out of storage space. Delete a few uploads and try again.";
+  if (code === "413" || code === 413) return "That file is too big. Keep uploads under 50 MB.";
   return (e && e.message) || "That didn't save. Check your connection and try again.";
 }
 async function act(p, ok) { try { await p; if (ok) toast(ok); return true; } catch (e) { toast(errMsg(e)); return false; } }
 
 /* ============================================================
-   STORE — shared (claude db + assets) or this-browser fallback
+   STORE — Supabase (shared, signed-in crew) or this-browser fallback
+   Data model: one table `docs(coll, id, data jsonb)`; see supabase/schema.sql
    ============================================================ */
 const COLLS = ["crew","challenges","completions","polls","votes","vault","jokes","adjust","bookings","secrets","settings"];
 const D = {}; COLLS.forEach(c => D[c] = []);
+const CFG = window.BP_CONFIG || {};
+const SB = (CFG.supabaseUrl && CFG.supabaseAnonKey && !/YOUR_/.test(CFG.supabaseUrl) && window.supabase)
+  ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey) : null;
+const BUCKET = "vault";
+const MAX_UPLOAD = 50 * 1024 * 1024;
+
 const Store = {
-  mode: "connecting", db: null, assets: null, user: null, owner: false,
+  mode: "connecting", owner: false, member: null, channel: null,
   async init() {
-    let db = null, assets = null, user = null;
-    const c = window.claude;
-    if (c && typeof c.use === "function") {
-      [db, assets, user] = await Promise.all(["db","assets","user"].map(n => c.use(n).catch(() => null)));
-    }
-    this.db = db; this.assets = assets; this.user = user;
-    if (user) { try { this.owner = await user.isOwner(); } catch {} }
-    if (db) {
-      this.mode = "live";
-      let confirmed = false;
-      const timer = setTimeout(() => { if (!confirmed) showBanner("Shared data can't be reached yet. What you see may be out of date; it refreshes by itself.", "warn"); }, 10000);
-      COLLS.forEach(name => {
-        db.collection(name).onSnapshot(snap => {
-          if (!snap.metadata.fromCache && !confirmed) { confirmed = true; clearTimeout(timer); hideBanner(); }
-          D[name] = snap.docs.map(d => ({id: d.id, ...d.data()}));
-          changed();
-        }, err => { clearTimeout(timer); showBanner(err.code === "revoked" ? "Access to shared data ended. You can still read the plan." : "Live updates stopped. Reload the page to reconnect.", "warn"); });
-      });
-    } else {
+    if (!SB) {
       this.mode = "local";
       COLLS.forEach(name => D[name] = this.localAll(name));
-      showBanner("Offline mode: votes, photos and points are saved in this browser only. Open the shared link to play with the crew.");
+      showBanner("Preview mode: Supabase isn't configured, so everything is saved in this browser only. See README to connect it.");
+      changed(); paintStatus(); return true;
     }
-    changed(); paintStatus();
+    const {data: {session}} = await SB.auth.getSession();
+    if (!session) { this.mode = "signed-out"; paintStatus(); showGate(); return false; }
+    const {data: member, error} = await SB.from("crew_members").select("crew_key,is_owner").eq("email", session.user.email.toLowerCase()).maybeSingle();
+    if (error || !member) { await SB.auth.signOut(); this.mode = "signed-out"; showGate("That email isn't on the crew list. Ask the organizer to add it."); return false; }
+    this.member = member; this.owner = !!member.is_owner;
+    ME = member.crew_key;
+    this.mode = "live";
+    await this.loadAll();
+    this.subscribe();
+    paintStatus(); return true;
+  },
+  async loadAll() {
+    const next = {}; COLLS.forEach(c => next[c] = []);
+    for (let from = 0; ; from += 1000) {
+      const {data, error} = await SB.from("docs").select("coll,id,data").range(from, from + 999);
+      if (error) { showBanner("Couldn't load shared data. Check your connection; it retries when you reload.", "warn"); return; }
+      data.forEach(r => { if (next[r.coll]) next[r.coll].push({id: r.id, ...r.data}); });
+      if (data.length < 1000) break;
+    }
+    COLLS.forEach(c => D[c] = next[c]); hideBanner(); changed();
+  },
+  subscribe() {
+    let dropped = false;
+    this.channel = SB.channel("docs-live")
+      .on("postgres_changes", {event: "*", schema: "public", table: "docs"}, ev => {
+        const row = ev.eventType === "DELETE" ? ev.old : ev.new;
+        if (!row || !D[row.coll]) return;
+        const list = D[row.coll].filter(x => x.id !== row.id);
+        if (ev.eventType !== "DELETE") list.push({id: row.id, ...row.data});
+        D[row.coll] = list; changed();
+      })
+      .subscribe(status => {
+        if (status === "SUBSCRIBED") { if (dropped) { dropped = false; this.loadAll(); } hideBanner(); paintStatus(true); }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") { dropped = true; paintStatus(false); showBanner("Live updates paused. Reconnecting…", "warn"); }
+      });
   },
   localAll(name) { const o = LS.get("bp:db:" + name, {}); return Object.entries(o).map(([id, v]) => ({id, ...v})); },
   localWrite(name, fn) {
@@ -548,28 +586,90 @@ const Store = {
     D[name] = this.localAll(name); changed();
   },
   async put(name, id, data) {
-    if (this.mode === "live") return this.db.collection(name).doc(id).set(data);
-    this.localWrite(name, o => { o[id] = data; });
+    if (this.mode !== "live") return this.localWrite(name, o => { o[id] = data; });
+    const {error} = await SB.from("docs").upsert({coll: name, id, data, updated_by: ME});
+    if (error) throw error;
+    // Apply locally right away; the realtime echo is idempotent.
+    D[name] = [...D[name].filter(x => x.id !== id), {id, ...data}]; changed();
   },
   async del(name, id) {
-    if (this.mode === "live") return this.db.collection(name).doc(id).delete();
-    this.localWrite(name, o => { delete o[id]; });
+    if (this.mode !== "live") return this.localWrite(name, o => { delete o[id]; });
+    const doc = D[name].find(x => x.id === id);
+    const {error} = await SB.from("docs").delete().eq("coll", name).eq("id", id);
+    if (error) throw error;
+    D[name] = D[name].filter(x => x.id !== id); changed();
+    if (doc && doc.path) SB.storage.from(BUCKET).remove([doc.path]).catch(() => {});
   },
-  canUpload() { return this.mode === "local" || !!this.assets; },
+  canUpload() { return this.mode !== "signed-out"; },
   async upload(file) {
     const isVideo = file.type.startsWith("video/");
     if (this.mode === "live") {
-      if (!this.assets) throw {message: "Uploading needs Editor access. Ask the organizer to invite you as an Editor."};
       const blob = isVideo ? file : await shrink(file, 1800, .84).catch(() => file);
-      if (blob.size > 20 * 1024 * 1024) throw {message: "That file is over 20 MB. Trim the video or pick a shorter clip."};
-      const r = await this.assets.upload(blob);
-      return {url: r.url, assetId: r.id, kind: isVideo ? "video" : "image"};
+      if (blob.size > MAX_UPLOAD) throw {message: "That file is over 50 MB. Trim the video or pick a shorter clip."};
+      const ext = isVideo ? (file.name.split(".").pop() || "mp4").toLowerCase().replace(/[^a-z0-9]/g, "") : "jpg";
+      const path = `${ME}/${uid()}.${ext}`;
+      const {error} = await SB.storage.from(BUCKET).upload(path, blob, {contentType: isVideo ? file.type : "image/jpeg", upsert: false});
+      if (error) throw error;
+      return {path, kind: isVideo ? "video" : "image"};
     }
-    if (isVideo) throw {message: "Videos need the shared link. Offline mode keeps photos only."};
+    if (isVideo) throw {message: "Videos need the live site. Preview mode keeps photos only."};
     const small = await shrink(file, 900, .72);
     return {url: await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(small); }), kind: "image"};
   },
 };
+
+/* Private bucket: files are shown through signed links, fetched in batches and cached. */
+const SIGNED = new Map(); const PENDING = new Set(); let signTimer = 0;
+const SIGN_TTL = 60 * 60 * 24 * 7;
+function mediaSrc(o) {
+  if (!o) return "";
+  if (o.url) return o.url;
+  const path = o.path || o.photoPath;
+  if (!path || !SB) return "";
+  const hit = SIGNED.get(path);
+  if (hit && hit.exp > Date.now()) return hit.url;
+  PENDING.add(path);
+  clearTimeout(signTimer); signTimer = setTimeout(signPending, 30);
+  return "";
+}
+async function signPending() {
+  const paths = [...PENDING]; PENDING.clear(); if (!paths.length) return;
+  const {data, error} = await SB.storage.from(BUCKET).createSignedUrls(paths, SIGN_TTL);
+  if (error || !data) return;
+  const by = new Map(data.map(d => [d.path, d]));
+  // Cache misses too (deleted file), so a broken path can't trigger a render loop.
+  paths.forEach(p => { const d = by.get(p); SIGNED.set(p, d && d.signedUrl ? {url: d.signedUrl, exp: Date.now() + (SIGN_TTL - 3600) * 1000} : {url: "", exp: Date.now() + 300000}); });
+  changed();
+}
+
+/* Sign-in gate (email + password; only emails on the crew list can create an account). */
+function showGate(msg = "") {
+  $("#tabs").innerHTML = ""; current = null;
+  $("#view").innerHTML = `<section class="gate">
+    <div class="hero" style="padding:28px"><span class="stamp">Classified</span><h1 style="font-size:56px">Op · Bosphorus</h1>
+      <p class="sub">Crew access only. Sign in with the email the organizer put on the list.</p></div>
+    <form class="panel stack" id="gate-form">
+      ${msg ? `<p class="banner warn" style="margin:0">${h(msg)}</p>` : ""}
+      <label class="f">Email<input type="text" id="g-email" inputmode="email" autocomplete="email" required></label>
+      <label class="f">Password<input type="password" id="g-pass" autocomplete="current-password" minlength="8" required
+        style="background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%;color:var(--ink);font-size:15px"></label>
+      <div class="row"><button class="btn primary" type="submit" id="g-in">Sign in</button><button class="btn" type="button" id="g-up">First time? Create account</button></div>
+      <p class="muted" style="font-size:13px">Passwords need 8+ characters. You stay signed in on this device.</p>
+    </form></section>`;
+  const go = async signup => {
+    const email = $("#g-email").value.trim().toLowerCase(), password = $("#g-pass").value;
+    if (!email || password.length < 8) { toast("Enter your email and a password of 8+ characters."); return; }
+    $("#g-in").disabled = $("#g-up").disabled = true;
+    const {data, error} = signup ? await SB.auth.signUp({email, password}) : await SB.auth.signInWithPassword({email, password});
+    $("#g-in").disabled = $("#g-up").disabled = false;
+    if (error) { toast(/saving new user|not on the crew/i.test(error.message) ? "That email isn't on the crew list." : /invalid login/i.test(error.message) ? "Wrong email or password. First time here? Tap Create account." : error.message); return; }
+    if (signup && !data.session) { toast("Account created. Check your email to confirm it, then sign in."); return; }
+    if (await Store.init()) route(true);
+  };
+  $("#gate-form").onsubmit = e => { e.preventDefault(); go(false); };
+  $("#g-up").onclick = () => go(true);
+}
+
 function shrink(file, max, q) {
   return new Promise((res, rej) => {
     const url = URL.createObjectURL(file); const img = new Image();
@@ -590,6 +690,13 @@ function shrink(file, max, q) {
 let ME = LS.get("bp:me", null);
 function needMe() { if (ME) return true; pickMe(); return false; }
 function pickMe() {
+  if (Store.mode === "live") {
+    openDialog(`<div class="dlg"><div class="eyebrow">Signed in</div><h3>${h(crewBy(ME)?.name || "")}</h3>
+      <p class="muted">Your votes, uploads and points are signed with this account.</p>
+      <div class="row" style="justify-content:flex-end"><button class="btn" type="button" data-close>Close</button><button class="btn danger" type="button" id="sign-out">Sign out</button></div></div>`);
+    $("#sign-out").onclick = async () => { await SB.auth.signOut(); location.reload(); };
+    return;
+  }
   openDialog(`<div class="dlg">
     <div class="eyebrow">Identify yourself</div>
     <h3>Who's on this phone?</h3>
@@ -598,10 +705,13 @@ function pickMe() {
     <div class="row" style="justify-content:flex-end"><button class="btn" data-close type="button">Close</button></div></div>`);
   $$("[data-me]", $("#dlg")).forEach(b => b.onclick = () => { ME = b.dataset.me; LS.set("bp:me", ME); closeDialog(); paintStatus(); route(true); toast(`Signed in as ${crewBy(ME).name}`); });
 }
-function paintStatus() {
+let liveUp = true;
+function paintStatus(up) {
+  if (typeof up === "boolean") liveUp = up;
   const dot = $("#live-dot"), lab = $("#live-label");
-  dot.classList.toggle("live", Store.mode === "live");
-  lab.textContent = Store.mode === "live" ? "Live" : Store.mode === "local" ? "Offline" : "Connecting";
+  dot.classList.toggle("live", Store.mode === "live" && liveUp);
+  lab.textContent = Store.mode === "live" ? (liveUp ? "Live" : "Reconnecting") : Store.mode === "local" ? "Preview" : Store.mode === "signed-out" ? "Signed out" : "Connecting";
+  $("#me-chip").hidden = Store.mode === "signed-out";
   $("#me-chip").innerHTML = ME ? `${avatar(ME)}<span>${h(crewBy(ME).name)}</span>` : `<span class="av">?</span><span>Who are you?</span>`;
 }
 
@@ -722,7 +832,7 @@ VIEWS.mission = {
     const sc = scores(), lead = sc[0];
     const day = tripDay();
     const openPolls = D.polls.filter(p => !p.closed).length;
-    $("#pulse").innerHTML = `<div class="spread"><h3>Mission pulse</h3><span class="pill turq">${Store.mode === "live" ? "Live" : "This device"}</span></div>
+    $("#pulse").innerHTML = `<div class="spread"><h3>Mission pulse</h3><span class="pill turq">${Store.mode === "live" ? "Live" : "Preview"}</span></div>
       <dl class="kv" style="margin-top:12px">
         <dt>Today</dt><dd>${day ? `Day ${day}: ${h(DAYS[day - 1].title)}` : now < T_START ? "Pre-mission" : "Mission complete"}</dd>
         <dt>Leader</dt><dd>${lead && lead.total ? `${h(crewBy(lead.key).name)} · ${lead.total} pts` : "No points on the board yet"}</dd>
@@ -784,15 +894,14 @@ function editProfile(key) {
     <label class="f">Codename<input type="text" id="pf-nick" maxlength="40" value="${h(p.nick || "")}" placeholder="e.g. The Sommelier"></label>
     <label class="f">One-liner<input type="text" id="pf-tag" maxlength="120" value="${h(p.tagline || "")}" placeholder="Most likely to…"></label>
     <label class="f">Photo<input type="file" id="pf-photo" accept="image/*"></label>
-    ${Store.canUpload() ? "" : `<p class="muted" style="font-size:13px">Photo upload needs Editor access.</p>`}
-    <div class="row" style="justify-content:flex-end"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit" id="pf-save">Save</button></div>
+        <div class="row" style="justify-content:flex-end"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit" id="pf-save">Save</button></div>
   </form>`);
   $("#prof-form").onsubmit = async e => {
     e.preventDefault(); const btn = $("#pf-save"); btn.disabled = true; btn.textContent = "Saving…";
-    const data = {nick: $("#pf-nick").value.trim(), tagline: $("#pf-tag").value.trim(), photo: p.photo || "", photoId: p.photoId || ""};
+    const data = {nick: $("#pf-nick").value.trim(), tagline: $("#pf-tag").value.trim(), photo: p.photo || "", photoPath: p.photoPath || ""};
     const f = $("#pf-photo").files[0];
     try {
-      if (f) { const up = await Store.upload(f); data.photo = up.url; data.photoId = up.assetId || ""; }
+      if (f) { const up = await Store.upload(f); data.photo = up.url || ""; data.photoPath = up.path || ""; }
       await Store.put("crew", key, data); closeDialog(); toast("Profile saved");
     } catch (err) { toast(errMsg(err)); btn.disabled = false; btn.textContent = "Save"; }
   };
@@ -974,13 +1083,12 @@ VIEWS.vault = {
       <div class="head"><div class="eyebrow">Evidence locker</div><h2>The Vault</h2>
       <p>Daily photos, videos and the inside jokes nobody outside this crew will understand. Your first upload each trip day earns ${DAILY_DROP_PTS} points.</p></div>
       <form class="panel stack" id="up-form"><h3>Drop evidence</h3>
-        ${Store.canUpload() || Store.mode === "connecting" ? "" : `<p class="banner warn" style="margin:0">Uploading needs Editor access. Ask the organizer to invite you as an Editor.</p>`}
-        <div class="grid g2">
+                <div class="grid g2">
           <label class="f">Photo or video<input type="file" id="up-file" accept="image/*,video/*" multiple required></label>
           <label class="f">Day<select id="up-day"><option value="0">Pre-mission</option>${DAYS.map(d => `<option value="${d.n}" ${d.n === def ? "selected" : ""}>Day ${d.n} · ${h(d.label)}</option>`).join("")}</select></label>
         </div>
         <label class="f">Caption<input type="text" id="up-cap" maxlength="140" placeholder="What happened here?"></label>
-        <div class="row"><button class="btn primary" type="submit" id="up-btn">Upload</button><span class="muted" style="font-size:13px">Photos are resized before upload. Videos up to 20 MB.</span></div>
+        <div class="row"><button class="btn primary" type="submit" id="up-btn">Upload</button><span class="muted" style="font-size:13px">Photos are resized before upload. Videos up to 50 MB.</span></div>
       </form>
       <div class="chips" id="vault-days"></div>
       <div id="gallery"></div>
@@ -1019,7 +1127,8 @@ VIEWS.vault = {
     $$("[data-vd]").forEach(b => b.onclick = () => { vaultDay = b.dataset.vd; this.update(); });
     const items = D.vault.filter(v => vaultDay === "all" || String(v.day) === vaultDay).sort((a, b) => b.at - a.at);
     $("#gallery").innerHTML = items.length ? `<div class="gallery">${items.map(v => `<button class="shot" type="button" data-shot="${h(v.id)}" aria-label="${h(v.cap || "Open upload")}">
-        ${v.kind === "video" ? `<video src="${h(v.url)}" muted preload="metadata" playsinline></video><span class="play">VIDEO</span>` : `<img src="${h(v.url)}" alt="${h(v.cap || "")}" loading="lazy">`}
+        ${(() => { const s = mediaSrc(v); if (!s) return `<span class="ph">Loading…</span>`;
+          return v.kind === "video" ? `<video src="${h(s)}#t=0.1" muted preload="metadata" playsinline></video><span class="play">VIDEO</span>` : `<img src="${h(s)}" alt="${h(v.cap || "")}" loading="lazy">`; })()}
         <span class="cap">${h(crewBy(v.by)?.name || "")}${v.cap ? " · " + h(v.cap) : ""}</span></button>`).join("")}</div>`
       : `<div class="empty">${vaultDay === "all" ? "The Vault is empty. The first photo of the trip earns the daily drop." : "Nothing filed for this day yet."}</div>`;
     $$("[data-shot]").forEach(b => b.onclick = () => openShot(b.dataset.shot));
@@ -1035,7 +1144,8 @@ VIEWS.vault = {
 function openShot(id) {
   const v = D.vault.find(x => x.id === id); if (!v) return;
   const canRm = v.by === ME || Store.owner;
-  openDialog(`${v.kind === "video" ? `<video src="${h(v.url)}" controls playsinline></video>` : `<img src="${h(v.url)}" alt="${h(v.cap || "")}">`}
+  const s = mediaSrc(v);
+  openDialog(`${v.kind === "video" ? `<video src="${h(s)}" controls playsinline></video>` : `<img src="${h(s)}" alt="${h(v.cap || "")}">`}
     <div class="dlg"><div class="spread"><div><b>${h(crewBy(v.by)?.name || "")}</b> <span class="muted">· ${v.day ? "Day " + v.day : "Pre-mission"} · ${h(fmtTime(v.at))}</span></div>
     <div class="row">${canRm ? `<button class="btn small danger" type="button" id="rm-shot">Delete</button>` : ""}<button class="btn small" type="button" data-close>Close</button></div></div>
     ${v.cap ? `<p>${h(v.cap)}</p>` : ""}</div>`, "lightbox");
@@ -1158,6 +1268,7 @@ VIEWS.leaderboard = {
    ============================================================ */
 let current = null, raf = 0;
 function route(force = false) {
+  if (Store.mode === "signed-out") return;
   const k = (location.hash || "").slice(1);
   const name = VIEWS[k] ? k : "mission";
   if (name === current && !force) return;
@@ -1179,5 +1290,7 @@ setInterval(() => { if (current === "mission") VIEWS.mission.update(); }, 60000)
 
 paintStatus();
 route();
-Store.init().then(() => route(true));
+Store.init().then(ok => { if (ok) route(true); });
 </script>
+</body>
+</html>
