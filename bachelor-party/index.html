@@ -1,0 +1,1183 @@
+<title>Operation Bosphorus</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: a field dossier. Sticky command bar + tab strip, one section on screen at a time, Iznik star tile as the only ornament. */
+:root{
+  --bg:#0b1220; --panel:#121b2e; --panel-2:#18233a; --line:#26324d;
+  --ink:#e8ecf4; --muted:#93a0b8;
+  --tile:#3d6fe0;      /* Iznik cobalt */
+  --turq:#35b9ab;      /* primary accent */
+  --coral:#ec5b40;     /* Iznik red: seals, stamps, danger */
+  --gold:#e7b54d;      /* points */
+  --ok:#4cc38a; --warn:#e7b54d;
+  --on-accent:#06110f;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-body:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --r:10px;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#eef2f8; --panel:#ffffff; --panel-2:#f5f7fb; --line:#d4dbe8;
+  --ink:#111a2c; --muted:#56627a; --tile:#1f4fbf; --turq:#0d7d72; --coral:#c43c22; --gold:#946510;
+  --ok:#1d8a55; --warn:#946510; --on-accent:#ffffff; color-scheme:light}}
+:root[data-theme="light"]{
+  --bg:#eef2f8; --panel:#ffffff; --panel-2:#f5f7fb; --line:#d4dbe8;
+  --ink:#111a2c; --muted:#56627a; --tile:#1f4fbf; --turq:#0d7d72; --coral:#c43c22; --gold:#946510;
+  --ok:#1d8a55; --warn:#946510; --on-accent:#ffffff; color-scheme:light}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:400 15px/1.55 var(--f-body);margin:0;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+a{color:var(--turq)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--turq);outline-offset:2px}
+h1,h2,h3{font-family:var(--f-display);font-weight:800;letter-spacing:.01em;line-height:1.02;text-wrap:balance;margin:0}
+h2{font-size:clamp(30px,6vw,44px);text-transform:uppercase}
+h3{font-size:22px;text-transform:uppercase;letter-spacing:.02em}
+p{margin:0}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font:700 11px/1 var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* command bar */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.bar-top{display:flex;align-items:center;gap:12px;padding-block:10px}
+.brand{font:900 20px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;text-decoration:none;color:var(--ink);display:flex;align-items:center;gap:8px;white-space:nowrap}
+.brand i{display:inline-block;width:18px;height:18px;background:var(--coral);-webkit-mask:var(--star) center/contain no-repeat;mask:var(--star) center/contain no-repeat}
+.status{margin-left:auto;display:flex;align-items:center;gap:8px;min-width:0}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.dot.live{background:var(--ok);box-shadow:0 0 0 0 var(--ok);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 60%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.me-chip{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:4px 12px 4px 4px;cursor:pointer;white-space:nowrap}
+.me-chip .av{width:26px;height:26px;font-size:12px}
+.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;padding-bottom:0}
+.tabs::-webkit-scrollbar{display:none}
+.tabs a{flex:none;text-decoration:none;color:var(--muted);font:700 15px/1 var(--f-display);letter-spacing:.08em;text-transform:uppercase;padding:10px 12px 12px;border-bottom:3px solid transparent}
+.tabs a:hover{color:var(--ink)}
+.tabs a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--turq)}
+
+main{padding-block:28px 80px}
+section.view{display:grid;gap:28px}
+.head{display:grid;gap:8px}
+.head p{max-width:62ch;color:var(--muted)}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px;min-width:0}
+.panel>h3+*{margin-top:12px}
+.stack{display:grid;gap:12px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.spread{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+
+/* buttons, inputs */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--panel-2);border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:600;font-size:14px;text-decoration:none;color:var(--ink)}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--turq);border-color:var(--turq);color:var(--on-accent)}
+.btn.danger{color:var(--coral)}
+.btn.small{padding:5px 10px;font-size:13px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.link{background:none;border:0;padding:0;color:var(--turq);cursor:pointer;font-weight:600;font-size:13px}
+label.f{display:grid;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+input[type=text],input[type=number],select,textarea{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%;color:var(--ink);font-size:15px}
+textarea{min-height:84px;resize:vertical}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 12px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 9px;font:700 11px/1.6 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;border:1px solid currentColor;white-space:nowrap}
+.pill.party{color:var(--coral)} .pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.turq{color:var(--turq)}
+.pts{font:800 18px/1 var(--f-display);color:var(--gold);white-space:nowrap}
+
+/* avatars */
+.av{width:44px;height:44px;border-radius:50%;flex:none;display:grid;place-items:center;font:800 18px/1 var(--f-display);color:var(--on-accent);background:var(--turq);overflow:hidden;text-transform:uppercase}
+.av img{width:100%;height:100%;object-fit:cover}
+.av.c1{background:var(--coral)} .av.c2{background:var(--tile);color:#fff} .av.c3{background:var(--gold)} .av.c4{background:var(--ok)}
+.avs{display:flex}.avs .av{width:24px;height:24px;font-size:11px;border:2px solid var(--panel);margin-left:-6px}.avs .av:first-child{margin-left:0}
+
+/* hero */
+.hero{position:relative;overflow:hidden;border-radius:14px;border:1px solid var(--line);background:var(--panel);padding:clamp(22px,5vw,44px)}
+.hero::before{content:"";position:absolute;inset:0;background:var(--tile);opacity:.13;-webkit-mask:var(--star) 0 0/56px 56px repeat;mask:var(--star) 0 0/56px 56px repeat;pointer-events:none}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,var(--panel) 35%,transparent 100%);pointer-events:none}
+.hero>*{position:relative;z-index:1}
+.hero h1{font-size:clamp(52px,12vw,112px);text-transform:uppercase;font-weight:900;letter-spacing:-.005em;margin-top:10px}
+.hero .sub{font-size:clamp(16px,2.4vw,19px);max-width:46ch;margin-top:10px}
+.stamp{display:inline-block;font:700 12px/1 var(--f-mono);letter-spacing:.2em;color:var(--coral);border:2px solid var(--coral);padding:6px 10px;transform:rotate(-2deg);text-transform:uppercase}
+.countdown{display:flex;gap:clamp(10px,3vw,26px);margin-top:26px;flex-wrap:wrap}
+.cd{display:grid;gap:4px}
+.cd b{font:800 clamp(40px,9vw,72px)/.9 var(--f-display);font-variant-numeric:tabular-nums;color:var(--ink)}
+.cd span{font:700 11px/1 var(--f-mono);letter-spacing:.16em;color:var(--muted);text-transform:uppercase}
+.cd-label{margin-top:22px;font:700 12px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--turq)}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.facts>div{background:var(--panel);padding:14px 16px;min-width:0}
+.facts dt{font:700 11px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.facts dd{margin:6px 0 0;font-weight:600}
+
+/* dispatches */
+.dispatches{display:grid;gap:10px}
+.disp{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);display:grid;grid-template-columns:64px 1fr;min-width:0}
+.disp .when{border-right:1px dashed var(--line);display:grid;place-items:center;text-align:center;padding:10px 4px}
+.disp .when b{font:800 26px/1 var(--f-display);display:block}
+.disp .when span{font:700 10px/1.2 var(--f-mono);letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+.disp .body{padding:14px 16px;min-width:0;display:grid;gap:8px}
+.disp.sealed .body{color:var(--muted)}
+.disp.sealed .when b{color:var(--muted)}
+.disp.open{border-color:color-mix(in srgb,var(--coral) 55%,var(--line))}
+.seal{display:inline-flex;align-items:center;gap:8px;font:700 12px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase}
+.seal i{width:14px;height:14px;background:currentColor;-webkit-mask:var(--star) center/contain no-repeat;mask:var(--star) center/contain no-repeat}
+.disp.open .seal{color:var(--coral)}
+.personal{border-left:3px solid var(--gold);padding:6px 0 6px 12px;font-style:italic}
+
+/* section index */
+.index{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:10px}
+.index a{display:grid;gap:4px;text-decoration:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.index a:hover{border-color:var(--turq)}
+.index b{font:800 20px/1 var(--f-display);text-transform:uppercase;letter-spacing:.04em}
+.index span{color:var(--muted);font-size:13px}
+
+/* crew */
+.crew-card{display:grid;gap:14px;align-content:start}
+.crew-top{display:flex;gap:14px;align-items:center}
+.crew-top .av{width:72px;height:72px;font-size:30px}
+.crew-name{font:800 30px/1 var(--f-display);text-transform:uppercase}
+.nick{color:var(--turq);font:700 13px/1.3 var(--f-mono);letter-spacing:.06em;text-transform:uppercase}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px}
+.kv dt{color:var(--muted)} .kv dd{margin:0;font-weight:600}
+.nights{display:flex;gap:4px}
+.nights i{width:100%;max-width:26px;height:8px;border-radius:2px;background:var(--line)}
+.nights i.on{background:var(--turq)}
+
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:700 11px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);background:var(--panel-2)}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:center;font-variant-numeric:tabular-nums}
+.check{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.check:last-child{border-bottom:0}
+.check input{margin-top:3px;accent-color:var(--turq);width:17px;height:17px;flex:none}
+.check.done span{text-decoration:line-through;color:var(--muted)}
+ul.plain{margin:0;padding-left:18px;display:grid;gap:6px}
+
+/* itinerary */
+.daypick{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+.daypick button{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 10px;cursor:pointer;display:grid;gap:2px;text-align:center;min-width:62px;color:var(--ink)}
+.daypick button b{font:800 22px/1 var(--f-display)}
+.daypick button span{font:700 10px/1 var(--f-mono);letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+.daypick button[aria-pressed="true"]{border-color:var(--turq);background:color-mix(in srgb,var(--turq) 14%,var(--panel))}
+.daypick button.today span{color:var(--coral)}
+.timeline{display:grid}
+.tl{display:grid;grid-template-columns:96px 1fr;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+.tl:last-child{border-bottom:0}
+.tl time{font:700 13px/1.5 var(--f-mono);color:var(--turq)}
+.tl .what{display:grid;gap:4px;min-width:0}
+.changed{font-size:12.5px;color:var(--gold)}
+.wear{background:var(--panel-2);border-radius:8px;padding:12px 14px;font-size:14px}
+.wear b{font:700 11px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
+
+/* challenges */
+.ch{display:grid;grid-template-columns:1fr auto;gap:10px 16px;padding:14px 0;border-bottom:1px solid var(--line);align-items:start}
+.ch:last-child{border-bottom:0}
+.ch .t{font-weight:700}
+.ch .d{font-size:14px;color:var(--muted)}
+.ch .side{display:grid;gap:8px;justify-items:end}
+.ch .meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;grid-column:1/-1}
+
+/* vault */
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(46%,170px),1fr));gap:8px}
+.shot{position:relative;aspect-ratio:1;max-width:100%;border-radius:8px;overflow:hidden;background:var(--panel-2);border:1px solid var(--line);cursor:pointer;padding:0}
+.shot img,.shot video{width:100%;height:100%;object-fit:cover;display:block}
+.shot .cap{position:absolute;inset:auto 0 0 0;padding:18px 8px 6px;font-size:12px;text-align:left;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.72))}
+.shot .play{position:absolute;top:6px;right:6px;font:700 10px/1 var(--f-mono);background:rgba(0,0,0,.6);color:#fff;padding:4px 6px;border-radius:4px}
+.jokes{display:grid;gap:10px}
+.joke{background:var(--panel-2);border-radius:8px;padding:12px 14px;display:grid;gap:6px}
+.joke q{font-size:16px;font-weight:600;quotes:"“" "”"}
+.empty{border:1px dashed var(--line);border-radius:var(--r);padding:22px;text-align:center;color:var(--muted)}
+
+/* polls */
+.poll{display:grid;gap:12px}
+.opt{position:relative;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;width:100%;text-align:left;border:1px solid var(--line);background:var(--panel-2);border-radius:8px;padding:10px 12px;cursor:pointer;overflow:hidden;color:var(--ink)}
+.opt .fill{position:absolute;inset:0 auto 0 0;background:color-mix(in srgb,var(--turq) 22%,transparent);transition:width .5s ease}
+.opt>*:not(.fill){position:relative}
+.opt.mine{border-color:var(--turq)}
+.opt.lead .n{color:var(--turq)}
+.opt .n{font:700 13px/1 var(--f-mono)}
+.opt[disabled]{cursor:default}
+
+/* leaderboard */
+.lb{display:grid;gap:8px}
+.lb-row{display:grid;grid-template-columns:34px 44px 1fr auto;gap:12px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.lb-row .rank{font:900 30px/1 var(--f-display);color:var(--muted);text-align:center}
+.lb-row.first{border-color:var(--gold)}
+.lb-row.first .rank{color:var(--gold)}
+.lb-row.last{border-style:dashed;border-color:var(--coral)}
+.bar-track{height:6px;border-radius:3px;background:var(--line);margin-top:6px;overflow:hidden}
+.bar-track i{display:block;height:100%;background:var(--gold);border-radius:3px}
+.breakdown{font-size:12px;color:var(--muted)}
+.award{display:grid;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;text-align:center;justify-items:center}
+.award .medal{width:40px;height:40px;background:var(--gold);-webkit-mask:var(--star) center/contain no-repeat;mask:var(--star) center/contain no-repeat}
+.award b{font:800 20px/1.05 var(--f-display);text-transform:uppercase}
+.award.locked{color:var(--muted)}
+.award.locked .medal{background:var(--line)}
+
+/* banner, toast, dialog */
+.banner{border-radius:8px;padding:10px 14px;font-size:14px;border:1px solid var(--line);background:var(--panel-2)}
+#banner{margin:0 0 20px}
+.banner.warn{border-color:var(--warn)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:600;font-size:14px;z-index:50;max-width:calc(100% - 32px)}
+dialog{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:14px;padding:0;width:min(520px,calc(100% - 32px));max-height:calc(100% - 40px)}
+dialog::backdrop{background:rgba(3,6,14,.7)}
+.dlg{padding:20px;display:grid;gap:14px}
+.who-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px}
+.who-grid button{display:grid;gap:6px;justify-items:center;border:1px solid var(--line);background:var(--panel-2);border-radius:10px;padding:12px 6px;cursor:pointer;font-weight:700;color:var(--ink)}
+.who-grid button[aria-pressed="true"]{border-color:var(--turq)}
+.lightbox{width:min(980px,calc(100% - 16px))}
+.lightbox img,.lightbox video{width:100%;max-height:72vh;object-fit:contain;background:#000;display:block}
+@media (max-width:560px){
+  .tl{grid-template-columns:1fr;gap:4px}
+  .lb-row{grid-template-columns:26px 36px 1fr auto;gap:8px}
+  .lb-row .av{width:36px;height:36px}
+  .disp{grid-template-columns:52px 1fr}
+  .status .label{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+:root{--star:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 4 63.4 17.6 82.5 17.5 82.4 36.6 96 50 82.4 63.4 82.5 82.5 63.4 82.4 50 96 36.6 82.4 17.5 82.5 17.6 63.4 4 50 17.6 36.6 17.5 17.5 36.6 17.6Z'/%3E%3C/svg%3E")}
+</style>
+
+<header class="bar">
+  <div class="wrap">
+    <div class="bar-top">
+      <a class="brand" href="#mission"><i aria-hidden="true"></i>Op · Bosphorus</a>
+      <div class="status">
+        <span class="dot" id="live-dot" title="Connection"></span>
+        <span class="label muted mono" id="live-label" style="font-size:12px">Connecting</span>
+        <button class="me-chip" id="me-chip" type="button" aria-haspopup="dialog"></button>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Sections"></nav>
+  </div>
+</header>
+<main class="wrap">
+  <div id="banner" hidden></div>
+  <div id="view"></div>
+</main>
+<dialog id="dlg"><div id="dlg-body"></div></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+"use strict";
+/* ============================================================
+   TRIP DATA — from "Umang's Bachelor · Istanbul" itinerary
+   (verified against opening hours, 3 Nov 2026)
+   ============================================================ */
+const TZ = "Europe/Istanbul";
+const T_START = Date.parse("2026-11-14T06:00:00+03:00");   // Umang wheels-down at IST
+const T_END   = Date.parse("2026-11-22T15:30:00+03:00");   // last flights out
+const T_AWARDS = Date.parse("2026-11-22T06:00:00+03:00");  // awards unseal
+const BASE = "Şair Necati Sokak No:13, Ortaköy, Beşiktaş, İstanbul 34347";
+
+const CREW = [
+  {key:"umang", name:"Umang", role:"The Groom", note:"Wine connoisseur", arr:"Sat Nov 14 · 6:00 AM", dep:"Sun Nov 22 · 3:30 PM", leave:"11:30 AM", nights:[1,1,1,1,1,1,1,1]},
+  {key:"sagar", name:"Sagar", role:"Advance team", note:"Lands with the groom", arr:"Sat Nov 14 · 8:00 AM", dep:"Sat Nov 21 · 9:30 PM", leave:"5:30 PM", nights:[1,1,1,1,1,1,1,0]},
+  {key:"dev",   name:"Dev",   role:"First out", note:"Send-off on the yacht", arr:"Sun Nov 15 · 5:00 AM", dep:"Thu Nov 19 · 4:30 PM", leave:"1:15 PM (taxi)", nights:[0,1,1,1,1,0,0,0]},
+  {key:"abhi",  name:"Abhi",  role:"Night shift", note:"4:30 AM pickup on Day 9", arr:"Sun Nov 15 · 5:30 PM", dep:"Sun Nov 22 · 8:00 AM", leave:"4:30 AM", nights:[0,1,1,1,1,1,1,1]},
+  {key:"nick",  name:"Nick",  role:"Last to land", note:"Flies out with the groom", arr:"Sun Nov 15 · 6:00 PM", dep:"Sun Nov 22 · 3:30 PM", leave:"11:30 AM", nights:[0,1,1,1,1,1,1,1]},
+];
+const NIGHTS = ["Sat 14","Sun 15","Mon 16","Tue 17","Wed 18","Thu 19","Fri 20","Sat 21"];
+
+// [time, plan, mapQuery|null, changedNote|null]
+const DAYS = [
+  {n:1,date:"2026-11-14",dow:"Sat",label:"Sat Nov 14",title:"Arrival",crew:"Umang, Sagar",party:false,items:[
+    ["6:00–8:00 AM","Umang and Sagar land at IST; Airbnb early check-in","Istanbul Airport"],
+    ["3:00 PM","Ortaköy Mosque and waterfront, kumpir","Ortaköy Mosque"],
+    ["8:00 PM","Taxi to Beyoğlu (25 min)",null],
+    ["Evening","Live music along İstiklal Avenue","İstiklal Avenue"]],
+    wear:"Layers + light rain shell. Night: dark jeans, clean sneakers."},
+  {n:2,date:"2026-11-15",dow:"Sun",label:"Sun Nov 15",title:"Old City + welcome night",crew:"All 5 by evening",party:true,items:[
+    ["5:00 AM","Dev lands at IST; to Airbnb to sleep","Istanbul Airport"],
+    ["10:15 AM","Taxi to Sultanahmet (40 min)",null],
+    ["11:00 AM","Blue Mosque first. Dress code; clears before the ~12:10 PM noon-prayer closure","Blue Mosque Istanbul","Moved ahead of Hagia Sophia (was 12:15 PM, which collides with noon prayer)"],
+    ["11:50 AM","Hagia Sophia (Umang, Sagar, Dev), tourist gallery route","Hagia Sophia"],
+    ["1:15 PM","Basilica Cistern, then Turkish coffee","Basilica Cistern"],
+    ["5:30–6:00 PM","Abhi and Nick land at IST; at Airbnb by ~8 PM","Istanbul Airport"],
+    ["9:00 PM","Welcome meyhane dinner in Asmalımescit","Asmalımescit Beyoğlu"]],
+    wear:"Long trousers (no shorts) and a shirt that covers shoulders for the mosques; slip-on shoes. Night: smart-casual."},
+  {n:3,date:"2026-11-16",dow:"Mon",label:"Mon Nov 16",title:"Sapanca: mountain + adventure",crew:"All 5 · overnight",party:true,items:[
+    ["9:30 AM","Private van east to Kartepe (drive ≈ 2 hrs)",null],
+    ["12:00 PM","Kartepe cable car: summit views over the lake and autumn forest","Kartepe Teleferik Maşukiye"],
+    ["1:30 PM","Maşukiye village: waterfalls, forest trails, riverside trout lunch","Maşukiye Kartepe"],
+    ["3:00 PM","ATV forest trails or ziplining (finish before dark ≈ 4:50 PM)",null],
+    ["5:00 PM","Luxury bungalow: private heated pool, jacuzzi, fireplace, forest view","Sapanca"]],
+    wear:"Hiking shoes or trail sneakers, fleece, waterproof jacket. Kartepe summit runs 5–8°C colder. Swimwear for the pool."},
+  {n:4,date:"2026-11-17",dow:"Tue",label:"Tue Nov 17",title:"Lake morning, Istanbul night",crew:"All 5",party:true,items:[
+    ["7:15 AM","Sunrise over the lake (≈ 7:20 AM), then breakfast","Sapanca Gölü"],
+    ["9:00 AM","Sapanca Lake shore walk or bike loop","Sapanca Gölü"],
+    ["10:15 AM","Ormanya Nature Park trails and Hobbit-style houses, or horse riding","Ormanya Kartepe"],
+    ["12:00 PM","Drive back to the Airbnb. Leave by noon, hard stop (drive ≈ 2 hrs+)",null],
+    ["4:30 PM","Kılıç Ali Paşa Hamam, Karaköy. Men's session opens 4:30 PM; book ahead","Kılıç Ali Paşa Hamamı","Moved from 3:30 PM: before 4:30 PM the hamam runs women-only hours"],
+    ["6:30 PM","Ferry Karaköy → Kadıköy (Asian side)","Karaköy İskelesi"],
+    ["7:15 PM","Kadıköy market food crawl, then Kadife Sokak bars","Kadife Sokak Kadıköy"]],
+    wear:"Comfortable travel layers. Pack flip-flops; the hamam provides the peştemal (towel wrap)."},
+  {n:5,date:"2026-11-18",dow:"Wed",label:"Wed Nov 18",title:"Palace, bazaar, night yacht",crew:"All 5 · Dev's last night",party:true,items:[
+    ["9:00 AM","Taxi to Sultanahmet (40 min)",null],
+    ["9:45 AM","Topkapı Palace (+ Harem). Allow 2–2.5 hrs","Topkapı Palace"],
+    ["12:15 PM","Archaeology Museums, next door inside Gülhane. 45 min highlights","Istanbul Archaeology Museums"],
+    ["1:15 PM","Lunch, then Grand Bazaar","Grand Bazaar Istanbul"],
+    ["3:30 PM","Süleymaniye Mosque terrace: sunset over the Golden Horn","Süleymaniye Mosque"],
+    ["8:00 PM","Private Bosphorus dinner yacht from Ortaköy pier. Dev's send-off","Ortaköy İskelesi"]],
+    wear:"Walking shoes for 15k steps of cobbles; mosque-appropriate trousers. Yacht: smart jacket, it is cold on the water."},
+  {n:6,date:"2026-11-19",dow:"Thu",label:"Thu Nov 19",title:"Tekirdağ wine day",crew:"Umang, Sagar, Abhi, Nick",party:false,items:[
+    ["8:00 AM","Goodbye to Dev at the Airbnb",null],
+    ["8:30 AM","Private van west to Thrace (drive ≈ 1.5 hrs)",null],
+    ["10:30 AM","Chateau Nuzun tasting, Marmaraereğlisi (keep it short)","Chateau Nuzun Marmaraereğlisi"],
+    ["12:30 PM","Tekirdağ köfte lunch","Tekirdağ köftecisi"],
+    ["1:15 PM","Dev: pre-booked taxi Airbnb → IST (≈ 50 min), flight 4:30 PM","Istanbul Airport"],
+    ["2:00 PM","Barbare vineyard tasting, Barbaros","Barbare Winery Barbaros Tekirdağ"],
+    ["4:00 PM","Drive back to the Airbnb (drive ≈ 2 hrs)",null],
+    ["Evening","Easy dinner in Ortaköy","Ortaköy"]],
+    wear:"Smart-casual for the wineries; warm layer, vineyards are windy in November."},
+  {n:7,date:"2026-11-20",dow:"Fri",label:"Fri Nov 20",title:"Rest day, club night",crew:"4",party:true,items:[
+    ["Morning","Sleep in",null],
+    ["11:30 AM","Bebek waterfront breakfast","Bebek Istanbul"],
+    ["2:00 PM","Dolmabahçe Palace, 10 min away (optional; last entry ≈ 4 PM)","Dolmabahçe Palace"],
+    ["4:00 PM","Nap and reset",null],
+    ["9:00 PM","Oligark dinner + VIP table. Main club night; dress code enforced, table minimum","Oligark Istanbul Kuruçeşme"]],
+    wear:"Club dress code: collared shirt or sharp knit, tailored trousers or dark jeans, leather shoes. No sportswear, shorts or caps."},
+  {n:8,date:"2026-11-21",dow:"Sat",label:"Sat Nov 21",title:"Old City catch-up, final night",crew:"4 → 3 after Sagar leaves",party:true,items:[
+    ["9:30 AM","Farewell breakfast, Beşiktaş breakfast street","Beşiktaş Kahvaltıcılar Sokağı"],
+    ["11:00 AM","Taxi to Sultanahmet (40 min)",null],
+    ["11:45 AM","Abhi + Nick: Basilica Cistern → Hagia Sophia → Blue Mosque after ~1:30 PM","Basilica Cistern","Re-ordered so the Blue Mosque falls between noon and afternoon prayers"],
+    ["11:45 AM","Umang + Sagar: Museum of Turkish and Islamic Arts","Museum of Turkish and Islamic Arts"],
+    ["5:30 PM","Sagar leaves the Airbnb for IST (flight 9:30 PM)","Istanbul Airport"],
+    ["8:30 PM","360 Istanbul dinner, then İstiklal live music. Abhi stops early (4:30 AM pickup)","360 Istanbul"]],
+    wear:"Walking shoes by day. 360 Istanbul: smart-casual, a jacket for the terrace."},
+  {n:9,date:"2026-11-22",dow:"Sun",label:"Sun Nov 22",title:"Departures",crew:"Umang, Abhi, Nick",party:false,items:[
+    ["4:30 AM","Abhi to IST (flight 8:00 AM)","Istanbul Airport"],
+    ["11:30 AM","Umang and Nick to IST (flights 3:30 PM)","Istanbul Airport"]],
+    wear:"Travel clothes; leave the fancy kit packed the night before."},
+];
+
+const ATTRACTIONS = [
+  ["Hagia Sophia","Sun 15 · Sat 21","Separate paid tourist entrance to the upper galleries; closes to visitors around prayer times."],
+  ["Blue Mosque","Sun 15 · Sat 21","Free. Covered shoulders and knees, shoes off. Closed to visitors ~60–90 min around each prayer."],
+  ["Basilica Cistern","Sun 15 · Sat 21","Daily ≈ 9:00 AM–6:30 PM; separate evening session. Not on the Museum Pass."],
+  ["Topkapı Palace","Wed 18","Closed Tuesdays. Winter ≈ 9:00 AM–4:45 PM, last ticket ≈ 3:30 PM; Harem closes earlier."],
+  ["Archaeology Museums","Wed 18","Winter ≈ 9:00 AM–5:00 PM, last entry ≈ 4:30 PM."],
+  ["Grand Bazaar","Wed 18","Closed Sundays. Haggle; card prices are usually higher than cash."],
+  ["Süleymaniye Mosque","Wed 18","Best Golden Horn view from the rear terrace at sunset."],
+  ["Bosphorus cruise","Wed 18","Private dinner yacht from Ortaköy pier. Confirm food, drinks and heated/enclosed deck."],
+  ["İstiklal live music","Sat 14 · Sat 21","Bars fill after 10 PM. Use BiTaksi/Uber home."],
+  ["Museum of Turkish & Islamic Arts","Sat 21","Winter ≈ 9:00 AM–5:00 PM. Best carpet collection in the city."],
+  ["Dolmabahçe Palace","Fri 20 (optional)","Closed Mondays. ≈ 9:00 AM–5:00 PM; guided route, last entry ≈ 4 PM."],
+];
+const WINERIES = [
+  ["Chateau Nuzun","Marmaraereğlisi","Thu 10:30 AM","Aggregator hours only (≈ 10 AM–5 PM). Book by phone; ask for a short tasting.","CONFIRM"],
+  ["Barbare","Barbaros, Tekirdağ","Thu 2:00 PM","Organic/biodynamic estate; tour + 5–6 wine flight with cheese. Appointment required.","CONFIRM"],
+  ["Arcadia Vineyards","Lüleburgaz, Kırklareli","Alt. day","Chef's table lunch; Bakucha Vineyard Hotel & Spa on the estate.","ALT"],
+  ["Gürbüz Winery","Kırklareli","Alt. day","Family estate; appointment only.","ALT"],
+  ["Dessera Bağ Evi","Kırklareli","Alt. day","Vineyard house tasting.","ALT"],
+];
+const TRAVEL = [["Oligark, Ortaköy pier, Beşiktaş, Dolmabahçe","5–10 min"],["Beyoğlu / İstiklal / Karaköy","20–30 min"],["Sultanahmet (Old City)","35–50 min"],["Istanbul Airport (IST)","45–60 min"]];
+const PACKING = ["Waterproof shell + compact umbrella","One proper going-out outfit with leather shoes (Oligark)","Trousers that cover knees + top that covers shoulders","Hiking/trail shoes for Kartepe and Maşukiye","Swimwear (bungalow pool + jacuzzi)","Warm mid-layer: fleece or knit","Power bank and EU plug adapter (Type C/F, 230V)","Flip-flops for the hamam","Passport + e-visa printout if your passport needs one"];
+const BOOKINGS = [
+  ["Airbnb early check-in: Umang (6 AM Sat) and Dev (5 AM Sun)","Umang"],
+  ["Online tickets: Hagia Sophia, Topkapı (+ Harem), Basilica Cistern",""],
+  ["Private van + driver: Sapanca (Mon–Tue) and wine day (Thu)",""],
+  ["Sapanca bungalow with heated pool and jacuzzi (Mon night)",""],
+  ["Kartepe cable car, ATV/zipline, Ormanya or horse riding",""],
+  ["Kılıç Ali Paşa Hamam group slot, Tue 4:30 PM men's session",""],
+  ["Private Bosphorus dinner yacht, Ortaköy pier (Wed): confirm food included",""],
+  ["Winery tastings: Chateau Nuzun + Barbare (Thu): confirm off-season hours",""],
+  ["Dev's taxi to IST (Thu 1:15 PM)",""],
+  ["Oligark dinner + VIP table (Fri)",""],
+  ["360 Istanbul (Sat)",""],
+  ["Airport transfers: Sagar Sat 5:30 PM · Abhi Sun 4:30 AM · Umang + Nick Sun 11:30 AM",""],
+];
+const CONFIRMS = [
+  ["Kartepe cable car","Mon Nov 16, 12:00 PM","Last year it closed for maintenance Nov 17–30. 2026 maintenance ran in September; no November closure announced. Call UlaşımPark the week before; wind can also halt it."],
+  ["Chateau Nuzun","Thu Nov 19, 10:30 AM","No official winter schedule. Phone-confirm the 10:30 AM slot."],
+  ["Barbare","Thu Nov 19, 2:00 PM","No published visiting hours. Book the 2 PM tasting in writing."],
+];
+const RAIN = [
+  ["Sun 15 · Sat 21","Old City is mostly indoors already (Cistern, Hagia Sophia, museums). Skip the open square; taxi door to door."],
+  ["Mon 16","Richmond Nua Wellness Spa as backup; long lakeside lunch instead of ATV/zipline; cable car shuts in high wind."],
+  ["Tue 17","Kadıköy market streets are partly covered. If it pours, stay in Karaköy after the hamam and do Kadıköy on Saturday."],
+  ["Wed 18","Süleymaniye → Rüstem Paşa Mosque's Iznik tiles + longer Grand Bazaar. Yacht: insist on an enclosed, heated saloon."],
+  ["Thu 19","Wine day is unaffected: tastings are indoors. Allow +30 min on the motorway."],
+  ["Fri 20","Dolmabahçe is fully indoors; Bebek breakfast moves inside."],
+];
+const RISKS = [
+  "All-male groups can be turned away at the door. Book tables in advance.",
+  "Nightlife starts late: bars after 10 PM, clubs after midnight.",
+  "Use BiTaksi/Uber or pre-booked transfers; avoid hailing street taxis.",
+  "Alcohol is heavily taxed; budget about 2× for drinks.",
+  "Grand Bazaar closed Sundays; Topkapı closed Tuesdays; Dolmabahçe closed Mondays.",
+  "Blue Mosque and Hagia Sophia close to visitors at prayer times; avoid Friday midday.",
+  "Sapanca drives can stretch past 2 hrs in traffic; leave by noon on Tuesday.",
+  "Confirm every airport: IST vs Sabiha Gökçen (SAW) is a 90-minute difference.",
+];
+
+/* ============================================================
+   CHALLENGES — catalog (completions live in shared storage)
+   ============================================================ */
+const CHALLENGES = [
+  {id:"kumpir",cat:"Daily",day:1,pts:5,t:"Kumpir under the bridge",d:"Eat a fully loaded kumpir on the Ortaköy waterfront."},
+  {id:"teshekkur",cat:"Daily",day:null,pts:10,t:"Speak the language",d:"Hold a 3-line exchange in Turkish with a local. Teşekkür ederim counts as one line."},
+  {id:"coffee-fortune",cat:"Daily",day:2,pts:10,t:"Read the grounds",d:"Have your Turkish coffee cup read and post the fortune in the Vault."},
+  {id:"summit",cat:"Daily",day:3,pts:10,t:"Summit selfie",d:"Kartepe summit photo with the lake behind you."},
+  {id:"kese",cat:"Daily",day:4,pts:15,t:"Survive the kese",d:"Take the full hamam scrub without a single complaint."},
+  {id:"simit",cat:"Daily",day:4,pts:10,t:"Seagull diplomacy",d:"Feed a seagull a piece of simit from the Kadıköy ferry."},
+  {id:"haggle",cat:"Daily",day:5,pts:25,t:"Grand Bazaar haggle",d:"Get 30% or more off the first asking price. Cash only, witness required."},
+  {id:"steps",cat:"Daily",day:5,pts:10,t:"15k on the cobbles",d:"Log 15,000+ steps on palace day. Screenshot to the Vault."},
+  {id:"halay",cat:"Dares",day:2,pts:20,t:"Learn the halay",d:"Get a stranger at the meyhane to teach you a halay step, on camera."},
+  {id:"order-turkish",cat:"Dares",day:2,pts:20,t:"Order the round in Turkish",d:"Order the whole table's first round in Turkish. No phone."},
+  {id:"mic",cat:"Dares",day:null,pts:30,t:"Groom on the mic",d:"Get Umang to sing one line with a live band on İstiklal or at the meyhane."},
+  {id:"fez",cat:"Dares",day:5,pts:25,t:"Fez for dinner",d:"Buy a fez at the bazaar and wear it through the entire yacht dinner."},
+  {id:"toast",cat:"Dares",day:5,pts:15,t:"Three-language toast",d:"Toast Dev on the yacht in three languages. Şerefe must be one of them."},
+  {id:"cats",cat:"Dares",day:null,pts:20,t:"Cat census",d:"Photos with street cats in 5 different neighborhoods."},
+  {id:"story",cat:"Dares",day:3,pts:15,t:"Fireplace story",d:"Tell a 60-second story about the groom at the bungalow fire. Umang rates it."},
+  {id:"atv",cat:"Competitions",day:3,pts:40,t:"ATV race winner",d:"First back on the forest trail. Record the winner."},
+  {id:"tavla",cat:"Competitions",day:null,pts:40,t:"Tavla champion",d:"Backgammon knockout at the Airbnb. One champion."},
+  {id:"blind",cat:"Competitions",day:6,pts:40,t:"Blind tasting champ",d:"Guess the grape at Barbare before the sommelier names it. Umang judges and can't compete."},
+  {id:"dressed",cat:"Competitions",day:7,pts:30,t:"Best dressed at Oligark",d:"Settled by a vote in The Polls. Record the winner."},
+  {id:"baklava",cat:"Competitions",day:null,pts:25,t:"Baklava hunt",d:"Bring back the box the crew rates best. Blind taste-off at the Airbnb."},
+];
+const DAILY_DROP_PTS = 5;
+const RULES = [
+  "No dares inside mosques, the hamam, or anywhere a dress code or prayer time applies.",
+  "Photo or witness required. Any two crew members can strike a claim.",
+  "Each challenge counts once per person. Competitions have one winner unless the groom rules a tie.",
+  "Daily drop: first photo you post in the Vault each trip day earns 5 points automatically.",
+];
+const PUNISHMENTS = [
+  "Buys the first round at 360 Istanbul (drinks run about 2× home prices).",
+  "Wears the bazaar fez through IST security on departure day.",
+  "Carries the groom's bag from the Airbnb to the airport.",
+  "Sings one full song on İstiklal Avenue, crew's choice.",
+  "Writes and delivers a 2-minute toast at the wedding, approved by the crew.",
+];
+
+/* Sealed dispatches. Encoded so nobody spoils them by skimming the page. */
+const SEALED = "W3siaWQiOiAicHJlIiwgImxhYmVsIjogIk9uZSB3ZWVrIG91dCIsICJiYWRnZSI6ICJULTd8ZGF5cyIsICJhdCI6ICIyMDI2LTExLTA3VDA2OjAwOjAwKzAzOjAwIiwgInRleHQiOiAiQWdlbnQsIHRoZSBvcGVyYXRpb24gaXMgb25lIHdlZWsgb3V0LiBGaXZlIG1lbiwgbmluZSBkYXlzLCBvbmUgZ3Jvb20uIE9yZGVyczogY29uZmlybSB5b3VyIGFpcnBvcnQgaXMgSVNULCBub3QgU0FXOyB0aGV5IGFyZSA5MCBtaW51dGVzIGFwYXJ0LiBQYWNrIGEgd2F0ZXJwcm9vZiBzaGVsbCwgb25lIHNoYXJwIG91dGZpdCB3aXRoIGxlYXRoZXIgc2hvZXMsIGFuZCB0cm91c2VycyB0aGF0IGNvdmVyIHRoZSBrbmVlLiBCcmluZyBhbiBFVSBUeXBlIEMvRiBhZGFwdGVyLiBGdXJ0aGVyIGluc3RydWN0aW9ucyBhcnJpdmUgb24gdGhlIGV2ZSBvZiBkZXBhcnR1cmUuIn0sIHsiaWQiOiAiZXZlIiwgImxhYmVsIjogIlRoZSBuaWdodCBiZWZvcmUiLCAiYmFkZ2UiOiAiRVZFfE5vdiAxMyIsICJhdCI6ICIyMDI2LTExLTEzVDE4OjAwOjAwKzAzOjAwIiwgInRleHQiOiAiRmluYWwgYnJpZWZpbmcuIFVtYW5nIGFuZCBTYWdhciB0b3VjaCBkb3duIGF0IElTVCBmcm9tIDY6MDAgQU0gdG9tb3Jyb3cuIFRyaXAgcnVsZSBub3cgaW4gZm9yY2U6IHNheSBcIsWeZXJlZmVcIiBiZWZvcmUgZXZlcnkgZmlyc3Qgc2lwLiBBbnlvbmUgY2F1Z2h0IGRyaW5raW5nIGJlZm9yZSBzYXlpbmcgaXQgYnV5cyB0aGUgbmV4dCByb3VuZC4ifSwgeyJpZCI6ICJkMSIsICJsYWJlbCI6ICJEYXkgMSDCtyBBcnJpdmFsIiwgImJhZGdlIjogIjF8U2F0IiwgImF0IjogIjIwMjYtMTEtMTRUMDY6MDA6MDArMDM6MDAiLCAidGV4dCI6ICJEYXkgMS4gUmVjb24gb25seS4gV2FsayB0aGUgT3J0YWvDtnkgd2F0ZXJmcm9udCwgZWF0IGEga3VtcGlyIHVuZGVyIHRoZSBicmlkZ2UsIHNjb3V0IMSwc3Rpa2xhbCB0b25pZ2h0LiBUaGUgcmVzdCBvZiB0aGUgY3JldyBsYW5kcyB0b21vcnJvdzsgdGhlIHR3byBvZiB5b3UgYXJlIHRoZSBhZHZhbmNlIHRlYW0uIFJlcG9ydCB0aGUgYmVzdCBsaXZlLW11c2ljIGJhciBpbiB0aGUgVmF1bHQuIn0sIHsiaWQiOiAiZDIiLCAibGFiZWwiOiAiRGF5IDIgwrcgT2xkIENpdHkgKyB3ZWxjb21lIG5pZ2h0IiwgImJhZGdlIjogIjJ8U3VuIiwgImF0IjogIjIwMjYtMTEtMTVUMDY6MDA6MDArMDM6MDAiLCAidGV4dCI6ICJEYXkgMi4gRnVsbCBjcmV3IGJ5IHRvbmlnaHQuIEJsdWUgTW9zcXVlIGF0IDExOjAwLCBiZWZvcmUgdGhlIG5vb24gcHJheWVyOiB0cm91c2VycywgY292ZXJlZCBzaG91bGRlcnMsIHNsaXAtb24gc2hvZXMuIEF0IHRoZSBtZXloYW5lIHRvbmlnaHQgdGhlIGdyb29tIGRvZXMgbm90IHBheSBmb3IgYSBzaW5nbGUgZ2xhc3Mgb2YgcmFrxLEuIFdob2V2ZXIgb3JkZXJzIHRoZSBmaXJzdCByb3VuZCBpbiBUdXJraXNoIHRha2VzIHRoZSBkYXJlLiJ9LCB7ImlkIjogImQzIiwgImxhYmVsIjogIkRheSAzIMK3IFNhcGFuY2EiLCAiYmFkZ2UiOiAiM3xNb24iLCAiYXQiOiAiMjAyNi0xMS0xNlQwNjowMDowMCswMzowMCIsICJ0ZXh0IjogIkRheSAzLiBUaGUgdmFuIHJvbGxzIGF0IDk6MzAgc2hhcnA7IHRoZSBsYXN0IG9uZSBhYm9hcmQgY2FycmllcyB0aGUgY29vbGVyLiBLYXJ0ZXBlIHN1bW1pdCBydW5zIDXigJM4wrBDIGNvbGRlciB0aGFuIHRoZSBjaXR5LiBTZWNyZXQgdGFzayBmb3IgZXZlcnlvbmUgZXhjZXB0IFVtYW5nOiBwcmVwYXJlIG9uZSA2MC1zZWNvbmQgc3RvcnkgYWJvdXQgdGhlIGdyb29tIGZvciB0aGUgYnVuZ2Fsb3cgZmlyZXBsYWNlIHRvbmlnaHQuIn0sIHsiaWQiOiAiZDQiLCAibGFiZWwiOiAiRGF5IDQgwrcgTGFrZSBtb3JuaW5nLCBJc3RhbmJ1bCBuaWdodCIsICJiYWRnZSI6ICI0fFR1ZSIsICJhdCI6ICIyMDI2LTExLTE3VDA2OjAwOjAwKzAzOjAwIiwgInRleHQiOiAiRGF5IDQuIFN1bnJpc2Ugb3ZlciB0aGUgbGFrZSBhdCA3OjIwIGZvciBhbnlvbmUgc3RpbGwgc3RhbmRpbmcuIEhhcmQgc3RvcCBsZWF2aW5nIGF0IG5vb24uIEhhbWFtIGF0IDQ6MzA6IHN1cnJlbmRlciB0byB0aGUga2VzZS4gRmVycnkgdG8gS2FkxLFrw7Z5IGF0IDY6MzAuIEEgc2VhZ3VsbCBpcyB3YWl0aW5nIGZvciB5b3VyIHNpbWl0LiJ9LCB7ImlkIjogImQ1IiwgImxhYmVsIjogIkRheSA1IMK3IFBhbGFjZSwgYmF6YWFyLCB5YWNodCIsICJiYWRnZSI6ICI1fFdlZCIsICJhdCI6ICIyMDI2LTExLTE4VDA2OjAwOjAwKzAzOjAwIiwgInRleHQiOiAiRGF5IDUuIFBhbGFjZSBkYXkgYW5kIERldidzIGxhc3QgbmlnaHQuIEhhcmVtIGZpcnN0IGF0IFRvcGthcMSxLCB0aGVuIHRoZSBiYXphYXI6IGhhZ2dsZSBoYXJkLCBwYXkgY2FzaC4gT24gdGhlIHlhY2h0IHRvbmlnaHQgZXZlcnkgYWdlbnQgZ2l2ZXMgRGV2IGEgc2VuZC1vZmYgdG9hc3QuIEtlZXAgaXQgc2hvcnQ7IGl0IGlzIGNvbGQgb24gdGhlIHdhdGVyLiJ9LCB7ImlkIjogImQ2IiwgImxhYmVsIjogIkRheSA2IMK3IFdpbmUgZGF5IiwgImJhZGdlIjogIjZ8VGh1IiwgImF0IjogIjIwMjYtMTEtMTlUMDY6MDA6MDArMDM6MDAiLCAidGV4dCI6ICJEYXkgNi4gVGhlIGdyb29tJ3MgZGF5LiBDaGF0ZWF1IE51enVuLCB0aGVuIEJhcmJhcmUuIEJsaW5kIHRhc3RpbmcgYXQgQmFyYmFyZTogbmFtZSB0aGUgZ3JhcGUgYmVmb3JlIHRoZSBzb21tZWxpZXIgZG9lcy4gVW1hbmcganVkZ2VzIGFuZCBjYW5ub3QgY29tcGV0ZS4gRGV2LCB5b3VyIHRheGkgbGVhdmVzIGF0IDE6MTUgUE0uIFNhZmUgZmxpZ2h0LCBhZ2VudC4ifSwgeyJpZCI6ICJkNyIsICJsYWJlbCI6ICJEYXkgNyDCtyBDbHViIG5pZ2h0IiwgImJhZGdlIjogIjd8RnJpIiwgImF0IjogIjIwMjYtMTEtMjBUMDY6MDA6MDArMDM6MDAiLCAidGV4dCI6ICJEYXkgNy4gUmVzdCwgdGhlbiB0aGUgbWFpbiBldmVudC4gT2xpZ2FyayBlbmZvcmNlcyB0aGUgZHJlc3MgY29kZTogY29sbGFyZWQgc2hpcnQgb3Igc2hhcnAga25pdCwgbGVhdGhlciBzaG9lcywgbm8gY2Fwcy4gVGhlIGJlc3QtZHJlc3NlZCB2b3RlIG9wZW5zIGF0IDkgUE0gaW4gVGhlIFBvbGxzLiJ9LCB7ImlkIjogImQ4IiwgImxhYmVsIjogIkRheSA4IMK3IEZpbmFsIG5pZ2h0IiwgImJhZGdlIjogIjh8U2F0IiwgImF0IjogIjIwMjYtMTEtMjFUMDY6MDA6MDArMDM6MDAiLCAidGV4dCI6ICJEYXkgOC4gRmluYWwgZnVsbCBuaWdodC4gU2FnYXIgbGVhdmVzIGZvciBJU1QgYXQgNTozMCBQTTsgc2F5IGdvb2RieWUgcHJvcGVybHkuIDM2MCBJc3RhbmJ1bCBhdCA4OjMwLiBBd2FyZHMgYXJlIHN0aWxsIHNlYWxlZC4gTGFzdCBjaGFuY2UgdG8gY2xpbWIgdGhlIGxlYWRlcmJvYXJkLiJ9LCB7ImlkIjogImQ5IiwgImxhYmVsIjogIkRheSA5IMK3IERlcGFydHVyZXMiLCAiYmFkZ2UiOiAiOXxTdW4iLCAiYXQiOiAiMjAyNi0xMS0yMlQwNjowMDowMCswMzowMCIsICJ0ZXh0IjogIkRheSA5LiBNaXNzaW9uIGNvbXBsZXRlLiBUaGUgbGVhZGVyYm9hcmQgaXMgZmluYWwgYW5kIHRoZSBhd2FyZHMgYXJlIHVuc2VhbGVkLiBMYXN0LXBsYWNlIGFnZW50OiB5b3VyIHB1bmlzaG1lbnQgaXMgd2FpdGluZyBvbiBUaGUgTGVhZGVyYm9hcmQuIFRyYXZlbCBzYWZlLiBOZXh0IG1pc3Npb246IHRoZSB3ZWRkaW5nLiJ9XQ==";
+
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const h = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
+};
+const istDate = (t = Date.now()) => new Intl.DateTimeFormat("en-CA", {timeZone: TZ, year:"numeric", month:"2-digit", day:"2-digit"}).format(t);
+const tripDay = (t = Date.now()) => { const d = DAYS.find(x => x.date === istDate(t)); return d ? d.n : 0; };
+const fmtTime = t => new Intl.DateTimeFormat("en-US", {timeZone: TZ, weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}).format(t);
+const mapUrl = q => "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q + ", Türkiye");
+const crewBy = k => CREW.find(c => c.key === k);
+const crewIdx = k => CREW.findIndex(c => c.key === k);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+function decodeSealed() {
+  try { const bin = atob(SEALED); const bytes = Uint8Array.from(bin, c => c.charCodeAt(0)); return JSON.parse(new TextDecoder().decode(bytes)); }
+  catch { return []; }
+}
+const DISPATCHES = decodeSealed();
+
+function avatar(key, cls = "") {
+  const c = crewBy(key); if (!c) return `<span class="av ${cls}">?</span>`;
+  const prof = D.crew.find(x => x.id === key) || {};
+  const i = crewIdx(key);
+  const inner = prof.photo ? `<img src="${h(prof.photo)}" alt="">` : h(c.name[0]);
+  return `<span class="av c${i} ${cls}" title="${h(c.name)}">${inner}</span>`;
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 3200);
+}
+function errMsg(e) {
+  const code = e && e.code;
+  if (code === "invalid_argument") return "You can view this page but not change it. Ask the organizer to invite you as an Editor.";
+  if (code === "quota_exceeded") return "Storage is full. Delete a few old uploads, then try again.";
+  if (code === "resource_exhausted") return "Too many changes at once. Wait a few seconds and try again.";
+  if (code === "not_granted") return "This page needs storage permission. Open the artifact's Permissions menu to allow it.";
+  return (e && e.message) || "That didn't save. Check your connection and try again.";
+}
+async function act(p, ok) { try { await p; if (ok) toast(ok); return true; } catch (e) { toast(errMsg(e)); return false; } }
+
+/* ============================================================
+   STORE — shared (claude db + assets) or this-browser fallback
+   ============================================================ */
+const COLLS = ["crew","challenges","completions","polls","votes","vault","jokes","adjust","bookings","secrets","settings"];
+const D = {}; COLLS.forEach(c => D[c] = []);
+const Store = {
+  mode: "connecting", db: null, assets: null, user: null, owner: false,
+  async init() {
+    let db = null, assets = null, user = null;
+    const c = window.claude;
+    if (c && typeof c.use === "function") {
+      [db, assets, user] = await Promise.all(["db","assets","user"].map(n => c.use(n).catch(() => null)));
+    }
+    this.db = db; this.assets = assets; this.user = user;
+    if (user) { try { this.owner = await user.isOwner(); } catch {} }
+    if (db) {
+      this.mode = "live";
+      let confirmed = false;
+      const timer = setTimeout(() => { if (!confirmed) showBanner("Shared data can't be reached yet. What you see may be out of date; it refreshes by itself.", "warn"); }, 10000);
+      COLLS.forEach(name => {
+        db.collection(name).onSnapshot(snap => {
+          if (!snap.metadata.fromCache && !confirmed) { confirmed = true; clearTimeout(timer); hideBanner(); }
+          D[name] = snap.docs.map(d => ({id: d.id, ...d.data()}));
+          changed();
+        }, err => { clearTimeout(timer); showBanner(err.code === "revoked" ? "Access to shared data ended. You can still read the plan." : "Live updates stopped. Reload the page to reconnect.", "warn"); });
+      });
+    } else {
+      this.mode = "local";
+      COLLS.forEach(name => D[name] = this.localAll(name));
+      showBanner("Offline mode: votes, photos and points are saved in this browser only. Open the shared link to play with the crew.");
+    }
+    changed(); paintStatus();
+  },
+  localAll(name) { const o = LS.get("bp:db:" + name, {}); return Object.entries(o).map(([id, v]) => ({id, ...v})); },
+  localWrite(name, fn) {
+    const o = LS.get("bp:db:" + name, {}); fn(o);
+    if (!LS.set("bp:db:" + name, o)) throw {code: "quota_exceeded"};
+    D[name] = this.localAll(name); changed();
+  },
+  async put(name, id, data) {
+    if (this.mode === "live") return this.db.collection(name).doc(id).set(data);
+    this.localWrite(name, o => { o[id] = data; });
+  },
+  async del(name, id) {
+    if (this.mode === "live") return this.db.collection(name).doc(id).delete();
+    this.localWrite(name, o => { delete o[id]; });
+  },
+  canUpload() { return this.mode === "local" || !!this.assets; },
+  async upload(file) {
+    const isVideo = file.type.startsWith("video/");
+    if (this.mode === "live") {
+      if (!this.assets) throw {message: "Uploading needs Editor access. Ask the organizer to invite you as an Editor."};
+      const blob = isVideo ? file : await shrink(file, 1800, .84).catch(() => file);
+      if (blob.size > 20 * 1024 * 1024) throw {message: "That file is over 20 MB. Trim the video or pick a shorter clip."};
+      const r = await this.assets.upload(blob);
+      return {url: r.url, assetId: r.id, kind: isVideo ? "video" : "image"};
+    }
+    if (isVideo) throw {message: "Videos need the shared link. Offline mode keeps photos only."};
+    const small = await shrink(file, 900, .72);
+    return {url: await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(small); }), kind: "image"};
+  },
+};
+function shrink(file, max, q) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const cv = document.createElement("canvas"); cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+      cv.toBlob(b => b ? res(b) : rej(new Error("Couldn't read that photo.")), "image/jpeg", q);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("This browser can't read that photo format. Try a JPEG or PNG.")); };
+    img.src = url;
+  });
+}
+
+/* ============================================================
+   IDENTITY — which crew member is using this device
+   ============================================================ */
+let ME = LS.get("bp:me", null);
+function needMe() { if (ME) return true; pickMe(); return false; }
+function pickMe() {
+  openDialog(`<div class="dlg">
+    <div class="eyebrow">Identify yourself</div>
+    <h3>Who's on this phone?</h3>
+    <p class="muted">Your votes, uploads and points are signed with this name. Saved on this device only.</p>
+    <div class="who-grid">${CREW.map(c => `<button type="button" data-me="${c.key}" aria-pressed="${ME === c.key}">${avatar(c.key)}<span>${h(c.name)}</span></button>`).join("")}</div>
+    <div class="row" style="justify-content:flex-end"><button class="btn" data-close type="button">Close</button></div></div>`);
+  $$("[data-me]", $("#dlg")).forEach(b => b.onclick = () => { ME = b.dataset.me; LS.set("bp:me", ME); closeDialog(); paintStatus(); route(true); toast(`Signed in as ${crewBy(ME).name}`); });
+}
+function paintStatus() {
+  const dot = $("#live-dot"), lab = $("#live-label");
+  dot.classList.toggle("live", Store.mode === "live");
+  lab.textContent = Store.mode === "live" ? "Live" : Store.mode === "local" ? "Offline" : "Connecting";
+  $("#me-chip").innerHTML = ME ? `${avatar(ME)}<span>${h(crewBy(ME).name)}</span>` : `<span class="av">?</span><span>Who are you?</span>`;
+}
+
+/* ============================================================
+   DIALOG + BANNER
+   ============================================================ */
+function openDialog(html, cls = "") {
+  const d = $("#dlg"); d.className = cls; $("#dlg-body").innerHTML = html;
+  $$("[data-close]", d).forEach(b => b.onclick = closeDialog);
+  if (!d.open) d.showModal();
+}
+function closeDialog() { const d = $("#dlg"); if (d.open) d.close(); $("#dlg-body").innerHTML = ""; }
+$("#dlg").addEventListener("click", e => { if (e.target.id === "dlg") closeDialog(); });
+function showBanner(t, kind = "") { const b = $("#banner"); b.className = "banner " + kind; b.textContent = t; b.hidden = false; }
+function hideBanner() { $("#banner").hidden = true; }
+
+/* ============================================================
+   DERIVED: points + awards
+   ============================================================ */
+function allChallenges() {
+  const custom = D.challenges.map(c => ({id: c.id, cat: "Crew-made", day: null, pts: Number(c.pts) || 10, t: c.t, d: c.d || "", by: c.by}));
+  return [...CHALLENGES, ...custom];
+}
+function scores() {
+  const chs = Object.fromEntries(allChallenges().map(c => [c.id, c]));
+  const s = Object.fromEntries(CREW.map(c => [c.key, {key: c.key, total: 0, ch: 0, chCount: 0, drops: 0, bonus: 0, photos: 0, votes: 0}]));
+  D.completions.forEach(x => { const c = chs[x.ch]; if (c && s[x.crew]) { s[x.crew].ch += c.pts; s[x.crew].chCount++; } });
+  const dropDays = {};
+  D.vault.forEach(v => { if (!s[v.by]) return; s[v.by].photos++; if (v.day >= 1 && v.day <= 9) (dropDays[v.by] ||= new Set()).add(v.day); });
+  Object.entries(dropDays).forEach(([k, set]) => s[k].drops = set.size * DAILY_DROP_PTS);
+  D.adjust.forEach(a => { if (s[a.crew]) s[a.crew].bonus += Number(a.pts) || 0; });
+  D.votes.forEach(v => { if (s[v.crew]) s[v.crew].votes++; });
+  Object.values(s).forEach(r => r.total = r.ch + r.drops + r.bonus);
+  return Object.values(s).sort((a, b) => b.total - a.total || a.key.localeCompare(b.key));
+}
+const settings = () => D.settings.find(x => x.id === "main") || {};
+const awardsOpen = () => Date.now() >= T_AWARDS || !!settings().reveal;
+
+/* ============================================================
+   VIEWS
+   ============================================================ */
+const VIEWS = {};
+const ORDER = [
+  ["mission","The Mission","Countdown, dates, sealed dispatches"],
+  ["crew","The Crew","Profiles, nicknames, photos"],
+  ["intel","The Intel","Flights, base, logistics, packing"],
+  ["itinerary","The Itinerary","Nine days, times and maps"],
+  ["challenges","The Challenges","Games, dares, competitions"],
+  ["vault","The Vault","Photos, videos, inside jokes"],
+  ["polls","The Polls","Live votes on what's next"],
+  ["leaderboard","The Leaderboard","Points, awards, punishments"],
+];
+
+/* ---------- THE MISSION ---------- */
+VIEWS.mission = {
+  shell() {
+    return `<section class="view">
+      <div class="hero">
+        <span class="stamp">Classified · Eyes of the crew only</span>
+        <div class="eyebrow" style="margin-top:18px">Istanbul · November 2026 · 41.047° N 29.027° E</div>
+        <h1>Umang's Bachelor</h1>
+        <p class="sub">Nine days on the Bosphorus, Sapanca and the Thracian wine route. Five agents. One groom.</p>
+        <div class="cd-label" id="cd-label"></div>
+        <div class="countdown" id="cd"></div>
+      </div>
+      <dl class="facts">
+        <div><dt>Dates</dt><dd>Sat Nov 14 – Sun Nov 22, 2026</dd></div>
+        <div><dt>Base</dt><dd>Airbnb, Ortaköy, Beşiktaş</dd></div>
+        <div><dt>Crew</dt><dd>Umang · Sagar · Dev · Abhi · Nick</dd></div>
+        <div><dt>Weather</dt><dd>12–15°C, rain likely, sunset ≈ 4:50 PM</dd></div>
+        <div><dt>Party nights</dt><dd>Sun · Mon · Tue · Wed · Fri · Sat</dd></div>
+      </dl>
+      <div class="grid g2">
+        <div class="stack">
+          <div class="head"><div class="eyebrow">Sealed dispatches</div><h2>Orders by the day</h2>
+          <p>Each dispatch unseals at its time, Istanbul clock. No peeking.</p></div>
+          <div class="dispatches" id="dispatches"></div>
+        </div>
+        <div class="stack" style="align-content:start">
+          <div class="panel" id="pulse"></div>
+          <div id="composer"></div>
+          <div class="index">${ORDER.slice(1).map(([k, t, s]) => `<a href="#${k}"><b>${t}</b><span>${s}</span></a>`).join("")}</div>
+        </div>
+      </div>
+    </section>`;
+  },
+  mount() { tickCountdown(); this.composer(); },
+  composer() {
+    const box = $("#composer"); if (!box) return;
+    if (!Store.owner && Store.mode !== "local") { box.innerHTML = ""; return; }
+    box.innerHTML = `<form class="panel stack" id="secret-form">
+      <h3>Plant a personal message</h3>
+      <p class="muted" style="font-size:14px">Only you see this form. The message appears under that day's dispatch once it unseals.</p>
+      <label class="f">Dispatch<select id="secret-day">${DISPATCHES.map(d => `<option value="${h(d.id)}">${h(d.label)}</option>`).join("")}</select></label>
+      <label class="f">Message<textarea id="secret-text" maxlength="1200" placeholder="A note from the bride, a surprise, a clue…"></textarea></label>
+      <div class="row"><button class="btn primary" type="submit">Seal message</button><span class="muted" style="font-size:13px" id="secret-has"></span></div>
+    </form>`;
+    const sel = $("#secret-day"), ta = $("#secret-text");
+    const load = () => { const s = D.secrets.find(x => x.id === sel.value); ta.value = s ? s.text : ""; $("#secret-has").textContent = s ? "A message is already sealed here." : ""; };
+    sel.onchange = load; load();
+    $("#secret-form").onsubmit = e => { e.preventDefault(); const text = ta.value.trim();
+      act(text ? Store.put("secrets", sel.value, {text, at: Date.now()}) : Store.del("secrets", sel.value), text ? "Message sealed" : "Message removed"); };
+  },
+  update() {
+    const now = Date.now();
+    $("#dispatches").innerHTML = DISPATCHES.map(d => {
+      const open = now >= Date.parse(d.at);
+      const personal = D.secrets.find(x => x.id === d.id);
+      const [big, small] = d.badge.split("|");
+      return `<article class="disp ${open ? "open" : "sealed"}">
+        <div class="when"><div><b>${h(big)}</b><span>${h(small)}</span></div></div>
+        <div class="body">
+          <div class="seal"><i></i>${open ? "Unsealed" : "Sealed · opens " + h(fmtTime(Date.parse(d.at)))}</div>
+          ${open ? `<p>${h(d.text)}</p>${personal ? `<p class="personal">${h(personal.text)}</p>` : ""}`
+                 : `<p>${h(d.label)}${personal ? " · includes a personal message" : ""}</p>`}
+        </div></article>`;
+    }).join("");
+    const sc = scores(), lead = sc[0];
+    const day = tripDay();
+    const openPolls = D.polls.filter(p => !p.closed).length;
+    $("#pulse").innerHTML = `<div class="spread"><h3>Mission pulse</h3><span class="pill turq">${Store.mode === "live" ? "Live" : "This device"}</span></div>
+      <dl class="kv" style="margin-top:12px">
+        <dt>Today</dt><dd>${day ? `Day ${day}: ${h(DAYS[day - 1].title)}` : now < T_START ? "Pre-mission" : "Mission complete"}</dd>
+        <dt>Leader</dt><dd>${lead && lead.total ? `${h(crewBy(lead.key).name)} · ${lead.total} pts` : "No points on the board yet"}</dd>
+        <dt>Vault</dt><dd>${D.vault.length} upload${D.vault.length === 1 ? "" : "s"} · ${D.jokes.length} inside joke${D.jokes.length === 1 ? "" : "s"}</dd>
+        <dt>Polls</dt><dd>${openPolls} open · <a href="#polls">vote now</a></dd>
+      </dl>`;
+  },
+};
+let cdTimer = null;
+function tickCountdown() {
+  clearInterval(cdTimer);
+  const paint = () => {
+    const el = $("#cd"); if (!el) { clearInterval(cdTimer); return; }
+    const now = Date.now();
+    let target, label;
+    if (now < T_START) { target = T_START; label = "Wheels down at IST in"; }
+    else if (now < T_END) { target = T_END; label = `Day ${tripDay() || "…"} of 9 · mission ends in`; }
+    else { el.innerHTML = `<div class="cd"><b>Done</b><span>Mission complete</span></div>`; $("#cd-label").textContent = "See you at the wedding"; return; }
+    const s = Math.max(0, Math.floor((target - now) / 1000));
+    const parts = [[Math.floor(s / 86400), "Days"], [Math.floor(s % 86400 / 3600), "Hours"], [Math.floor(s % 3600 / 60), "Min"], [s % 60, "Sec"]];
+    $("#cd-label").textContent = label;
+    el.innerHTML = parts.map(([v, l]) => `<div class="cd"><b>${String(v).padStart(2, "0")}</b><span>${l}</span></div>`).join("");
+  };
+  paint(); cdTimer = setInterval(paint, 1000);
+}
+
+/* ---------- THE CREW ---------- */
+VIEWS.crew = {
+  shell() {
+    return `<section class="view">
+      <div class="head"><div class="eyebrow">Personnel file</div><h2>The Crew</h2>
+      <p>Five agents. Set your own codename and photo; everyone sees it on every vote, upload and score.</p></div>
+      <div class="grid g3" id="crew-grid"></div>
+    </section>`;
+  },
+  update() {
+    const sc = Object.fromEntries(scores().map(r => [r.key, r.total]));
+    $("#crew-grid").innerHTML = CREW.map(c => {
+      const p = D.crew.find(x => x.id === c.key) || {};
+      return `<article class="panel crew-card">
+        <div class="crew-top">${avatar(c.key)}<div style="min-width:0">
+          <div class="crew-name">${h(c.name)}</div>
+          <div class="nick">${p.nick ? "“" + h(p.nick) + "”" : "Codename pending"}</div>
+          <div class="muted" style="font-size:13px">${h(c.role)}</div></div></div>
+        ${p.tagline ? `<p>${h(p.tagline)}</p>` : `<p class="muted">${h(c.note)}</p>`}
+        <dl class="kv"><dt>Lands</dt><dd>${h(c.arr)}</dd><dt>Flies out</dt><dd>${h(c.dep)}</dd><dt>Leave base</dt><dd>${h(c.leave)}</dd><dt>Points</dt><dd class="pts" style="font-size:16px">${sc[c.key] || 0}</dd></dl>
+        <div><div class="eyebrow" style="margin-bottom:6px">Nights in Istanbul · ${c.nights.filter(Boolean).length}/8</div>
+          <div class="nights">${c.nights.map((on, i) => `<i class="${on ? "on" : ""}" title="${NIGHTS[i]}"></i>`).join("")}</div></div>
+        <div class="row"><button class="btn small" type="button" data-edit="${c.key}">${ME === c.key ? "Edit my profile" : "Edit profile"}</button></div>
+      </article>`;
+    }).join("");
+    $$("[data-edit]").forEach(b => b.onclick = () => editProfile(b.dataset.edit));
+  },
+};
+function editProfile(key) {
+  const c = crewBy(key), p = D.crew.find(x => x.id === key) || {};
+  openDialog(`<form class="dlg" id="prof-form">
+    <div class="eyebrow">Personnel file</div><h3>${h(c.name)}</h3>
+    <label class="f">Codename<input type="text" id="pf-nick" maxlength="40" value="${h(p.nick || "")}" placeholder="e.g. The Sommelier"></label>
+    <label class="f">One-liner<input type="text" id="pf-tag" maxlength="120" value="${h(p.tagline || "")}" placeholder="Most likely to…"></label>
+    <label class="f">Photo<input type="file" id="pf-photo" accept="image/*"></label>
+    ${Store.canUpload() ? "" : `<p class="muted" style="font-size:13px">Photo upload needs Editor access.</p>`}
+    <div class="row" style="justify-content:flex-end"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit" id="pf-save">Save</button></div>
+  </form>`);
+  $("#prof-form").onsubmit = async e => {
+    e.preventDefault(); const btn = $("#pf-save"); btn.disabled = true; btn.textContent = "Saving…";
+    const data = {nick: $("#pf-nick").value.trim(), tagline: $("#pf-tag").value.trim(), photo: p.photo || "", photoId: p.photoId || ""};
+    const f = $("#pf-photo").files[0];
+    try {
+      if (f) { const up = await Store.upload(f); data.photo = up.url; data.photoId = up.assetId || ""; }
+      await Store.put("crew", key, data); closeDialog(); toast("Profile saved");
+    } catch (err) { toast(errMsg(err)); btn.disabled = false; btn.textContent = "Save"; }
+  };
+}
+
+/* ---------- THE INTEL ---------- */
+VIEWS.intel = {
+  shell() {
+    const packed = LS.get("bp:packed", {});
+    return `<section class="view">
+      <div class="head"><div class="eyebrow">Logistics</div><h2>The Intel</h2>
+      <p>Flights, base, bookings and the kit list. All flights assume Istanbul Airport (IST); Sabiha Gökçen (SAW) is 60–90 min from base.</p></div>
+      <div class="stack"><h3>Flights</h3>
+        <div class="tbl"><table><thead><tr><th>Agent</th><th>Arrival</th><th>Departure</th><th>Leave Airbnb by</th></tr></thead>
+        <tbody>${CREW.map(c => `<tr><td><b>${h(c.name)}</b>${c.key === "umang" ? ` <span class="pill party">Groom</span>` : ""}</td><td class="mono">${h(c.arr)}</td><td class="mono">${h(c.dep)}</td><td class="mono">${h(c.leave)}</td></tr>`).join("")}</tbody></table></div>
+      </div>
+      <div class="stack"><h3>Nightly headcount</h3>
+        <div class="tbl"><table><thead><tr><th>Agent</th>${NIGHTS.map(n => `<th class="num">${n}</th>`).join("")}</tr></thead>
+        <tbody>${CREW.map(c => `<tr><td>${h(c.name)}</td>${c.nights.map(on => `<td class="num">${on ? "●" : "–"}</td>`).join("")}</tr>`).join("")}
+        <tr><td><b>Total</b></td>${NIGHTS.map((_, i) => `<td class="num"><b>${CREW.reduce((a, c) => a + c.nights[i], 0)}</b></td>`).join("")}</tr></tbody></table></div>
+      </div>
+      <div class="grid g2">
+        <div class="panel"><h3>Base</h3>
+          <p style="margin-top:10px"><b>Airbnb</b> · <span id="addr">${h(BASE)}</span></p>
+          <div class="row" style="margin-top:10px"><a class="btn small" href="${mapUrl(BASE)}" target="_blank" rel="noopener">Open in Maps</a><button class="btn small" type="button" id="copy-addr">Copy address</button></div>
+          <div class="tbl" style="margin-top:14px"><table><thead><tr><th>From base to</th><th>By car</th></tr></thead>
+          <tbody>${TRAVEL.map(([a, b]) => `<tr><td>${h(a)}</td><td class="mono">${h(b)}</td></tr>`).join("")}</tbody></table></div>
+        </div>
+        <div class="panel"><h3>Weather</h3>
+          <p style="margin-top:10px">Highs 12–15°C, rain likely, sunset ≈ 4:50 PM. Pack for rain every day.</p>
+          <p class="muted" style="margin-top:10px;font-size:14px">Prayer times, Nov 15–21 (shift ~1 min/day): noon ≈ 12:10 PM · afternoon ≈ 2:40 PM · sunset ≈ 4:45 PM. Mosques close to visitors around each.</p>
+          <h3 style="margin-top:18px">Packing list</h3>
+          <p class="muted" style="font-size:13px;margin-top:4px">Your ticks stay on this device.</p>
+          <div style="margin-top:8px">${PACKING.map((p, i) => `<label class="check ${packed[i] ? "done" : ""}"><input type="checkbox" id="pk-${i}" data-pack="${i}" ${packed[i] ? "checked" : ""}><span>${h(p)}</span></label>`).join("")}</div>
+        </div>
+      </div>
+      <div class="panel"><div class="spread"><h3>Bookings checklist</h3><span class="muted mono" style="font-size:13px" id="book-count"></span></div>
+        <p class="muted" style="font-size:13px;margin-top:4px">Shared with the crew. Tick it when it's confirmed in writing.</p>
+        <div id="bookings" style="margin-top:8px"></div></div>
+      <div class="panel"><h3>Still to confirm</h3>
+        <div class="tbl" style="margin-top:12px"><table><thead><tr><th>Stop</th><th>Scheduled</th><th>What to do</th></tr></thead>
+        <tbody>${CONFIRMS.map(([a, b, c]) => `<tr><td><b>${h(a)}</b> <span class="pill warn">Confirm</span></td><td class="mono">${h(b)}</td><td>${h(c)}</td></tr>`).join("")}</tbody></table></div></div>
+      <div class="grid g2">
+        <div class="panel"><h3>Rain plan</h3><div class="tbl" style="margin-top:12px"><table><tbody>${RAIN.map(([a, b]) => `<tr><td class="mono" style="white-space:nowrap">${h(a)}</td><td>${h(b)}</td></tr>`).join("")}</tbody></table></div></div>
+        <div class="panel"><h3>Logistics & risks</h3><ul class="plain" style="margin-top:12px">${RISKS.map(r => `<li>${h(r)}</li>`).join("")}</ul></div>
+      </div>
+    </section>`;
+  },
+  mount() {
+    $$("[data-pack]").forEach(cb => cb.onchange = () => { const p = LS.get("bp:packed", {}); p[cb.dataset.pack] = cb.checked; LS.set("bp:packed", p); cb.closest(".check").classList.toggle("done", cb.checked); });
+    $("#copy-addr").onclick = async () => { try { await navigator.clipboard.writeText(BASE); toast("Address copied"); } catch { const r = document.createRange(); r.selectNodeContents($("#addr")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Address selected. Copy it from here."); } };
+  },
+  update() {
+    const done = Object.fromEntries(D.bookings.map(b => [b.id, b]));
+    $("#bookings").innerHTML = BOOKINGS.map(([t, owner], i) => { const b = done["b" + i]; return `<label class="check ${b && b.done ? "done" : ""}"><input type="checkbox" id="bk-${i}" data-book="${i}" ${b && b.done ? "checked" : ""}><span>${h(t)}${owner ? ` <span class="muted">· ${h(owner)}</span>` : ""}${b && b.done && b.by ? ` <span class="muted" style="font-size:12px">· ticked by ${h(crewBy(b.by)?.name || "crew")}</span>` : ""}</span></label>`; }).join("");
+    $("#book-count").textContent = `${BOOKINGS.filter((_, i) => done["b" + i]?.done).length}/${BOOKINGS.length} confirmed`;
+    $$("[data-book]").forEach(cb => cb.onchange = () => act(Store.put("bookings", "b" + cb.dataset.book, {done: cb.checked, by: ME || "", at: Date.now()})));
+  },
+};
+
+/* ---------- THE ITINERARY ---------- */
+let selDay = null;
+VIEWS.itinerary = {
+  shell() {
+    if (!selDay) selDay = tripDay() || 1;
+    const today = tripDay();
+    return `<section class="view">
+      <div class="head"><div class="eyebrow">Day by day</div><h2>The Itinerary</h2>
+      <p>Times verified against published opening hours on 3 Nov 2026. Tap any stop for directions.</p></div>
+      <div class="daypick" role="group" aria-label="Day">${DAYS.map(d => `<button type="button" data-day="${d.n}" aria-pressed="${d.n === selDay}" class="${d.n === today ? "today" : ""}"><span>${d.dow}${d.n === today ? " · now" : ""}</span><b>${d.date.slice(8)}</b><span>Day ${d.n}</span></button>`).join("")}</div>
+      <div id="day-card"></div>
+      <div class="stack"><h3>Field guide · attractions</h3>
+        <div class="tbl"><table><thead><tr><th>Attraction</th><th>When</th><th>Know before you go</th></tr></thead>
+        <tbody>${ATTRACTIONS.map(([a, b, c]) => `<tr><td><a href="${mapUrl(a + " Istanbul")}" target="_blank" rel="noopener"><b>${h(a)}</b></a></td><td class="mono" style="white-space:nowrap">${h(b)}</td><td>${h(c)}</td></tr>`).join("")}</tbody></table></div></div>
+      <div class="stack"><h3>Thrace wine route</h3>
+        <p class="muted">Thursday is the groom's day: one estate per stop, food in between, no rushing. Kırklareli is the alternative (2.5 hrs each way, higher ceiling).</p>
+        <div class="tbl"><table><thead><tr><th>Winery</th><th>Where</th><th>When</th><th>Notes</th></tr></thead>
+        <tbody>${WINERIES.map(([a, b, c, d, s]) => `<tr><td><b>${h(a)}</b> <span class="pill ${s === "ALT" ? "turq" : "warn"}">${s === "ALT" ? "Alt" : "Confirm"}</span></td><td>${h(b)}</td><td class="mono" style="white-space:nowrap">${h(c)}</td><td>${h(d)}</td></tr>`).join("")}</tbody></table></div></div>
+    </section>`;
+  },
+  mount() {
+    $$("[data-day]").forEach(b => b.onclick = () => { selDay = +b.dataset.day; $$("[data-day]").forEach(x => x.setAttribute("aria-pressed", x === b)); this.day(); });
+    this.day();
+  },
+  day() {
+    const d = DAYS[selDay - 1];
+    const stops = [...new Set(d.items.map(i => i[2]).filter(Boolean))];
+    const route = stops.length > 1 ? "https://www.google.com/maps/dir/" + stops.map(s => encodeURIComponent(s + ", Türkiye")).join("/") : null;
+    $("#day-card").innerHTML = `<article class="panel stack">
+      <div class="spread"><div><div class="eyebrow">Day ${d.n} · ${h(d.label)}</div><h3 style="font-size:30px;margin-top:6px">${h(d.title)}</h3></div>
+        <div class="row">${d.party ? `<span class="pill party">Party night</span>` : ""}<span class="pill turq">Crew: ${h(d.crew)}</span></div></div>
+      <div class="timeline">${d.items.map(([t, p, q, ch]) => `<div class="tl"><time>${h(t)}</time><div class="what"><div>${h(p)}</div>
+        ${ch ? `<div class="changed">✱ Changed: ${h(ch)}</div>` : ""}
+        ${q ? `<a href="${mapUrl(q)}" target="_blank" rel="noopener" style="font-size:13px;font-weight:600">Map: ${h(q)} ↗</a>` : ""}</div></div>`).join("")}</div>
+      <div class="wear"><b>Dress code</b>${h(d.wear)}</div>
+      ${route ? `<div><a class="btn small" href="${route}" target="_blank" rel="noopener">Open today's route in Google Maps</a></div>` : ""}
+    </article>`;
+  },
+  update() {},
+};
+
+/* ---------- THE CHALLENGES ---------- */
+let chFilter = "All";
+VIEWS.challenges = {
+  shell() {
+    return `<section class="view">
+      <div class="head"><div class="eyebrow">Field tests</div><h2>The Challenges</h2>
+      <p>Claim a challenge when you've done it. Points land on the leaderboard instantly.</p></div>
+      <div class="panel"><h3>House rules</h3><ul class="plain" style="margin-top:10px">${RULES.map(r => `<li>${h(r)}</li>`).join("")}</ul></div>
+      <div class="chips" id="ch-filter">${["All","Daily","Dares","Competitions","Crew-made"].map(f => `<button class="chip" type="button" data-f="${f}" aria-pressed="${f === chFilter}">${f}</button>`).join("")}</div>
+      <div class="panel" id="ch-list"></div>
+      <form class="panel stack" id="dare-form"><h3>Propose a dare</h3>
+        <div class="grid g2"><label class="f">Dare<input type="text" id="dare-t" maxlength="80" placeholder="e.g. Get a barber to give the groom a hot-towel shave" required></label>
+        <label class="f">Points<select id="dare-p"><option>10</option><option selected>20</option><option>30</option><option>40</option></select></label></div>
+        <label class="f">Details<input type="text" id="dare-d" maxlength="200" placeholder="What counts as done?"></label>
+        <div><button class="btn primary" type="submit">Add dare</button></div></form>
+    </section>`;
+  },
+  mount() {
+    $$("[data-f]").forEach(b => b.onclick = () => { chFilter = b.dataset.f; $$("[data-f]").forEach(x => x.setAttribute("aria-pressed", x === b)); this.update(); });
+    $("#dare-form").onsubmit = e => { e.preventDefault(); if (!needMe()) return;
+      const t = $("#dare-t").value.trim(); if (!t) return;
+      act(Store.put("challenges", uid(), {t, d: $("#dare-d").value.trim(), pts: +$("#dare-p").value, by: ME, at: Date.now()}), "Dare added").then(ok => { if (ok) { $("#dare-t").value = ""; $("#dare-d").value = ""; } }); };
+  },
+  update() {
+    const today = tripDay();
+    const list = allChallenges().filter(c => chFilter === "All" || c.cat === chFilter);
+    const comp = D.completions;
+    const drop = ME && D.vault.some(v => v.by === ME && v.day === today && today);
+    const dropRow = (chFilter === "All" || chFilter === "Daily") ? `<div class="ch"><div><div class="t">Daily drop</div><div class="d">Post at least one photo in the Vault each trip day. Awarded automatically.</div></div>
+      <div class="side"><span class="pts">+${DAILY_DROP_PTS}/day</span>${today ? (drop ? `<span class="pill ok">Done today</span>` : `<a class="btn small" href="#vault">Upload</a>`) : ""}</div></div>` : "";
+    $("#ch-list").innerHTML = (dropRow + list.map(c => {
+      const who = comp.filter(x => x.ch === c.id);
+      const mine = ME && who.find(x => x.crew === ME);
+      const isComp = c.cat === "Competitions";
+      const dayTag = c.day ? `<span class="pill ${c.day === today ? "party" : "turq"}">Day ${c.day}${c.day === today ? " · today" : ""}</span>` : "";
+      return `<div class="ch"><div style="min-width:0"><div class="t">${h(c.t)}</div><div class="d">${h(c.d)}</div></div>
+        <div class="side"><span class="pts">+${c.pts}</span>
+          ${isComp ? `<button class="btn small" type="button" data-win="${h(c.id)}">${who.length ? "Change winner" : "Record winner"}</button>`
+                   : mine ? `<button class="btn small" type="button" data-undo="${h(mine.id)}">Undo</button>` : `<button class="btn small primary" type="button" data-did="${h(c.id)}">I did it</button>`}</div>
+        <div class="meta">${dayTag}<span class="pill">${h(c.cat)}</span>
+          ${who.length ? `<span class="avs">${who.map(x => avatar(x.crew)).join("")}</span><span class="muted" style="font-size:12px">${isComp ? "Winner: " : "Done by "}${who.map(x => h(crewBy(x.crew)?.name)).join(", ")}</span>` : ""}
+          ${who.length && !isComp ? `<button class="link" type="button" data-strike="${h(c.id)}">Strike a claim</button>` : ""}
+          ${c.by && (c.by === ME || Store.owner) ? `<button class="link" type="button" data-rmdare="${h(c.id)}" style="color:var(--coral)">Remove dare</button>` : ""}</div></div>`;
+    }).join("")) || `<div class="empty">No crew-made dares yet. Propose one below.</div>`;
+    $$("[data-did]").forEach(b => b.onclick = () => { if (!needMe()) return; act(Store.put("completions", b.dataset.did + "__" + ME, {ch: b.dataset.did, crew: ME, at: Date.now()}), "Claimed. Points added."); });
+    $$("[data-undo]").forEach(b => b.onclick = () => act(Store.del("completions", b.dataset.undo), "Claim removed"));
+    $$("[data-win]").forEach(b => b.onclick = () => pickCrew("Who won?", async k => {
+      for (const x of D.completions.filter(x => x.ch === b.dataset.win)) await Store.del("completions", x.id);
+      if (k) await Store.put("completions", b.dataset.win + "__" + k, {ch: b.dataset.win, crew: k, at: Date.now()});
+    }, true));
+    $$("[data-strike]").forEach(b => b.onclick = () => pickCrew("Strike whose claim?", async k => Store.del("completions", b.dataset.strike + "__" + k), false, D.completions.filter(x => x.ch === b.dataset.strike).map(x => x.crew)));
+    $$("[data-rmdare]").forEach(b => b.onclick = () => confirmBox("Remove this dare and its claims?", async () => {
+      for (const x of D.completions.filter(x => x.ch === b.dataset.rmdare)) await Store.del("completions", x.id);
+      await Store.del("challenges", b.dataset.rmdare);
+    }));
+  },
+};
+function pickCrew(title, fn, allowNone = false, only = null) {
+  const list = CREW.filter(c => !only || only.includes(c.key));
+  openDialog(`<div class="dlg"><h3>${h(title)}</h3>
+    <div class="who-grid">${list.map(c => `<button type="button" data-pk="${c.key}">${avatar(c.key)}<span>${h(c.name)}</span></button>`).join("")}</div>
+    <div class="row" style="justify-content:flex-end">${allowNone ? `<button class="btn" type="button" data-pk="">Clear</button>` : ""}<button class="btn" type="button" data-close>Cancel</button></div></div>`);
+  $$("[data-pk]", $("#dlg")).forEach(b => b.onclick = async () => { closeDialog(); await act(fn(b.dataset.pk), "Saved"); });
+}
+function confirmBox(msg, fn) {
+  openDialog(`<div class="dlg"><h3>Are you sure?</h3><p>${h(msg)}</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" type="button" data-close>Cancel</button><button class="btn danger" type="button" id="cf-yes">Yes, remove</button></div></div>`);
+  $("#cf-yes").onclick = async () => { closeDialog(); await act(fn(), "Removed"); };
+}
+
+/* ---------- THE VAULT ---------- */
+let vaultDay = "all";
+VIEWS.vault = {
+  shell() {
+    const today = tripDay();
+    const def = today || (Date.now() < T_START ? 0 : 9);
+    return `<section class="view">
+      <div class="head"><div class="eyebrow">Evidence locker</div><h2>The Vault</h2>
+      <p>Daily photos, videos and the inside jokes nobody outside this crew will understand. Your first upload each trip day earns ${DAILY_DROP_PTS} points.</p></div>
+      <form class="panel stack" id="up-form"><h3>Drop evidence</h3>
+        ${Store.canUpload() || Store.mode === "connecting" ? "" : `<p class="banner warn" style="margin:0">Uploading needs Editor access. Ask the organizer to invite you as an Editor.</p>`}
+        <div class="grid g2">
+          <label class="f">Photo or video<input type="file" id="up-file" accept="image/*,video/*" multiple required></label>
+          <label class="f">Day<select id="up-day"><option value="0">Pre-mission</option>${DAYS.map(d => `<option value="${d.n}" ${d.n === def ? "selected" : ""}>Day ${d.n} · ${h(d.label)}</option>`).join("")}</select></label>
+        </div>
+        <label class="f">Caption<input type="text" id="up-cap" maxlength="140" placeholder="What happened here?"></label>
+        <div class="row"><button class="btn primary" type="submit" id="up-btn">Upload</button><span class="muted" style="font-size:13px">Photos are resized before upload. Videos up to 20 MB.</span></div>
+      </form>
+      <div class="chips" id="vault-days"></div>
+      <div id="gallery"></div>
+      <div class="grid g2">
+        <form class="panel stack" id="joke-form"><h3>Inside jokes</h3>
+          <label class="f">The line<input type="text" id="joke-t" maxlength="160" placeholder="Something that will make zero sense in a year" required></label>
+          <label class="f">Context (optional)<input type="text" id="joke-c" maxlength="160" placeholder="Where, who, why"></label>
+          <div><button class="btn primary" type="submit">Add to the wall</button></div></form>
+        <div class="jokes" id="jokes"></div>
+      </div>
+    </section>`;
+  },
+  mount() {
+    $("#up-form").onsubmit = async e => {
+      e.preventDefault(); if (!needMe()) return;
+      const files = [...$("#up-file").files]; if (!files.length) return;
+      const btn = $("#up-btn"); btn.disabled = true;
+      let n = 0;
+      for (const f of files) {
+        btn.textContent = `Uploading ${n + 1} of ${files.length}…`;
+        try { const up = await Store.upload(f);
+          await Store.put("vault", uid(), {...up, cap: $("#up-cap").value.trim(), day: +$("#up-day").value, by: ME, at: Date.now()}); n++;
+        } catch (err) { toast(errMsg(err)); break; }
+      }
+      btn.disabled = false; btn.textContent = "Upload";
+      if (n) { toast(`${n} upload${n > 1 ? "s" : ""} added to the Vault`); $("#up-file").value = ""; $("#up-cap").value = ""; }
+    };
+    $("#joke-form").onsubmit = e => { e.preventDefault(); if (!needMe()) return;
+      const t = $("#joke-t").value.trim(); if (!t) return;
+      act(Store.put("jokes", uid(), {t, c: $("#joke-c").value.trim(), by: ME, at: Date.now()}), "On the wall").then(ok => { if (ok) { $("#joke-t").value = ""; $("#joke-c").value = ""; } }); };
+  },
+  update() {
+    const counts = {}; D.vault.forEach(v => counts[v.day] = (counts[v.day] || 0) + 1);
+    const opts = [["all", "All", D.vault.length], ["0", "Pre", counts[0] || 0], ...DAYS.map(d => [String(d.n), "Day " + d.n, counts[d.n] || 0])];
+    $("#vault-days").innerHTML = opts.map(([v, l, c]) => `<button class="chip" type="button" data-vd="${v}" aria-pressed="${vaultDay === v}">${l} <span class="mono">${c}</span></button>`).join("");
+    $$("[data-vd]").forEach(b => b.onclick = () => { vaultDay = b.dataset.vd; this.update(); });
+    const items = D.vault.filter(v => vaultDay === "all" || String(v.day) === vaultDay).sort((a, b) => b.at - a.at);
+    $("#gallery").innerHTML = items.length ? `<div class="gallery">${items.map(v => `<button class="shot" type="button" data-shot="${h(v.id)}" aria-label="${h(v.cap || "Open upload")}">
+        ${v.kind === "video" ? `<video src="${h(v.url)}" muted preload="metadata" playsinline></video><span class="play">VIDEO</span>` : `<img src="${h(v.url)}" alt="${h(v.cap || "")}" loading="lazy">`}
+        <span class="cap">${h(crewBy(v.by)?.name || "")}${v.cap ? " · " + h(v.cap) : ""}</span></button>`).join("")}</div>`
+      : `<div class="empty">${vaultDay === "all" ? "The Vault is empty. The first photo of the trip earns the daily drop." : "Nothing filed for this day yet."}</div>`;
+    $$("[data-shot]").forEach(b => b.onclick = () => openShot(b.dataset.shot));
+    const jokes = [...D.jokes].sort((a, b) => b.at - a.at);
+    $("#jokes").innerHTML = jokes.length ? jokes.map(j => `<div class="joke"><q>${h(j.t)}</q>${j.c ? `<span class="muted" style="font-size:13px">${h(j.c)}</span>` : ""}
+      <div class="spread"><span class="row" style="gap:6px">${avatar(j.by, "")}<span class="muted" style="font-size:12px">${h(crewBy(j.by)?.name || "")}</span></span>
+      ${j.by === ME || Store.owner ? `<button class="link" type="button" data-rmj="${h(j.id)}" style="color:var(--coral)">Remove</button>` : ""}</div></div>`).join("")
+      : `<div class="empty">No inside jokes yet. Give it until the meyhane.</div>`;
+    $$("#jokes .av").forEach(a => { a.style.width = "22px"; a.style.height = "22px"; a.style.fontSize = "11px"; });
+    $$("[data-rmj]").forEach(b => b.onclick = () => confirmBox("Remove this joke from the wall?", () => Store.del("jokes", b.dataset.rmj)));
+  },
+};
+function openShot(id) {
+  const v = D.vault.find(x => x.id === id); if (!v) return;
+  const canRm = v.by === ME || Store.owner;
+  openDialog(`${v.kind === "video" ? `<video src="${h(v.url)}" controls playsinline></video>` : `<img src="${h(v.url)}" alt="${h(v.cap || "")}">`}
+    <div class="dlg"><div class="spread"><div><b>${h(crewBy(v.by)?.name || "")}</b> <span class="muted">· ${v.day ? "Day " + v.day : "Pre-mission"} · ${h(fmtTime(v.at))}</span></div>
+    <div class="row">${canRm ? `<button class="btn small danger" type="button" id="rm-shot">Delete</button>` : ""}<button class="btn small" type="button" data-close>Close</button></div></div>
+    ${v.cap ? `<p>${h(v.cap)}</p>` : ""}</div>`, "lightbox");
+  if (canRm) $("#rm-shot").onclick = () => confirmBox("Delete this upload for everyone?", () => Store.del("vault", id));
+}
+
+/* ---------- THE POLLS ---------- */
+VIEWS.polls = {
+  shell() {
+    return `<section class="view">
+      <div class="head"><div class="eyebrow">Crew decides</div><h2>The Polls</h2>
+      <p>Results move live as the crew votes. Tap an option to vote; tap another to change it.</p></div>
+      <div id="polls" class="grid g2"></div>
+      <form class="panel stack" id="poll-form"><h3>Call a vote</h3>
+        <label class="f">Question<input type="text" id="poll-q" maxlength="120" placeholder="Where next after the hamam?" required></label>
+        <label class="f">Options, one per line<textarea id="poll-o" maxlength="600" placeholder="Kadıköy food crawl&#10;Karaköy rooftop&#10;Back to Ortaköy" required></textarea></label>
+        <div><button class="btn primary" type="submit">Open the vote</button></div></form>
+    </section>`;
+  },
+  mount() {
+    $("#poll-form").onsubmit = e => { e.preventDefault(); if (!needMe()) return;
+      const q = $("#poll-q").value.trim(); const o = $("#poll-o").value.split("\n").map(s => s.trim()).filter(Boolean).slice(0, 8);
+      if (!q || o.length < 2) { toast("Add a question and at least two options."); return; }
+      act(Store.put("polls", uid(), {q, o, by: ME, at: Date.now(), closed: false}), "Vote is open").then(ok => { if (ok) { $("#poll-q").value = ""; $("#poll-o").value = ""; } }); };
+  },
+  update() {
+    const polls = [...D.polls].sort((a, b) => (a.closed - b.closed) || (b.at || 0) - (a.at || 0));
+    $("#polls").innerHTML = polls.length ? polls.map(p => {
+      const vs = D.votes.filter(v => v.poll === p.id);
+      const counts = (p.o || []).map((_, i) => vs.filter(v => v.choice === i));
+      const max = Math.max(1, ...counts.map(c => c.length));
+      const mine = ME && vs.find(v => v.crew === ME);
+      const lead = Math.max(0, ...counts.map(c => c.length));
+      const canAdmin = p.by === ME || Store.owner;
+      return `<article class="panel poll">
+        <div class="spread"><span class="pill ${p.closed ? "" : "ok"}">${p.closed ? "Closed" : "Open"}</span><span class="muted mono" style="font-size:12px">${vs.length}/${CREW.length} voted</span></div>
+        <h3 style="text-transform:none;font-size:24px">${h(p.q)}</h3>
+        ${(p.o || []).map((o, i) => `<button type="button" class="opt ${mine && mine.choice === i ? "mine" : ""} ${lead && counts[i].length === lead ? "lead" : ""}" data-vote="${h(p.id)}" data-i="${i}" ${p.closed ? "disabled" : ""}>
+          <span class="fill" style="width:${counts[i].length / max * 100}%"></span>
+          <span style="min-width:0">${h(o)}${mine && mine.choice === i ? " ✓" : ""}<span class="avs" style="margin-top:4px">${counts[i].map(v => avatar(v.crew)).join("")}</span></span>
+          <span class="n">${counts[i].length}</span></button>`).join("")}
+        <div class="spread"><span class="muted" style="font-size:12px">Called by ${h(crewBy(p.by)?.name || "the organizer")}</span>
+          ${canAdmin ? `<span class="row"><button class="link" type="button" data-close-poll="${h(p.id)}">${p.closed ? "Reopen" : "Close vote"}</button><button class="link" type="button" data-rm-poll="${h(p.id)}" style="color:var(--coral)">Delete</button></span>` : ""}</div>
+      </article>`;
+    }).join("") : `<div class="empty">No votes open yet. Call one below: where to eat, which bar, ATV or zipline.</div>`;
+    $$("[data-vote]").forEach(b => b.onclick = () => { if (!needMe()) return;
+      act(Store.put("votes", b.dataset.vote + "__" + ME, {poll: b.dataset.vote, crew: ME, choice: +b.dataset.i, at: Date.now()})); });
+    $$("[data-close-poll]").forEach(b => b.onclick = () => { const p = D.polls.find(x => x.id === b.dataset.closePoll); act(Store.put("polls", p.id, {...stripId(p), closed: !p.closed})); });
+    $$("[data-rm-poll]").forEach(b => b.onclick = () => confirmBox("Delete this poll and its votes?", async () => {
+      for (const v of D.votes.filter(v => v.poll === b.dataset.rmPoll)) await Store.del("votes", v.id);
+      await Store.del("polls", b.dataset.rmPoll);
+    }));
+  },
+};
+const stripId = o => { const {id, ...rest} = o; return rest; };
+
+/* ---------- THE LEADERBOARD ---------- */
+VIEWS.leaderboard = {
+  shell() {
+    const judge = ME === "umang" || Store.owner;
+    return `<section class="view">
+      <div class="head"><div class="eyebrow">Standings</div><h2>The Leaderboard</h2>
+      <p>Challenges + daily drops + the groom's decrees. Awards unseal at 6:00 AM on Sun Nov 22, Istanbul time.</p></div>
+      <div class="lb" id="lb"></div>
+      <div class="stack"><h3>Final awards</h3><div class="grid g3" id="awards"></div><div id="reveal"></div></div>
+      <div class="grid g2">
+        <div class="panel stack"><h3>Punishment menu</h3><p class="muted" style="font-size:14px">Last place at the end of the mission draws one.</p>
+          <ol class="plain">${PUNISHMENTS.map(p => `<li>${h(p)}</li>`).join("")}</ol><div id="punish"></div></div>
+        ${judge ? `<form class="panel stack" id="decree-form"><h3>Groom's decree</h3>
+          <p class="muted" style="font-size:14px">Bonus or penalty points, with a reason the crew can see.</p>
+          <div class="grid g2"><label class="f">Agent<select id="dc-who">${CREW.map(c => `<option value="${c.key}">${h(c.name)}</option>`).join("")}</select></label>
+          <label class="f">Points (+ or −)<input type="number" id="dc-pts" value="10" step="5" min="-100" max="100"></label></div>
+          <label class="f">Reason<input type="text" id="dc-why" maxlength="120" placeholder="Carried the cooler up Kartepe" required></label>
+          <div><button class="btn primary" type="submit">Issue decree</button></div></form>` : `<div class="panel stack" id="decrees-only"><h3>Groom's decrees</h3><div id="decrees"></div></div>`}
+      </div>
+      ${judge ? `<div class="panel stack"><h3>Decree log</h3><div id="decrees"></div></div>` : ""}
+    </section>`;
+  },
+  mount() {
+    const f = $("#decree-form"); if (!f) return;
+    f.onsubmit = e => { e.preventDefault();
+      const pts = parseInt($("#dc-pts").value, 10), why = $("#dc-why").value.trim();
+      if (!pts || !why) { toast("Add points and a reason."); return; }
+      act(Store.put("adjust", uid(), {crew: $("#dc-who").value, pts, why, by: ME || "", at: Date.now()}), "Decree issued").then(ok => { if (ok) $("#dc-why").value = ""; }); };
+  },
+  update() {
+    const sc = scores(); const top = Math.max(1, sc[0]?.total || 0);
+    const allZero = sc.every(r => r.total === 0);
+    $("#lb").innerHTML = sc.map((r, i) => `<div class="lb-row ${!allZero && i === 0 ? "first" : ""} ${!allZero && i === sc.length - 1 ? "last" : ""}">
+      <div class="rank">${i + 1}</div>${avatar(r.key)}
+      <div style="min-width:0"><b>${h(crewBy(r.key).name)}</b>${(D.crew.find(x => x.id === r.key) || {}).nick ? ` <span class="nick">“${h(D.crew.find(x => x.id === r.key).nick)}”</span>` : ""}
+        <div class="bar-track"><i style="width:${Math.max(0, r.total) / top * 100}%"></i></div>
+        <div class="breakdown">${r.ch} challenges · ${r.drops} daily drops · ${r.bonus >= 0 ? "+" : ""}${r.bonus} decrees</div></div>
+      <div class="pts" style="font-size:28px">${r.total}</div></div>`).join("");
+    const open = awardsOpen();
+    const by = (f) => { const best = [...sc].sort((a, b) => f(b) - f(a))[0]; return best && f(best) > 0 ? crewBy(best.key).name : "No one yet"; };
+    const awards = [
+      ["Sultan of the Bosphorus", "Most points overall", by(r => r.total)],
+      ["Dare Devil", "Most challenges completed", by(r => r.chCount)],
+      ["Chief Archivist", "Most uploads to the Vault", by(r => r.photos)],
+      ["Voice of the People", "Most votes cast", by(r => r.votes)],
+      ["The Anchor", "Last place. See punishment menu", allZero ? "No one yet" : crewBy(sc[sc.length - 1].key).name],
+    ];
+    $("#awards").innerHTML = awards.map(([t, d, w]) => `<div class="award ${open ? "" : "locked"}"><i class="medal"></i><b>${h(t)}</b><span class="muted" style="font-size:13px">${h(d)}</span>
+      <span class="mono" style="font-size:14px">${open ? h(w) : "Sealed"}</span></div>`).join("");
+    $("#reveal").innerHTML = !open && (Store.owner || Store.mode === "local") ? `<button class="btn small" type="button" id="reveal-btn">Unseal awards now</button>` : "";
+    const rb = $("#reveal-btn"); if (rb) rb.onclick = () => confirmBox("Unseal the awards for everyone now?", () => Store.put("settings", "main", {...stripId(settings()), reveal: true}));
+    const st = settings();
+    $("#punish").innerHTML = st.punishment != null && PUNISHMENTS[st.punishment] ? `<div class="banner warn" style="margin:0"><b>Drawn:</b> ${h(PUNISHMENTS[st.punishment])}</div>`
+      : open ? `<button class="btn small" type="button" id="draw">Draw the punishment</button>` : `<span class="muted" style="font-size:13px">Draw unlocks with the awards.</span>`;
+    const dr = $("#draw"); if (dr) dr.onclick = () => act(Store.put("settings", "main", {...stripId(st), punishment: Math.floor(Math.random() * PUNISHMENTS.length)}), "Punishment drawn");
+    const dec = [...D.adjust].sort((a, b) => b.at - a.at);
+    const el = $("#decrees"); if (el) el.innerHTML = dec.length ? `<div class="tbl"><table><tbody>${dec.map(a => `<tr><td>${h(crewBy(a.crew)?.name || "")}</td><td class="mono" style="color:${a.pts >= 0 ? "var(--ok)" : "var(--coral)"}">${a.pts >= 0 ? "+" : ""}${a.pts}</td><td>${h(a.why)}</td>${ME === "umang" || Store.owner ? `<td><button class="link" type="button" data-rmd="${h(a.id)}" style="color:var(--coral)">Remove</button></td>` : ""}</tr>`).join("")}</tbody></table></div>` : `<p class="muted">No decrees yet.</p>`;
+    $$("[data-rmd]").forEach(b => b.onclick = () => confirmBox("Remove this decree?", () => Store.del("adjust", b.dataset.rmd)));
+  },
+};
+
+/* ============================================================
+   ROUTER
+   ============================================================ */
+let current = null, raf = 0;
+function route(force = false) {
+  const k = (location.hash || "").slice(1);
+  const name = VIEWS[k] ? k : "mission";
+  if (name === current && !force) return;
+  current = name;
+  $("#tabs").innerHTML = ORDER.map(([key, t]) => `<a href="#${key}" ${key === name ? `aria-current="page"` : ""}>${t.replace("The ", "")}</a>`).join("");
+  $("#view").innerHTML = VIEWS[name].shell();
+  VIEWS[name].mount && VIEWS[name].mount();
+  VIEWS[name].update();
+  const tab = $("#tabs [aria-current]"); if (tab) tab.scrollIntoView({block: "nearest", inline: "center"});
+}
+function changed() {
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(() => { if (current) { VIEWS[current].update(); } paintStatus(); });
+}
+window.addEventListener("hashchange", () => { route(); scrollTo({top: 0}); });
+$("#me-chip").onclick = pickMe;
+// Mission dispatches unseal on the clock: refresh once a minute.
+setInterval(() => { if (current === "mission") VIEWS.mission.update(); }, 60000);
+
+paintStatus();
+route();
+Store.init().then(() => route(true));
+</script>
